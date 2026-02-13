@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "SaaS.OmniChannelPlatform.Services.Billing/1.0.0": {
+        "runtime": {
+          "SaaS.OmniChannelPlatform.Services.Billing.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "SaaS.OmniChannelPlatform.Services.Billing/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

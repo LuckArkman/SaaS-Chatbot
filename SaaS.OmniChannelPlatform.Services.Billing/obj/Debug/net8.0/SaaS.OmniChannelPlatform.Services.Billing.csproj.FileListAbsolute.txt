@@ -1,0 +1,12 @@
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Billing\bin\Debug\net8.0\SaaS.OmniChannelPlatform.Services.Billing.deps.json
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Billing\bin\Debug\net8.0\SaaS.OmniChannelPlatform.Services.Billing.dll
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Billing\bin\Debug\net8.0\SaaS.OmniChannelPlatform.Services.Billing.pdb
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Billing\obj\Debug\net8.0\SaaS.OmniChannelPlatform.Services.Billing.GeneratedMSBuildEditorConfig.editorconfig
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Billing\obj\Debug\net8.0\SaaS.OmniChannelPlatform.Services.Billing.AssemblyInfoInputs.cache
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Billing\obj\Debug\net8.0\SaaS.OmniChannelPlatform.Services.Billing.AssemblyInfo.cs
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Billing\obj\Debug\net8.0\SaaS.OmniChannelPlatform.Services.Billing.csproj.CoreCompileInputs.cache
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Billing\obj\Debug\net8.0\SaaS.OmniChannelPlatform.Services.Billing.sourcelink.json
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Billing\obj\Debug\net8.0\SaaS.OmniChannelPlatform.Services.Billing.dll
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Billing\obj\Debug\net8.0\refint\SaaS.OmniChannelPlatform.Services.Billing.dll
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Billing\obj\Debug\net8.0\SaaS.OmniChannelPlatform.Services.Billing.pdb
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Billing\obj\Debug\net8.0\ref\SaaS.OmniChannelPlatform.Services.Billing.dll
