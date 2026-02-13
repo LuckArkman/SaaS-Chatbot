@@ -1,0 +1,76 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SaaS.API", "SaaS.API\SaaS.API.csproj", "{7727CE6D-4920-4D91-9C12-7A1BAC234714}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SaaS.OmniChannelPlatform.BuildingBlocks", "SaaS.OmniChannelPlatform.BuildingBlocks\SaaS.OmniChannelPlatform.BuildingBlocks.csproj", "{3D235206-D38B-494A-8047-E3BC8447CF0B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SaaS.OmniChannelPlatform.Services.Messaging", "SaaS.OmniChannelPlatform.Services.Messaging\SaaS.OmniChannelPlatform.Services.Messaging.csproj", "{8DD2FF31-33C7-44CD-8AD0-6338D7B4AF13}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SaaS.OmniChannelPlatform.Services.Tenant", "SaaS.OmniChannelPlatform.Services.Tenant\SaaS.OmniChannelPlatform.Services.Tenant.csproj", "{F5C8E962-8A20-48FD-9732-EC071571CDEA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SaaS.OmniChannelPlatform.Services.Messaging", " SaaS.OmniChannelPlatform.Services.Messaging\SaaS.OmniChannelPlatform.Services.Messaging.csproj", "{56592AC0-3F39-4F39-BBB4-A45C01AC35F7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SaaS.OmniChannelPlatform.Services.ChannelGateway", "SaaS.OmniChannelPlatform.Services.ChannelGateway\SaaS.OmniChannelPlatform.Services.ChannelGateway.csproj", "{81E4E85E-F45F-4A82-ADF5-D58589B83BED}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SaaS.OmniChannelPlatform.Services.Chat", "SaaS.OmniChannelPlatform.Services.Chat\SaaS.OmniChannelPlatform.Services.Chat.csproj", "{1A814D02-3835-4EF0-8BDF-5CE69548B5B4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SaaS.OmniChannelPlatform.Services.FlowEngine", "SaaS.OmniChannelPlatform.Services.FlowEngine\SaaS.OmniChannelPlatform.Services.FlowEngine.csproj", "{E064B5E6-EF57-4F76-9B7A-887399438BBF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SaaS.OmniChannelPlatform.Services.Campaign", " SaaS.OmniChannelPlatform.Services.Campaign\SaaS.OmniChannelPlatform.Services.Campaign.csproj", "{D36BD5F4-A5E8-4402-A105-DE37E2F37A41}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SaaS.OmniChannelPlatform.Services.Billing", " SaaS.OmniChannelPlatform.Services.Billing\SaaS.OmniChannelPlatform.Services.Billing.csproj", "{2CACE558-1C6F-4FA8-AC26-3A2AEB5BA33B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SaaS.OmniChannelPlatform.Services.Analytics", "SaaS.OmniChannelPlatform.Services.Analytics\SaaS.OmniChannelPlatform.Services.Analytics.csproj", "{C0A3CA32-A51A-44C4-B191-E918DBF66AC2}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7727CE6D-4920-4D91-9C12-7A1BAC234714}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7727CE6D-4920-4D91-9C12-7A1BAC234714}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7727CE6D-4920-4D91-9C12-7A1BAC234714}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7727CE6D-4920-4D91-9C12-7A1BAC234714}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3D235206-D38B-494A-8047-E3BC8447CF0B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3D235206-D38B-494A-8047-E3BC8447CF0B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3D235206-D38B-494A-8047-E3BC8447CF0B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3D235206-D38B-494A-8047-E3BC8447CF0B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8DD2FF31-33C7-44CD-8AD0-6338D7B4AF13}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8DD2FF31-33C7-44CD-8AD0-6338D7B4AF13}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8DD2FF31-33C7-44CD-8AD0-6338D7B4AF13}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8DD2FF31-33C7-44CD-8AD0-6338D7B4AF13}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F5C8E962-8A20-48FD-9732-EC071571CDEA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F5C8E962-8A20-48FD-9732-EC071571CDEA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F5C8E962-8A20-48FD-9732-EC071571CDEA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F5C8E962-8A20-48FD-9732-EC071571CDEA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{56592AC0-3F39-4F39-BBB4-A45C01AC35F7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{56592AC0-3F39-4F39-BBB4-A45C01AC35F7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{56592AC0-3F39-4F39-BBB4-A45C01AC35F7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{56592AC0-3F39-4F39-BBB4-A45C01AC35F7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{81E4E85E-F45F-4A82-ADF5-D58589B83BED}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{81E4E85E-F45F-4A82-ADF5-D58589B83BED}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{81E4E85E-F45F-4A82-ADF5-D58589B83BED}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{81E4E85E-F45F-4A82-ADF5-D58589B83BED}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1A814D02-3835-4EF0-8BDF-5CE69548B5B4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1A814D02-3835-4EF0-8BDF-5CE69548B5B4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1A814D02-3835-4EF0-8BDF-5CE69548B5B4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1A814D02-3835-4EF0-8BDF-5CE69548B5B4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E064B5E6-EF57-4F76-9B7A-887399438BBF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E064B5E6-EF57-4F76-9B7A-887399438BBF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E064B5E6-EF57-4F76-9B7A-887399438BBF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E064B5E6-EF57-4F76-9B7A-887399438BBF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D36BD5F4-A5E8-4402-A105-DE37E2F37A41}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D36BD5F4-A5E8-4402-A105-DE37E2F37A41}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D36BD5F4-A5E8-4402-A105-DE37E2F37A41}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D36BD5F4-A5E8-4402-A105-DE37E2F37A41}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2CACE558-1C6F-4FA8-AC26-3A2AEB5BA33B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2CACE558-1C6F-4FA8-AC26-3A2AEB5BA33B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2CACE558-1C6F-4FA8-AC26-3A2AEB5BA33B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2CACE558-1C6F-4FA8-AC26-3A2AEB5BA33B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C0A3CA32-A51A-44C4-B191-E918DBF66AC2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C0A3CA32-A51A-44C4-B191-E918DBF66AC2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C0A3CA32-A51A-44C4-B191-E918DBF66AC2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C0A3CA32-A51A-44C4-B191-E918DBF66AC2}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
