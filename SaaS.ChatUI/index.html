@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SaaS OmniChannel - Real-time Inbox</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>OmniChannel</h2>
+            </div>
+            <div class="chat-list" id="chatList">
+                <div class="chat-item active">
+                    <div class="avatar">JD</div>
+                    <div class="chat-info">
+                        <div class="chat-name">John Doe</div>
+                        <div class="chat-preview" style="color: var(--text-muted); font-size: 0.85rem;">WhatsApp • Online</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="main-chat">
+            <header class="chat-header">
+                <div>
+                    <h3 id="currentChatName">John Doe</h3>
+                    <span style="color: var(--text-muted); font-size: 0.85rem;">via WhatsApp</span>
+                </div>
+                <div class="actions">
+                    <span id="connectionStatus" style="font-size: 0.8rem; color: #10b981;">● Connected</span>
+                </div>
+            </header>
+
+            <div class="messages-container" id="messagesContainer">
+                <div class="message received">
+                    Olá! Como posso ajudar você hoje?
+                </div>
+                <div class="message sent">
+                    Oi, gostaria de saber sobre os planos.
+                </div>
+            </div>
+
+            <footer class="input-area">
+                <div class="input-wrapper">
+                    <input type="text" id="messageInput" placeholder="Type your message here...">
+                    <button class="send-btn" id="sendBtn">Send</button>
+                </div>
+            </footer>
+        </main>
+    </div>
+
+    <script>
+        const tenantId = "88888888-4444-4444-4444-121212121212"; // Mock Tenant ID
+        const hubUrl = "http://localhost:5000/hubs/chat"; // Adjust port if needed
+
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl(`${hubUrl}?tenantId=${tenantId}`)
+            .withAutomaticReconnect()
+            .build();
+
+        const messagesContainer = document.getElementById('messagesContainer');
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+
+        function addMessage(content, type) {
+            const div = document.createElement('div');
+            div.className = `message ${type.toLowerCase()}`;
+            div.textContent = content;
+            messagesContainer.appendChild(div);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        connection.on("ReceiveMessage", (data) => {
+            console.log("Message received:", data);
+            addMessage(data.content, data.type === "Received" ? "received" : "sent");
+        });
+
+        async function start() {
+            try {
+                await connection.start();
+                console.log("SignalR Connected.");
+                document.getElementById('connectionStatus').textContent = "● Connected";
+                document.getElementById('connectionStatus').style.color = "#10b981";
+            } catch (err) {
+                console.log(err);
+                document.getElementById('connectionStatus').textContent = "● Disconnected";
+                document.getElementById('connectionStatus').style.color = "#ef4444";
+                setTimeout(start, 5000);
+            }
+        };
+
+        sendBtn.addEventListener('click', async () => {
+            const content = messageInput.value;
+            if (!content) return;
+
+            // In MVP, we send to the Messaging API
+            // For now, we mock the UI update if SignalR doesn't echo back
+            // addMessage(content, 'sent'); 
+            
+            messageInput.value = '';
+            
+            // Here we would call the Messaging Service API: POST /api/messages/send
+            console.log("Sending message to API...");
+        });
+
+        start();
+    </script>
+</body>
+</html>

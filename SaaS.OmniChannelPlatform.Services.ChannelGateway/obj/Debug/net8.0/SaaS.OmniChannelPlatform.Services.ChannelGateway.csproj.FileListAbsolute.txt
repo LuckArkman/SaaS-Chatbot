@@ -34,3 +34,17 @@ D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.ChannelGateway\obj\Debug\net8.
 D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.ChannelGateway\obj\Debug\net8.0\swae.build.ex.cache
 D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.ChannelGateway\obj\Debug\net8.0\SaaS.Omn.70BC909B.Up2Date
 D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.ChannelGateway\obj\Debug\net8.0\SaaS.OmniChannelPlatform.Services.ChannelGateway.genruntimeconfig.cache
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.ChannelGateway\bin\Debug\net8.0\MassTransit.dll
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.ChannelGateway\bin\Debug\net8.0\MassTransit.Abstractions.dll
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.ChannelGateway\bin\Debug\net8.0\MassTransit.RabbitMqTransport.dll
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.ChannelGateway\bin\Debug\net8.0\Microsoft.AspNetCore.Authentication.JwtBearer.dll
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.ChannelGateway\bin\Debug\net8.0\Microsoft.IdentityModel.Abstractions.dll
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.ChannelGateway\bin\Debug\net8.0\Microsoft.IdentityModel.JsonWebTokens.dll
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.ChannelGateway\bin\Debug\net8.0\Microsoft.IdentityModel.Logging.dll
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.ChannelGateway\bin\Debug\net8.0\Microsoft.IdentityModel.Protocols.dll
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.ChannelGateway\bin\Debug\net8.0\Microsoft.IdentityModel.Protocols.OpenIdConnect.dll
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.ChannelGateway\bin\Debug\net8.0\Microsoft.IdentityModel.Tokens.dll
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.ChannelGateway\bin\Debug\net8.0\RabbitMQ.Client.dll
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.ChannelGateway\bin\Debug\net8.0\System.IdentityModel.Tokens.Jwt.dll
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.ChannelGateway\bin\Debug\net8.0\SaaS.OmniChannelPlatform.BuildingBlocks.dll
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.ChannelGateway\bin\Debug\net8.0\SaaS.OmniChannelPlatform.BuildingBlocks.pdb

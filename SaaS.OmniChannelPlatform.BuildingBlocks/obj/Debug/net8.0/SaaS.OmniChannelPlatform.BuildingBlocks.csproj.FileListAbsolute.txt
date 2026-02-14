@@ -10,3 +10,4 @@ D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.BuildingBlocks\obj\Debug\net8.0\SaaS.Om
 D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.BuildingBlocks\obj\Debug\net8.0\refint\SaaS.OmniChannelPlatform.BuildingBlocks.dll
 D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.BuildingBlocks\obj\Debug\net8.0\SaaS.OmniChannelPlatform.BuildingBlocks.pdb
 D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.BuildingBlocks\obj\Debug\net8.0\ref\SaaS.OmniChannelPlatform.BuildingBlocks.dll
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.BuildingBlocks\obj\Debug\net8.0\SaaS.OmniChannelPlatform.BuildingBlocks.csproj.AssemblyReference.cache
