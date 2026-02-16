@@ -22,6 +22,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SaaS.OmniChannelPlatform.Se
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SaaS.OmniChannelPlatform.Services.Identity", "SaaS.OmniChannelPlatform.Services.Identity\SaaS.OmniChannelPlatform.Services.Identity.csproj", "{D7564C55-1D8D-4D2D-AC39-D51516E3AE0E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SaaS.OmniChannelPlatform.Services.AI", "SaaS.OmniChannelPlatform.Services.AI\SaaS.OmniChannelPlatform.Services.AI.csproj", "{76739D7F-E2A9-4BD0-9E8F-B5958E596BB6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -164,6 +166,18 @@ Global
 		{D7564C55-1D8D-4D2D-AC39-D51516E3AE0E}.Release|x64.Build.0 = Release|Any CPU
 		{D7564C55-1D8D-4D2D-AC39-D51516E3AE0E}.Release|x86.ActiveCfg = Release|Any CPU
 		{D7564C55-1D8D-4D2D-AC39-D51516E3AE0E}.Release|x86.Build.0 = Release|Any CPU
+		{76739D7F-E2A9-4BD0-9E8F-B5958E596BB6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{76739D7F-E2A9-4BD0-9E8F-B5958E596BB6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{76739D7F-E2A9-4BD0-9E8F-B5958E596BB6}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{76739D7F-E2A9-4BD0-9E8F-B5958E596BB6}.Debug|x64.Build.0 = Debug|Any CPU
+		{76739D7F-E2A9-4BD0-9E8F-B5958E596BB6}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{76739D7F-E2A9-4BD0-9E8F-B5958E596BB6}.Debug|x86.Build.0 = Debug|Any CPU
+		{76739D7F-E2A9-4BD0-9E8F-B5958E596BB6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{76739D7F-E2A9-4BD0-9E8F-B5958E596BB6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{76739D7F-E2A9-4BD0-9E8F-B5958E596BB6}.Release|x64.ActiveCfg = Release|Any CPU
+		{76739D7F-E2A9-4BD0-9E8F-B5958E596BB6}.Release|x64.Build.0 = Release|Any CPU
+		{76739D7F-E2A9-4BD0-9E8F-B5958E596BB6}.Release|x86.ActiveCfg = Release|Any CPU
+		{76739D7F-E2A9-4BD0-9E8F-B5958E596BB6}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

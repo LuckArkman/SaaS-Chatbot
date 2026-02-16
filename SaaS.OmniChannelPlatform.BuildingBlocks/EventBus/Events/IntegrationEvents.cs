@@ -32,4 +32,29 @@ namespace SaaS.OmniChannelPlatform.BuildingBlocks.EventBus.Events
         public Guid Id { get; init; } = Guid.NewGuid();
         public DateTime CreationDate { get; init; } = DateTime.UtcNow;
     }
+
+    public record ProcessAIRequestIntegrationEvent(
+        Guid TenantId,
+        Guid ConversationId,
+        string UserContent,
+        string Channel,
+        string ExternalId,
+        string? SystemPrompt = null
+    ) : IntegrationEvent
+    {
+        public Guid Id { get; init; } = Guid.NewGuid();
+        public DateTime CreationDate { get; init; } = DateTime.UtcNow;
+    }
+
+    public record AIResponseIntegrationEvent(
+        Guid TenantId,
+        Guid ConversationId,
+        string AIContent,
+        string Channel,
+        string ExternalId
+    ) : IntegrationEvent
+    {
+        public Guid Id { get; init; } = Guid.NewGuid();
+        public DateTime CreationDate { get; init; } = DateTime.UtcNow;
+    }
 }

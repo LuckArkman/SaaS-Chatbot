@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SaaS.OmniChannelPlatform.BuildingBlocks")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c090f3e3c70bc663e6f398a252f97f15fe8a2210")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b8aadb34f42283bbf23735f55b8b034b7afc4293")]
 [assembly: System.Reflection.AssemblyProductAttribute("SaaS.OmniChannelPlatform.BuildingBlocks")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SaaS.OmniChannelPlatform.BuildingBlocks")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

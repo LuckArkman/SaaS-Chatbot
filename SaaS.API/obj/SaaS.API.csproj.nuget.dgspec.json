@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "D:\\SaaS-Chatbot\\SaaS.API\\SaaS.API.csproj": {}
+    "d:\\SaaS-Chatbot\\SaaS.API\\SaaS.API.csproj": {}
   },
   "projects": {
-    "D:\\SaaS-Chatbot\\SaaS.API\\SaaS.API.csproj": {
+    "d:\\SaaS-Chatbot\\SaaS.API\\SaaS.API.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "D:\\SaaS-Chatbot\\SaaS.API\\SaaS.API.csproj",
+        "projectUniqueName": "d:\\SaaS-Chatbot\\SaaS.API\\SaaS.API.csproj",
         "projectName": "SaaS.API",
-        "projectPath": "D:\\SaaS-Chatbot\\SaaS.API\\SaaS.API.csproj",
+        "projectPath": "d:\\SaaS-Chatbot\\SaaS.API\\SaaS.API.csproj",
         "packagesPath": "C:\\Users\\MPLopes\\.nuget\\packages\\",
-        "outputPath": "D:\\SaaS-Chatbot\\SaaS.API\\obj\\",
+        "outputPath": "d:\\SaaS-Chatbot\\SaaS.API\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

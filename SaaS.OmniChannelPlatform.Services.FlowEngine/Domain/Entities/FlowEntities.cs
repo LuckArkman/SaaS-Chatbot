@@ -27,7 +27,8 @@ namespace SaaS.OmniChannelPlatform.Services.FlowEngine.Domain.Entities
     {
         Message = 1,
         Input = 2,
-        Handover = 3
+        Handover = 3,
+        AI = 4
     }
 
     public class FlowSession
