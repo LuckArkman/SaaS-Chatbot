@@ -106,9 +106,23 @@ namespace SaaS.OmniChannelPlatform.Services.FlowEngine.Application.Consumers
                 return;
             }
 
+            if (step.Type == StepType.AI)
+            {
+                _logger.LogInformation("Step is AI. Publishing AI Request.");
+                await _publishEndpoint.Publish(new ProcessAIRequestIntegrationEvent(
+                    originalEvent.TenantId,
+                    Guid.Empty,
+                    originalEvent.Content,
+                    originalEvent.Channel,
+                    originalEvent.SenderExternalId,
+                    step.Content // System Prompt can be stored in step.Content for AI steps
+                ));
+                return;
+            }
+
             await _publishEndpoint.Publish(new SendMessageIntegrationEvent(
                 originalEvent.TenantId,
-                Guid.Empty, // We don't have the conversation ID here easily, but the Gateway will handle it or we can look it up
+                Guid.Empty,
                 step.Content,
                 originalEvent.SenderExternalId,
                 originalEvent.Channel
