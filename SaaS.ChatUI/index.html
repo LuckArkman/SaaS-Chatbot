@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,6 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js"></script>
 </head>
+
 <body>
     <div class="app-container">
         <!-- Sidebar -->
@@ -22,7 +24,8 @@
                     <div class="avatar">JD</div>
                     <div class="chat-info">
                         <div class="chat-name">John Doe</div>
-                        <div class="chat-preview" style="color: var(--text-muted); font-size: 0.85rem;">WhatsApp • Online</div>
+                        <div class="chat-preview" style="color: var(--text-muted); font-size: 0.85rem;">WhatsApp •
+                            Online</div>
                     </div>
                 </div>
             </div>
@@ -61,6 +64,18 @@
     <script>
         const tenantId = "88888888-4444-4444-4444-121212121212"; // Mock Tenant ID
         const hubUrl = "http://localhost:5000/hubs/chat"; // Adjust port if needed
+
+        // Simulate fetching Tenant Info for White Label
+        async function applyWhiteLabel() {
+            // In a real scenario, we would call GET api/Tenant/me
+            const mockTenantInfo = {
+                primaryColor: "#4f46e5", // Example of dynamic color
+                logoUrl: ""
+            };
+            document.documentElement.style.setProperty('--primary', mockTenantInfo.primaryColor);
+        }
+
+        applyWhiteLabel();
 
         const connection = new signalR.HubConnectionBuilder()
             .withUrl(`${hubUrl}?tenantId=${tenantId}`)
@@ -105,9 +120,9 @@
             // In MVP, we send to the Messaging API
             // For now, we mock the UI update if SignalR doesn't echo back
             // addMessage(content, 'sent'); 
-            
+
             messageInput.value = '';
-            
+
             // Here we would call the Messaging Service API: POST /api/messages/send
             console.log("Sending message to API...");
         });
@@ -115,4 +130,5 @@
         start();
     </script>
 </body>
+
 </html>
