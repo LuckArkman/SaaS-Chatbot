@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "VTp2ARC6J9w=",
+  "dgSpecHash": "tU5OrJ428WI=",
   "success": true,
-  "projectFilePath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Services.Tenant\\SaaS.OmniChannelPlatform.Services.Tenant.csproj",
+  "projectFilePath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Services.Tenant\\SaaS.OmniChannelPlatform.Services.Tenant.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\MPLopes\\.nuget\\packages\\microsoft.aspnetcore.authentication.jwtbearer\\8.0.0\\microsoft.aspnetcore.authentication.jwtbearer.8.0.0.nupkg.sha512",
     "C:\\Users\\MPLopes\\.nuget\\packages\\microsoft.aspnetcore.http.abstractions\\2.3.9\\microsoft.aspnetcore.http.abstractions.2.3.9.nupkg.sha512",

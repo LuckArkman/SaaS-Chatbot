@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SaaS.OmniChannelPlatform.Services.Chat")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a4648e1c839eda62116b3f2a55fdd841574cbdf7")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c090f3e3c70bc663e6f398a252f97f15fe8a2210")]
 [assembly: System.Reflection.AssemblyProductAttribute("SaaS.OmniChannelPlatform.Services.Chat")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SaaS.OmniChannelPlatform.Services.Chat")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
