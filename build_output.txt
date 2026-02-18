@@ -1,0 +1,13 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  SaaS.OmniChannelPlatform.Services.Analytics -> D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Analytics\bin\Debug\net8.0\SaaS.OmniChannelPlatform.Services.Analytics.dll
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.BuildingBlocks\Security\SubscriptionCheckMiddleware.cs(4,28): error CS0234: The type or namespace name 'DependencyInjection' does not exist in the namespace 'Microsoft.Extensions' (are you missing an assembly reference?) [D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.BuildingBlocks\SaaS.OmniChannelPlatform.BuildingBlocks.csproj]
+  SaaS.API -> D:\SaaS-Chatbot\SaaS.API\bin\Debug\net8.0\SaaS.API.dll
+
+Build FAILED.
+
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.BuildingBlocks\Security\SubscriptionCheckMiddleware.cs(4,28): error CS0234: The type or namespace name 'DependencyInjection' does not exist in the namespace 'Microsoft.Extensions' (are you missing an assembly reference?) [D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.BuildingBlocks\SaaS.OmniChannelPlatform.BuildingBlocks.csproj]
+    0 Warning(s)
+    1 Error(s)
+
+Time Elapsed 00:00:02.87

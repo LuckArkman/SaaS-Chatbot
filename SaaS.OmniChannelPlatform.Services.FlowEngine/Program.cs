@@ -6,6 +6,8 @@ using Microsoft.OpenApi.Models;
 using SaaS.OmniChannelPlatform.Services.FlowEngine.Application.Consumers;
 using SaaS.OmniChannelPlatform.Services.FlowEngine.Infrastructure.Persistence;
 using SaaS.OmniChannelPlatform.Services.FlowEngine.Domain.Entities;
+using SaaS.OmniChannelPlatform.BuildingBlocks.MultiTenancy;
+using SaaS.OmniChannelPlatform.BuildingBlocks.Security;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -56,6 +58,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     };
 });
 
+// Multi-Tenancy & Security
+builder.Services.AddScoped<ITenantContext, TenantContext>();
+builder.Services.AddScoped<ISubscriptionService, AlwaysActiveSubscriptionService>();
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c => {
@@ -70,8 +76,9 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+app.UseMiddleware<TenantResolverMiddleware>();
 app.UseAuthentication();
+app.UseMiddleware<SubscriptionCheckMiddleware>();
 app.UseAuthorization();
 
 app.MapControllers();
