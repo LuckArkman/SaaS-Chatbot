@@ -2,6 +2,7 @@
 @inject ApiService ApiService
 @inject NavigationManager Navigation
 @using Microsoft.AspNetCore.Components.Web
+@implements IDisposable
 
 @code {
     [Parameter] public Guid? Id { get; set; }
@@ -27,6 +28,11 @@
             var flows = await ApiService.GetFlowsAsync();
             var found = flows.FirstOrDefault(f => f.Id == Id.Value);
             if (found != null) _flow = found;
+        }
+
+        if (_connections.Any(c => c.Platform == "WhatsApp" && c.Status != "Connected"))
+        {
+            StartQRPolling();
         }
     }
 
@@ -113,10 +119,54 @@
             if (conn != null && (conn.Status == "Disconnected" || conn.Status == "Pending"))
             {
                 await ApiService.RefreshChannelQRAsync(conn);
+                StartQRPolling();
                 StateHasChanged();
             }
         }
     }
+
+    private System.Threading.Timer? _qrTimer;
+
+    private void StartQRPolling()
+    {
+        if (_qrTimer == null)
+        {
+            _qrTimer = new System.Threading.Timer(async _ =>
+            {
+                try
+                {
+                    var pendingConns = _connections.Where(c => c.Platform == "WhatsApp" && c.Status != "Connected").ToList();
+                    if (!pendingConns.Any())
+                    {
+                        StopQRPolling();
+                        return;
+                    }
+
+                    foreach (var conn in pendingConns)
+                    {
+                        await ApiService.RefreshChannelQRAsync(conn);
+                        if (conn.Status == "Connected") 
+                        {
+                            if (!_connections.Any(c => c.Platform == "WhatsApp" && c.Status != "Connected"))
+                            {
+                                StopQRPolling();
+                            }
+                        }
+                    }
+                    await InvokeAsync(StateHasChanged);
+                }
+                catch { /* Silent fail for timer background work */ }
+            }, null, 3000, 3000);
+        }
+    }
+
+    private void StopQRPolling()
+    {
+        _qrTimer?.Dispose();
+        _qrTimer = null;
+    }
+
+    public void Dispose() => StopQRPolling();
 
     private void ClearConnection(FlowStepModel step) => step.NextStepId = null;
 
@@ -319,7 +369,10 @@
                                 }
                                 else
                                 {
-                                    <div style="width: 150px; height: 150px; margin: 0 auto; background: repeating-conic-gradient(#000 0% 25%, #fff 0% 50%) 50% / 20px 20px; border: 4px solid #fff;"></div>
+                                    <div style="width: 150px; height: 150px; margin: 0 auto; display: flex; align-items: center; justify-content: center; background: #000; border: 4px solid #fff;">
+                                        <div class="status-pulse" style="width: 40px; height: 40px;"></div>
+                                        <p style="position: absolute; font-size: 0.6rem; color: #fff; margin-top: 60px;">AGUARDANDO...</p>
+                                    </div>
                                 }
                                 <p style="color: #000; font-size: 0.7rem; font-weight: 700; margin-top: 1rem;">ESCANEIE O QR CODE NO @conn.Platform.ToUpper()</p>
                             </div>

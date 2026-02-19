@@ -3,16 +3,15 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const axios = require('axios');
 
 const app = express();
 app.use(cors());
 const server = http.createServer(app);
-const io = new Server(server, { core: { origin: "*" } });
+const io = new Server(server, { cors: { origin: "*" } });
 
 let venoms = {}; // Map of sessionId -> venom client
 let latestQrs = {}; // Map of sessionId -> latest QR code
-
-const axios = require('axios');
 
 async function startBot(sessionId) {
     if (venoms[sessionId]) return;
