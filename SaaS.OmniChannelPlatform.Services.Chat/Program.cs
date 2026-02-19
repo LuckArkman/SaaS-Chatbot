@@ -4,6 +4,8 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SaaS.OmniChannelPlatform.Services.Chat.API.Hubs;
 using SaaS.OmniChannelPlatform.Services.Chat.Application.Consumers;
+using SaaS.OmniChannelPlatform.BuildingBlocks.MultiTenancy;
+using SaaS.OmniChannelPlatform.BuildingBlocks.Security;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -53,6 +55,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     };
 });
 
+// Multi-Tenancy & Security
+builder.Services.AddScoped<ITenantContext, TenantContext>();
+builder.Services.AddScoped<ISubscriptionService, AlwaysActiveSubscriptionService>();
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c => {
@@ -70,7 +76,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseMiddleware<TenantResolverMiddleware>();
 app.UseAuthentication();
+app.UseMiddleware<SubscriptionCheckMiddleware>();
 app.UseAuthorization();
 
 app.MapControllers();

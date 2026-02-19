@@ -6,6 +6,7 @@ using Microsoft.OpenApi.Models;
 using SaaS.OmniChannelPlatform.Services.Identity.Application.Services;
 using SaaS.OmniChannelPlatform.Services.Identity.Domain.Entities;
 using SaaS.OmniChannelPlatform.Services.Identity.Infrastructure.Persistence;
+using SaaS.OmniChannelPlatform.Services.Identity.Infrastructure.Handlers;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -32,6 +33,18 @@ builder.Services.AddScoped<ITokenService>(sp => new TokenService(
     jwtSettings["Audience"]!,
     int.Parse(jwtSettings["ExpiryInMinutes"] ?? "1440")
 ));
+
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddTransient<HeaderForwardingHandler>();
+
+// HttpClients for Backend Services
+var serviceUrls = builder.Configuration.GetSection("ServiceUrls");
+builder.Services.AddHttpClient("FlowEngine", c => c.BaseAddress = new Uri(serviceUrls["FlowEngine"]!)).AddHttpMessageHandler<HeaderForwardingHandler>();
+builder.Services.AddHttpClient("Chat", c => c.BaseAddress = new Uri(serviceUrls["Chat"]!)).AddHttpMessageHandler<HeaderForwardingHandler>();
+builder.Services.AddHttpClient("Messaging", c => c.BaseAddress = new Uri(serviceUrls["Messaging"]!)).AddHttpMessageHandler<HeaderForwardingHandler>();
+builder.Services.AddHttpClient("Campaign", c => c.BaseAddress = new Uri(serviceUrls["Campaign"]!)).AddHttpMessageHandler<HeaderForwardingHandler>();
+builder.Services.AddHttpClient("ChannelGateway", c => c.BaseAddress = new Uri(serviceUrls["ChannelGateway"]!)).AddHttpMessageHandler<HeaderForwardingHandler>();
+builder.Services.AddHttpClient("Billing", c => c.BaseAddress = new Uri(serviceUrls["Billing"]!)).AddHttpMessageHandler<HeaderForwardingHandler>();
 
 // JWT Authentication
 builder.Services.AddAuthentication(options => {

@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj": {}
+    "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj": {}
   },
   "projects": {
-    "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj": {
+    "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj",
+        "projectUniqueName": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj",
         "projectName": "SaaS.OmniChannelPlatform.BuildingBlocks",
-        "projectPath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj",
+        "projectPath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj",
         "packagesPath": "C:\\Users\\MPLopes\\.nuget\\packages\\",
-        "outputPath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\obj\\",
+        "outputPath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -50,12 +50,6 @@
       "frameworks": {
         "net8.0": {
           "targetAlias": "net8.0",
-          "dependencies": {
-            "Microsoft.AspNetCore.Http.Abstractions": {
-              "target": "Package",
-              "version": "[2.3.9, )"
-            }
-          },
           "imports": [
             "net461",
             "net462",
@@ -68,6 +62,9 @@
           "assetTargetFallback": true,
           "warn": true,
           "frameworkReferences": {
+            "Microsoft.AspNetCore.App": {
+              "privateAssets": "none"
+            },
             "Microsoft.NETCore.App": {
               "privateAssets": "all"
             }

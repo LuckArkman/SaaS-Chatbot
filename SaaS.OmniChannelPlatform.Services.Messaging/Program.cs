@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SaaS.OmniChannelPlatform.BuildingBlocks.MultiTenancy;
 using SaaS.OmniChannelPlatform.Services.Messaging.Infrastructure.Persistence;
+using SaaS.OmniChannelPlatform.BuildingBlocks.Security;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -58,6 +59,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 // Multi-Tenancy
 builder.Services.AddScoped<ITenantContext, TenantContext>();
+builder.Services.AddScoped<ISubscriptionService, AlwaysActiveSubscriptionService>();
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -98,6 +100,7 @@ app.UseHttpsRedirection();
 app.UseMiddleware<TenantResolverMiddleware>();
 
 app.UseAuthentication();
+app.UseMiddleware<SubscriptionCheckMiddleware>();
 app.UseAuthorization();
 
 app.MapControllers();

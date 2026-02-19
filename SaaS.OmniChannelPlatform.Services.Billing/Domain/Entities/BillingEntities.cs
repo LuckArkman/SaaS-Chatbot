@@ -27,7 +27,8 @@ namespace SaaS.OmniChannelPlatform.Services.Billing.Domain.Entities
         Active = 1,
         PastDue = 2,
         Canceled = 3,
-        Trialing = 4
+        Trialing = 4,
+        Blocked = 5
     }
 
     public class UsageCounter

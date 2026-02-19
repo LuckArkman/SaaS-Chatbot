@@ -1,0 +1,32 @@
+  Determining projects to restore...
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Tests\SaaS.OmniChannelPlatform.Tests.csproj : warning NU1903: Package 'Microsoft.Extensions.Caching.Memory' 8.0.0 has a known high severity vulnerability, https://github.com/advisories/GHSA-qj66-m88j-hmgj
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Tests\SaaS.OmniChannelPlatform.Tests.csproj : warning NU1902: Package 'Microsoft.IdentityModel.JsonWebTokens' 7.0.3 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-59j7-ghrg-fj52
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Tests\SaaS.OmniChannelPlatform.Tests.csproj : warning NU1903: Package 'Npgsql' 8.0.0 has a known high severity vulnerability, https://github.com/advisories/GHSA-x9vc-6hfv-hg8c
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Tests\SaaS.OmniChannelPlatform.Tests.csproj : warning NU1902: Package 'System.IdentityModel.Tokens.Jwt' 7.0.3 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-59j7-ghrg-fj52
+  All projects are up-to-date for restore.
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Tests\SaaS.OmniChannelPlatform.Tests.csproj : warning NU1903: Package 'Microsoft.Extensions.Caching.Memory' 8.0.0 has a known high severity vulnerability, https://github.com/advisories/GHSA-qj66-m88j-hmgj
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Tests\SaaS.OmniChannelPlatform.Tests.csproj : warning NU1902: Package 'Microsoft.IdentityModel.JsonWebTokens' 7.0.3 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-59j7-ghrg-fj52
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Tests\SaaS.OmniChannelPlatform.Tests.csproj : warning NU1903: Package 'Npgsql' 8.0.0 has a known high severity vulnerability, https://github.com/advisories/GHSA-x9vc-6hfv-hg8c
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Tests\SaaS.OmniChannelPlatform.Tests.csproj : warning NU1902: Package 'System.IdentityModel.Tokens.Jwt' 7.0.3 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-59j7-ghrg-fj52
+  SaaS.OmniChannelPlatform.BuildingBlocks -> D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.BuildingBlocks\bin\Debug\net8.0\SaaS.OmniChannelPlatform.BuildingBlocks.dll
+  SaaS.OmniChannelPlatform.Services.Billing -> D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Billing\bin\Debug\net8.0\SaaS.OmniChannelPlatform.Services.Billing.dll
+  SaaS.OmniChannelPlatform.Services.Messaging -> D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Messaging\bin\Debug\net8.0\SaaS.OmniChannelPlatform.Services.Messaging.dll
+C:\Program Files\dotnet\sdk\10.0.101\Microsoft.Common.CurrentVersion.targets(5381,5): warning MSB3026: Could not copy "D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Identity\obj\Debug\net8.0\apphost.exe" to "bin\Debug\net8.0\SaaS.OmniChannelPlatform.Services.Identity.exe". Beginning retry 1 in 1000ms. The process cannot access the file 'D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Identity\bin\Debug\net8.0\SaaS.OmniChannelPlatform.Services.Identity.exe' because it is being used by another process. The file is locked by: "SaaS.OmniChannelPlatform.Services.Identity (10728)" [D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Identity\SaaS.OmniChannelPlatform.Services.Identity.csproj]
+  SaaS.OmniChannelPlatform.Services.Identity -> D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Identity\bin\Debug\net8.0\SaaS.OmniChannelPlatform.Services.Identity.dll
+  SaaS.OmniChannelPlatform.Tests -> D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Tests\bin\Debug\net10.0\SaaS.OmniChannelPlatform.Tests.dll
+
+Build succeeded.
+
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Tests\SaaS.OmniChannelPlatform.Tests.csproj : warning NU1903: Package 'Microsoft.Extensions.Caching.Memory' 8.0.0 has a known high severity vulnerability, https://github.com/advisories/GHSA-qj66-m88j-hmgj
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Tests\SaaS.OmniChannelPlatform.Tests.csproj : warning NU1902: Package 'Microsoft.IdentityModel.JsonWebTokens' 7.0.3 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-59j7-ghrg-fj52
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Tests\SaaS.OmniChannelPlatform.Tests.csproj : warning NU1903: Package 'Npgsql' 8.0.0 has a known high severity vulnerability, https://github.com/advisories/GHSA-x9vc-6hfv-hg8c
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Tests\SaaS.OmniChannelPlatform.Tests.csproj : warning NU1902: Package 'System.IdentityModel.Tokens.Jwt' 7.0.3 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-59j7-ghrg-fj52
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Tests\SaaS.OmniChannelPlatform.Tests.csproj : warning NU1903: Package 'Microsoft.Extensions.Caching.Memory' 8.0.0 has a known high severity vulnerability, https://github.com/advisories/GHSA-qj66-m88j-hmgj
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Tests\SaaS.OmniChannelPlatform.Tests.csproj : warning NU1902: Package 'Microsoft.IdentityModel.JsonWebTokens' 7.0.3 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-59j7-ghrg-fj52
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Tests\SaaS.OmniChannelPlatform.Tests.csproj : warning NU1903: Package 'Npgsql' 8.0.0 has a known high severity vulnerability, https://github.com/advisories/GHSA-x9vc-6hfv-hg8c
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Tests\SaaS.OmniChannelPlatform.Tests.csproj : warning NU1902: Package 'System.IdentityModel.Tokens.Jwt' 7.0.3 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-59j7-ghrg-fj52
+C:\Program Files\dotnet\sdk\10.0.101\Microsoft.Common.CurrentVersion.targets(5381,5): warning MSB3026: Could not copy "D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Identity\obj\Debug\net8.0\apphost.exe" to "bin\Debug\net8.0\SaaS.OmniChannelPlatform.Services.Identity.exe". Beginning retry 1 in 1000ms. The process cannot access the file 'D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Identity\bin\Debug\net8.0\SaaS.OmniChannelPlatform.Services.Identity.exe' because it is being used by another process. The file is locked by: "SaaS.OmniChannelPlatform.Services.Identity (10728)" [D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Identity\SaaS.OmniChannelPlatform.Services.Identity.csproj]
+    9 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:05.74

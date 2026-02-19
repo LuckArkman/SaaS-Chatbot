@@ -6,6 +6,9 @@ using SaaS.OmniChannelPlatform.Services.Billing.Infrastructure.Persistence;
 using SaaS.OmniChannelPlatform.Services.Billing.Domain.Entities;
 using System.Text;
 using MassTransit;
+using SaaS.OmniChannelPlatform.BuildingBlocks.MultiTenancy;
+using SaaS.OmniChannelPlatform.BuildingBlocks.Security;
+using SaaS.OmniChannelPlatform.Services.Billing.Application.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,6 +45,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     };
 });
 
+// Multi-Tenancy & Security
+builder.Services.AddScoped<ITenantContext, TenantContext>();
+builder.Services.AddScoped<ISubscriptionService, BillingSubscriptionService>();
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c => {
@@ -57,7 +64,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseMiddleware<TenantResolverMiddleware>();
 app.UseAuthentication();
+app.UseMiddleware<SubscriptionCheckMiddleware>();
 app.UseAuthorization();
 
 app.MapControllers();

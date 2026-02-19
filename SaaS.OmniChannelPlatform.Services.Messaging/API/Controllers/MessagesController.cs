@@ -89,6 +89,20 @@ namespace SaaS.OmniChannelPlatform.Services.Messaging.API.Controllers
                 .OrderByDescending(c => c.UpdatedAt)
                 .ToListAsync();
         }
+
+        [HttpDelete("{id}")]
+        [Authorize(Roles = "AdminMaster")]
+        public async Task<IActionResult> DeleteConversation(Guid id)
+        {
+            var conversation = await _context.Conversations
+                .FirstOrDefaultAsync(c => c.Id == id && c.TenantId == _tenantContext.TenantId);
+
+            if (conversation == null) return NotFound();
+
+            _context.Conversations.Remove(conversation);
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
     }
 
     public record SendMessageRequest(Guid ConversationId, string Content);

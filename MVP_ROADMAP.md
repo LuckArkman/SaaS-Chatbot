@@ -48,15 +48,15 @@ Este roadmap detalha as 7 Sprints necessárias para construir o MVP funcional da
 
 ---
 
-## 🎉 MVP CONCLUÍDO! 🚀
-O sistema agora possui a base completa para operação SaaS Omnichannel.
+## 🎉 MVP CONCLUÍDO + AI INTEGRATED! 🚀
+O sistema agora possui a base completa para operação SaaS Omnichannel com inteligência artificial.
 - Identidade & Multi-Tenancy
 - Messaging Core & Gateway
 - Chat Real-time (UI Premium)
-- Automação (Flow Engine)
+- Automação (Flow Engine + AI Service)
 - Billing & White-Label
 
-**Próximos Passos (Pós-MVP):**
-1. Integração com IA (OpenAI/Gemini) para respostas inteligentes.
+**Próximos Passos (Evolução):**
+1. Integração real com OpenAI/Gemini (trocar o Mock pelo HttpClient).
 2. Dashboards avançados de Analytics.
 3. Aplicativo Mobile para atendentes.

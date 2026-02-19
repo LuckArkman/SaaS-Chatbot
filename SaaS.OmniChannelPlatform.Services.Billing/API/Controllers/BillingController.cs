@@ -87,5 +87,43 @@ namespace SaaS.OmniChannelPlatform.Services.Billing.API.Controllers
 
             return Ok(usage);
         }
+        [HttpGet("subscription/{tenantId}")]
+        [Authorize(Roles = "AdminMaster,Reseller")]
+        public async Task<IActionResult> GetStatus(Guid tenantId)
+        {
+            var subscription = await _context.Subscriptions
+                .FirstOrDefaultAsync(s => s.TenantId == tenantId);
+
+            if (subscription == null) return NotFound("Subscription not found");
+            return Ok(subscription);
+        }
+
+        [HttpPost("block/{tenantId}")]
+        [Authorize(Roles = "AdminMaster")]
+        public async Task<IActionResult> Block(Guid tenantId)
+        {
+            var subscription = await _context.Subscriptions
+                .FirstOrDefaultAsync(s => s.TenantId == tenantId);
+
+            if (subscription == null) return NotFound("Subscription not found");
+            
+            subscription.Status = SubscriptionStatus.Blocked;
+            await _context.SaveChangesAsync();
+            return Ok(new { Message = "Tenant blocked successfully." });
+        }
+
+        [HttpPost("unblock/{tenantId}")]
+        [Authorize(Roles = "AdminMaster")]
+        public async Task<IActionResult> Unblock(Guid tenantId)
+        {
+            var subscription = await _context.Subscriptions
+                .FirstOrDefaultAsync(s => s.TenantId == tenantId);
+
+            if (subscription == null) return NotFound("Subscription not found");
+
+            subscription.Status = SubscriptionStatus.Active;
+            await _context.SaveChangesAsync();
+            return Ok(new { Message = "Tenant unblocked successfully." });
+        }
     }
 }
