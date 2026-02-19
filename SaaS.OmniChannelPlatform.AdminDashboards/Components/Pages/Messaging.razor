@@ -1,0 +1,99 @@
+@page "/messaging"
+@inject ApiService ApiService
+
+@code {
+    private List<ConversationModel> conversations = new();
+    private ConversationModel? selectedConversation;
+
+    protected override async Task OnInitializedAsync()
+    {
+        conversations = await ApiService.GetConversationsAsync();
+        selectedConversation = conversations.FirstOrDefault();
+    }
+
+    private void SelectConversation(ConversationModel conv)
+    {
+        selectedConversation = conv;
+    }
+}
+
+<PageTitle>Mensagens | OmniSaaS</PageTitle>
+
+<div class="animate-fade">
+    <div style="margin-bottom: 2.5rem;">
+        <h1 class="outfit" style="font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem;">Central de Mensagens</h1>
+        <p style="color: var(--text-muted);">Monitore todas as conversas em tempo real.</p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 350px 1fr; gap: 1.5rem; height: calc(100vh - 200px);">
+        <!-- Sidebar: Conversation List -->
+        <div class="card" style="padding: 0; display: flex; flex-direction: column;">
+            <div style="padding: 1.5rem; border-bottom: 1px solid var(--border);">
+                <input type="text" placeholder="Buscar conversas..." style="width: 100%; background: var(--glass); border: 1px solid var(--border); border-radius: 12px; padding: 0.75rem 1rem; color: white;">
+            </div>
+            <div style="flex: 1; overflow-y: auto;">
+                @foreach (var conv in conversations)
+                {
+                    <div @onclick="() => SelectConversation(conv)" 
+                         style="padding: 1.5rem; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.2s; @(selectedConversation?.Id == conv.Id ? "background: var(--primary-glow);" : "")"
+                         onmouseover="this.style.background='var(--glass)'"
+                         onmouseout="this.style.background='@(selectedConversation?.Id == conv.Id ? "var(--primary-glow)" : "transparent")'">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
+                            <span style="font-weight: 700;">@conv.ContactName</span>
+                            <span style="font-size: 0.75rem; color: var(--text-muted);">@conv.LastUpdate.ToString("HH:mm")</span>
+                        </div>
+                        <p style="font-size: 0.85rem; color: rgba(255,255,255,0.7); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">@conv.LastMessage</p>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Main: Chat Window -->
+        <div class="card" style="display: flex; flex-direction: column; padding: 0;">
+            @if (selectedConversation != null)
+            {
+                <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 800;">@selectedConversation.ContactName.Substring(0, 2)</div>
+                        <div>
+                            <h4 style="margin: 0;" class="outfit">@selectedConversation.ContactName</h4>
+                            <span style="font-size: 0.75rem; color: #10b981;">● Online via @selectedConversation.Channel</span>
+                        </div>
+                    </div>
+                    <button class="btn-primary" style="padding: 0.5rem 1rem; font-size: 0.85rem;">Assumir Chat</button>
+                </div>
+                
+                <div style="flex: 1; padding: 2rem; overflow-y: auto; background: rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 1.5rem;">
+                    <!-- Incoming -->
+                    <div style="max-width: 70%; align-self: flex-start;">
+                        <div style="background: var(--glass); padding: 1rem 1.25rem; border-radius: 20px 20px 20px 0; border: 1px solid var(--border);">
+                            @selectedConversation.LastMessage
+                        </div>
+                        <span style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.5rem; display: block;">@selectedConversation.LastUpdate.ToString("HH:mm")</span>
+                    </div>
+
+                    <!-- Outgoing (Bot) -->
+                    <div style="max-width: 70%; align-self: flex-end; text-align: right;">
+                        <div style="background: var(--primary); color: white; padding: 1rem 1.25rem; border-radius: 20px 20px 0 20px;">
+                            Olá! Sou o assistente virtual. Como posso ajudar com sua dúvida sobre "@selectedConversation.LastMessage"?
+                        </div>
+                        <span style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.5rem; display: block;">@selectedConversation.LastUpdate.AddMinutes(1).ToString("HH:mm") • Respondido por Bot Inteligente</span>
+                    </div>
+                </div>
+
+                <div style="padding: 1.5rem; border-top: 1px solid var(--border);">
+                     <div style="display: flex; gap: 1rem;">
+                        <input type="text" placeholder="Digite sua mensagem..." style="flex: 1; background: var(--glass); border: 1px solid var(--border); border-radius: 12px; padding: 0.75rem 1rem; color: white;">
+                        <button class="btn-primary" style="border-radius: 12px; padding: 0.75rem;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg></button>
+                     </div>
+                </div>
+            }
+            else
+            {
+                <div style="flex: 1; display: flex; align-items: center; justify-content: center; color: var(--text-muted);">
+                    Selecione uma conversa para começar
+                </div>
+            }
+        </div>
+    </div>
+</div>

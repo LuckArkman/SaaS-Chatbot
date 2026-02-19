@@ -1,0 +1,106 @@
+﻿@page "/"
+@inject ApiService ApiService
+
+@code {
+    private BillingInfoModel? _billingInfo;
+    private List<ConversationModel> _recentConversations = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _billingInfo = await ApiService.GetBillingInfoAsync(Guid.Empty); // Demo tenant
+        _recentConversations = await ApiService.GetConversationsAsync();
+    }
+}
+
+<PageTitle>Dashboard Overview | OmniSaaS</PageTitle>
+
+<div class="animate-fade">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2.5rem;">
+        <div>
+            <h1 style="font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem;" class="outfit">Dashboard Analytics</h1>
+            <p style="color: var(--text-muted); font-size: 1.1rem;">Bem-vindo de volta! Aqui está um resumo do seu ecossistema.</p>
+        </div>
+        <button class="btn-primary">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Exportar Relatório
+        </button>
+    </div>
+
+    <!-- Quick Stats Grid -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; margin-bottom: 3rem;">
+        <div class="card">
+            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                <div style="background: var(--primary-glow); padding: 0.75rem; border-radius: 12px;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                </div>
+                <div>
+                    <p style="color: var(--text-muted); font-size: 0.9rem; font-weight: 600;">Mensagens Totais</p>
+                    <h3 style="font-size: 1.5rem; font-weight: 700;">@(_billingInfo?.CurrentUsage.ToString("N0") ?? "0")</h3>
+                </div>
+            </div>
+            <div style="color: #10b981; font-size: 0.85rem; font-weight: 600;">+12.5% vs mês anterior</div>
+        </div>
+
+        <div class="card">
+            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                <div style="background: var(--accent-glow); padding: 0.75rem; border-radius: 12px;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                </div>
+                <div>
+                    <p style="color: var(--text-muted); font-size: 0.9rem; font-weight: 600;">Usuários Ativos</p>
+                    <h3 style="font-size: 1.5rem; font-weight: 700;">@_recentConversations.Count</h3>
+                </div>
+            </div>
+            <div style="color: #10b981; font-size: 0.85rem; font-weight: 600;">+5.2% esta semana</div>
+        </div>
+
+        <div class="card">
+            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                <div style="background: rgba(245, 158, 11, 0.2); padding: 0.75rem; border-radius: 12px;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M12 2L2 7L12 12L22 7L12 2Z"></path><path d="M2 17L12 22L22 17"></path><path d="M2 12L12 17L22 12"></path></svg>
+                </div>
+                <div>
+                    <p style="color: var(--text-muted); font-size: 0.9rem; font-weight: 600;">Status do Bot</p>
+                    <h3 style="font-size: 1.5rem; font-weight: 700;">Online</h3>
+                </div>
+            </div>
+            <div style="color: #f59e0b; font-size: 0.85rem; font-weight: 600;">Estável</div>
+        </div>
+    </div>
+
+    <!-- Charts and Tables -->
+    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem;">
+        <div class="card" style="min-height: 400px;">
+            <h3 style="margin-bottom: 1.5rem;" class="outfit">Atividade dos Canais</h3>
+            <div style="height: 300px; display: flex; align-items: flex-end; gap: 1.5rem; padding-bottom: 1rem;">
+                <div style="flex: 1; background: var(--primary); height: 80%; border-radius: 8px 8px 4px 4px; opacity: 0.8;"></div>
+                <div style="flex: 1; background: var(--accent); height: 60%; border-radius: 8px 8px 4px 4px; opacity: 0.8;"></div>
+                <div style="flex: 1; background: var(--primary); height: 95%; border-radius: 8px 8px 4px 4px; opacity: 0.8;"></div>
+                <div style="flex: 1; background: var(--accent); height: 45%; border-radius: 8px 8px 4px 4px; opacity: 0.8;"></div>
+                <div style="flex: 1; background: var(--primary); height: 70%; border-radius: 8px 8px 4px 4px; opacity: 0.8;"></div>
+                <div style="flex: 1; background: var(--accent); height: 85%; border-radius: 8px 8px 4px 4px; opacity: 0.8;"></div>
+            </div>
+            <div style="display: flex; justify-content: space-around; color: var(--text-muted); font-size: 0.85rem;">
+                <span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-bottom: 1.5rem;" class="outfit">Assinatura Atual</h3>
+            <div style="text-align: center; padding: 1rem 0;">
+                <h4 style="color: var(--accent); font-size: 1.2rem; margin-bottom: 0.5rem;">Plano Enterprise</h4>
+                <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Vencimento em 12 dias</p>
+                
+                <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 16px; margin-bottom: 2rem;">
+                    <p style="font-size: 0.9rem; margin-bottom: 0.5rem;">Uso de Mensagens</p>
+                    <div style="height: 8px; background: rgba(255,255,255,0.1); border-radius: 10px; overflow: hidden; margin-bottom: 0.5rem;">
+                        <div style="width: 75%; height: 100%; background: linear-gradient(90deg, var(--primary), var(--accent));"></div>
+                    </div>
+                    <p style="font-size: 0.85rem; font-weight: 600;">75,432 / 100,000</p>
+                </div>
+
+                <button class="btn-primary" style="width: 100%; justify-content: center;">Upgrade agora</button>
+            </div>
+        </div>
+    </div>
+</div>

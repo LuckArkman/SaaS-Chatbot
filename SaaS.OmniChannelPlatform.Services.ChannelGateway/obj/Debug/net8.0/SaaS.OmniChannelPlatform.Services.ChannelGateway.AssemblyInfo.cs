@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SaaS.OmniChannelPlatform.Services.ChannelGateway")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+d2e37f8db878dcfbf60d0031b2de532cc60910b9")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+45195d62b6ba02ec260e5262922abc010d83901b")]
 [assembly: System.Reflection.AssemblyProductAttribute("SaaS.OmniChannelPlatform.Services.ChannelGateway")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SaaS.OmniChannelPlatform.Services.ChannelGateway")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
