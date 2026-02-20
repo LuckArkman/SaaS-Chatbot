@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-
 namespace SaaS.OmniChannelPlatform.Services.FlowEngine.Domain.Entities
 {
     public class FlowDefinition
@@ -16,11 +13,13 @@ namespace SaaS.OmniChannelPlatform.Services.FlowEngine.Domain.Entities
     {
         public Guid Id { get; set; } = Guid.NewGuid();
         public Guid FlowDefinitionId { get; set; }
-        public string Content { get; set; } = string.Empty; // Message to send
+        public string Content { get; set; } = string.Empty; // Message to send / System Prompt
         public int Order { get; set; }
         public StepType Type { get; set; } = StepType.Message;
         public string? ExpectedInput { get; set; } // For simple branching
         public Guid? NextStepId { get; set; }
+        public Guid? FallbackStepId { get; set; } // For InternalModel failed match
+        public Dictionary<string, string> Metadata { get; set; } = new();
     }
 
     public enum StepType
@@ -28,7 +27,8 @@ namespace SaaS.OmniChannelPlatform.Services.FlowEngine.Domain.Entities
         Message = 1,
         Input = 2,
         Handover = 3,
-        AI = 4
+        Ai = 4,
+        InternalModel = 5
     }
 
     public class FlowSession

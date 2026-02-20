@@ -32,6 +32,7 @@ namespace SaaS.OmniChannelPlatform.AdminDashboards.Models
         public double X { get; set; } = 100;
         public double Y { get; set; } = 100;
         public Guid? NextStepId { get; set; }
+        public Guid? FallbackStepId { get; set; } // For branching (e.g. Model Core not found)
         public Dictionary<string, string> Metadata { get; set; } = new();
         public string NodeCategory { get; set; } = "General"; 
     }

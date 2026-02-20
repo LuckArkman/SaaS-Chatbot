@@ -12,6 +12,7 @@ namespace SaaS.OmniChannelPlatform.Services.Messaging.Infrastructure.Persistence
         public DbSet<Conversation> Conversations { get; set; }
         public DbSet<Message> Messages { get; set; }
         public DbSet<Participant> Participants { get; set; }
+        public DbSet<ConversationNote> ConversationNotes { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -39,6 +40,14 @@ namespace SaaS.OmniChannelPlatform.Services.Messaging.Infrastructure.Persistence
                 entity.HasOne<Conversation>()
                     .WithMany(c => c.Participants)
                     .HasForeignKey(p => p.ConversationId);
+            });
+            modelBuilder.Entity<ConversationNote>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => e.ConversationId);
+                entity.HasOne<Conversation>()
+                    .WithMany(c => c.Notes)
+                    .HasForeignKey(n => n.ConversationId);
             });
         }
     }

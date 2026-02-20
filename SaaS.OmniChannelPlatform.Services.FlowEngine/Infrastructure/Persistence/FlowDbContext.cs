@@ -17,6 +17,15 @@ namespace SaaS.OmniChannelPlatform.Services.FlowEngine.Infrastructure.Persistenc
         {
             base.OnModelCreating(modelBuilder);
 
+            modelBuilder.Entity<FlowStep>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Metadata)
+                    .HasConversion(
+                        v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json. JsonSerializerOptions?)null),
+                        v => System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(v, (System.Text.Json.JsonSerializerOptions?)null) ?? new Dictionary<string, string>());
+            });
+
             modelBuilder.Entity<FlowDefinition>(entity =>
             {
                 entity.HasKey(e => e.Id);

@@ -43,6 +43,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     };
 });
 
+// MCP Client
+builder.Services.AddHttpClient<SaaS.OmniChannelPlatform.Services.AI.Infrastructure.Mcp.McpClient>();
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c => {
