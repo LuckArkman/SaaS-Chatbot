@@ -71,11 +71,43 @@ namespace SaaS.OmniChannelPlatform.Services.FlowEngine.Application.Consumers
                 var currentStep = await _context.Steps.FindAsync(session.CurrentStepId);
                 if (currentStep == null) return;
 
-                // Simple logic: if expecting input, check it. Otherwise take the next step.
-                var nextStep = await _context.Steps
-                    .Where(s => s.FlowDefinitionId == currentStep.FlowDefinitionId && s.Order > currentStep.Order)
-                    .OrderBy(s => s.Order)
-                    .FirstOrDefaultAsync();
+                FlowStep? nextStep = null;
+
+                if (currentStep.Type == StepType.InternalModel)
+                {
+                    var csvData = currentStep.Metadata.ContainsKey("CsvData") ? currentStep.Metadata["CsvData"] : "";
+                    if (TryMatchInternalModel(csvData, @event.Content, out var preProgrammedResponse))
+                    {
+                        // Found in CSV: Send response and move to NextStepId (Found path)
+                        await _publishEndpoint.Publish(new SendMessageIntegrationEvent(
+                            @event.TenantId, Guid.Empty, preProgrammedResponse, @event.SenderExternalId, @event.Channel));
+                        
+                        if (currentStep.NextStepId.HasValue)
+                            nextStep = await _context.Steps.FindAsync(currentStep.NextStepId.Value);
+                    }
+                    else
+                    {
+                        // Not found in CSV: Move to FallbackStepId (AI path)
+                        if (currentStep.FallbackStepId.HasValue)
+                            nextStep = await _context.Steps.FindAsync(currentStep.FallbackStepId.Value);
+                    }
+                }
+                else
+                {
+                    // Linear or Linked navigation
+                    if (currentStep.NextStepId.HasValue)
+                    {
+                        nextStep = await _context.Steps.FindAsync(currentStep.NextStepId.Value);
+                    }
+                    else
+                    {
+                        // Fallback to order if no specific link exists
+                        nextStep = await _context.Steps
+                            .Where(s => s.FlowDefinitionId == currentStep.FlowDefinitionId && s.Order > currentStep.Order)
+                            .OrderBy(s => s.Order)
+                            .FirstOrDefaultAsync();
+                    }
+                }
 
                 if (nextStep != null)
                 {
@@ -85,10 +117,35 @@ namespace SaaS.OmniChannelPlatform.Services.FlowEngine.Application.Consumers
                     if (nextStep.Type == StepType.Handover)
                     {
                         session.IsHandedOver = true;
+                        await _context.SaveChangesAsync();
+
+                        // Notify dashboard via event bus — Chat service will push to SignalR
+                        await _publishEndpoint.Publish(new HandoverIntegrationEvent(
+                            @event.TenantId,
+                            @event.SenderExternalId,
+                            @event.Channel,
+                            @event.SenderName,
+                            nextStep.Content  // Farewell message configured in the Handover node
+                        ));
+
+                        // Send the handover farewell message to the user
+                        if (!string.IsNullOrEmpty(nextStep.Content))
+                        {
+                            await _publishEndpoint.Publish(new SendMessageIntegrationEvent(
+                                @event.TenantId, Guid.Empty, nextStep.Content, @event.SenderExternalId, @event.Channel));
+                        }
+
+                        return;
                     }
 
                     await _context.SaveChangesAsync();
-                    await SendResponse(context, nextStep, @event);
+                    
+                    // If the step just sent a response (InternalModel found), we might want to stop or move again.
+                    // But for now, if it's not a router-only node, we send the content of the next step.
+                    if (nextStep.Type != StepType.InternalModel)
+                    {
+                        await SendResponse(context, nextStep, @event);
+                    }
                 }
                 else
                 {
@@ -96,6 +153,30 @@ namespace SaaS.OmniChannelPlatform.Services.FlowEngine.Application.Consumers
                     await _context.SaveChangesAsync();
                 }
             }
+        }
+
+        private bool TryMatchInternalModel(string csvData, string input, out string response)
+        {
+            response = string.Empty;
+            if (string.IsNullOrEmpty(csvData)) return false;
+
+            var lines = csvData.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var line in lines)
+            {
+                var parts = line.Split(';'); // Using semicolon as default CSV separator
+                if (parts.Length >= 2)
+                {
+                    var expectedInput = parts[0].Trim();
+                    var programmedOutput = parts[1].Trim();
+
+                    if (string.Equals(input.Trim(), expectedInput, StringComparison.OrdinalIgnoreCase))
+                    {
+                        response = programmedOutput;
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         private async Task SendResponse(ConsumeContext<MessageReceivedIntegrationEvent> context, FlowStep step, MessageReceivedIntegrationEvent originalEvent)
@@ -106,7 +187,7 @@ namespace SaaS.OmniChannelPlatform.Services.FlowEngine.Application.Consumers
                 return;
             }
 
-            if (step.Type == StepType.AI)
+            if (step.Type == StepType.Ai)
             {
                 _logger.LogInformation("Step is AI. Publishing AI Request.");
                 await _publishEndpoint.Publish(new ProcessAIRequestIntegrationEvent(
@@ -117,6 +198,13 @@ namespace SaaS.OmniChannelPlatform.Services.FlowEngine.Application.Consumers
                     originalEvent.SenderExternalId,
                     step.Content // System Prompt can be stored in step.Content for AI steps
                 ));
+                return;
+            }
+
+            if (step.Type == StepType.InternalModel)
+            {
+                // This shouldn't normally be called directly for InternalModel because Consume handles it,
+                // but if it is, we just process the logic.
                 return;
             }
 

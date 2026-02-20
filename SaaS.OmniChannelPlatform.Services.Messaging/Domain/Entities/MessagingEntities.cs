@@ -11,10 +11,13 @@ namespace SaaS.OmniChannelPlatform.Services.Messaging.Domain.Entities
         public string ExternalId { get; set; } = string.Empty; // ID from WhatsApp/Telegram
         public string Channel { get; set; } = string.Empty;
         public ConversationStatus Status { get; set; } = ConversationStatus.Open;
+        public bool IsHandedOver { get; set; } = false;        // True when bot escalated to human
+        public Guid? AssignedAgentId { get; set; }             // Agent who took over (if any)
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
         public List<Participant> Participants { get; set; } = new();
         public List<Message> Messages { get; set; } = new();
+        public List<ConversationNote> Notes { get; set; } = new();
     }
 
     public class Message
@@ -39,5 +42,19 @@ namespace SaaS.OmniChannelPlatform.Services.Messaging.Domain.Entities
         public string ExternalId { get; set; } = string.Empty; // Phone number or Channel ID
         public string Name { get; set; } = string.Empty;
         public bool IsBot { get; set; } = false;
+    }
+
+    /// <summary>
+    /// Internal notes left by agents on a conversation. Never sent to the end user.
+    /// </summary>
+    public class ConversationNote
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+        public Guid ConversationId { get; set; }
+        public Guid TenantId { get; set; }
+        public Guid AgentId { get; set; }           // Who wrote the note
+        public string AgentName { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 }
