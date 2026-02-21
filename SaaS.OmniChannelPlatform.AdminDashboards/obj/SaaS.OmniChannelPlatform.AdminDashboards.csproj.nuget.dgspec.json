@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\SaaS.OmniChannelPlatform.AdminDashboards.csproj": {}
+    "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\SaaS.OmniChannelPlatform.AdminDashboards.csproj": {}
   },
   "projects": {
-    "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\SaaS.OmniChannelPlatform.AdminDashboards.csproj": {
+    "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\SaaS.OmniChannelPlatform.AdminDashboards.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\SaaS.OmniChannelPlatform.AdminDashboards.csproj",
+        "projectUniqueName": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\SaaS.OmniChannelPlatform.AdminDashboards.csproj",
         "projectName": "SaaS.OmniChannelPlatform.AdminDashboards",
-        "projectPath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\SaaS.OmniChannelPlatform.AdminDashboards.csproj",
+        "projectPath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\SaaS.OmniChannelPlatform.AdminDashboards.csproj",
         "packagesPath": "C:\\Users\\MPLopes\\.nuget\\packages\\",
-        "outputPath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\obj\\",
+        "outputPath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
