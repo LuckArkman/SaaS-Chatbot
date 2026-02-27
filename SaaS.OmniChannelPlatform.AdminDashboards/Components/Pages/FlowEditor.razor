@@ -1,4 +1,5 @@
-@page "/flows/edit/{Id:guid?}"
+@page "/flows/edit"
+@page "/flows/edit/{Id:guid}"
 @inject ApiService ApiService
 @inject NavigationManager Navigation
 @using Microsoft.AspNetCore.Components.Web
@@ -42,16 +43,16 @@
     private void AddStep(string type, string category)
     {
         var title = GetTitle(type);
+        // Position it relative to current view or center
         var step = new FlowStepModel
         {
             Type = type,
             Title = title,
             NodeCategory = category,
-            X = 300,
-            Y = 150
+            X = 100 + (_flow.Steps.Count * 20), // Subtle cascade
+            Y = 100 + (_flow.Steps.Count * 20)
         };
         
-        // Initialize metadata if needed
         if (type == "LLMProcessor")
         {
             step.Metadata["Provider"] = "Google";
@@ -64,6 +65,8 @@
         }
 
         _flow.Steps.Add(step);
+        _selectedNode = step;
+        StateHasChanged();
     }
 
     private string GetTitle(string type) => type switch {
@@ -97,6 +100,7 @@
         {
             _activeNode.X = e.ClientX - _offsetX;
             _activeNode.Y = e.ClientY - _offsetY;
+            StateHasChanged();
         }
     }
 
@@ -566,8 +570,34 @@
 
 <style>
     /* layout */
-    .flow-layout { display: flex; flex-direction: column; height: 100vh; background: #0b0e11; color: #f8fafc; font-family: 'Inter', sans-serif; overflow: hidden; }
-    .flow-header { height: 64px; background: #161a21; border-bottom: 1px solid #2d3643; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; flex-shrink: 0; box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 200; }
+    .flow-layout { 
+        position: fixed; 
+        top: 0; 
+        right: 0; 
+        bottom: 0; 
+        left: var(--sidebar-width); 
+        display: flex; 
+        flex-direction: column; 
+        background: #0b0e11; 
+        color: #f8fafc; 
+        font-family: 'Inter', sans-serif; 
+        overflow: hidden; 
+        z-index: 50;
+    }
+    
+    .flow-header { 
+        height: 64px; 
+        background: #161a21; 
+        border-bottom: 1px solid #2d3643; 
+        display: flex; 
+        align-items: center; 
+        justify-content: space-between; 
+        padding: 0 1.5rem; 
+        flex-shrink: 0; 
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3); 
+        z-index: 200; 
+    }
+    
     .header-left { display: flex; align-items: center; gap: 1rem; }
     .header-info h1 { font-size: 1.1rem; font-weight: 800; margin: 0; color: white; letter-spacing: -0.5px; }
     .status-indicator { font-size: 0.65rem; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
@@ -576,7 +606,7 @@
     .flow-workspace { display: flex; flex: 1; overflow: hidden; position: relative; }
 
     /* Node Sidebar */
-    .node-sidebar { width: 260px; background: #161a21; border-right: 1px solid #2d3643; display: flex; flex-direction: column; flex-shrink: 0; z-index: 100; }
+    .node-sidebar { width: 280px; background: #161a21; border-right: 1px solid #2d3643; display: flex; flex-direction: column; flex-shrink: 0; z-index: 100; }
     .sidebar-header { padding: 1.2rem; border-bottom: 1px solid #2d3643; }
     .search-input { width: 100%; background: #0f1115; border: 1px solid #2d3643; border-radius: 8px; padding: 0.6rem 0.8rem; color: white; font-size: 0.8rem; outline: none; transition: 0.2s; }
     .search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,0.2); }
@@ -584,16 +614,17 @@
     .node-groups { flex: 1; overflow-y: auto; padding: 1.2rem; display: flex; flex-direction: column; gap: 1.5rem; }
     .node-group label { display: block; font-size: 0.65rem; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.8rem; }
     
-    .sidebar-item { background: #0f1115; border: 1px solid #2d3643; border-radius: 10px; padding: 0.75rem; display: flex; align-items: center; gap: 0.8rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: 0.2s; margin-bottom: 0.5rem; }
-    .sidebar-item:hover { transform: translateX(5px); border-color: #3b82f6; background: #1c232d; }
-    .sidebar-item .icon { width: 32px; height: 32px; border-radius: 6px; background: #1c232d; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 800; border: 1px solid #2d3643; }
+    .sidebar-item { background: #0f1115; border: 1px solid #2d3643; border-radius: 12px; padding: 0.8rem; display: flex; align-items: center; gap: 0.8rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: 0.2s; margin-bottom: 0.6rem; user-select: none; }
+    .sidebar-item:hover { transform: translateX(8px); border-color: var(--primary); background: #1c232d; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+    .sidebar-item:active { transform: scale(0.96); }
+    .sidebar-item .icon { width: 36px; height: 36px; border-radius: 8px; background: #1c232d; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 800; border: 1px solid #2d3643; }
     .sidebar-item.trigger .icon { color: #f59e0b; border-bottom: 2px solid #f59e0b; }
     .sidebar-item.process .icon { color: #a855f7; border-bottom: 2px solid #a855f7; }
     .sidebar-item.output .icon { color: #10b981; border-bottom: 2px solid #10b981; }
 
-    /* Canvas Area ref*/
+    /* Canvas Area */
     .canvas-area { flex: 1; position: relative; background: #13171e; overflow: hidden; cursor: crosshair; }
-    .canvas-grid { position: absolute; inset: 0; background-image: radial-gradient(#2d3643 1px, transparent 1px); background-size: 24px 24px; pointer-events: none; }
+    .canvas-grid { position: absolute; inset: 0; background-image: radial-gradient(#2d3643 1px, transparent 1px); background-size: 32px 32px; pointer-events: none; }
     .line-svg { position: absolute; inset: 0; pointer-events: none; z-index: 5; width: 100%; height: 100%; }
 
     /* Nodes (N8N Style) */
@@ -647,9 +678,29 @@
     .ai-icon { font-size: 1.3rem; }
     .start-icon { color: #f59e0b; }
 
+    .panel-qr-card { background: white; padding: 1.5rem; border-radius: 12px; display: flex; flex-direction: column; align-items: center; gap: 1rem; margin-top: 1rem; }
+    .panel-qr-card img { width: 200px; height: 200px; border: 4px solid #fff; }
+    .panel-qr-card span { color: #000; font-weight: 800; font-size: 0.8rem; }
+
     .btn-icon { background: none; border: none; color: #64748b; cursor: pointer; transition: 0.2s; padding: 0.5rem; border-radius: 8px; }
     .btn-icon:hover { background: #0f1115; color: white; }
 
     .close { background: none; border: none; color: #64748b; cursor: pointer; font-size: 1.5rem; line-height: 1; }
     .close:hover { color: white; }
+
+    /* Modal refine */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+    .modal-card { width: 500px; max-height: 90vh; overflow-y: auto; background: #161a21; border: 1px solid #2d3643; border-radius: 20px; padding: 2rem; }
+    .connection-item { background: #0f1115; border: 1px solid #2d3643; border-radius: 12px; padding: 1.2rem; transition: 0.2s; }
+    .connection-item.active { border-color: #10b981; box-shadow: 0 0 15px rgba(16, 185, 129, 0.1); }
+    .status-badge { font-size: 0.65rem; font-weight: 800; padding: 0.3rem 0.6rem; border-radius: 6px; }
+    .status-badge.connected { background: #10b98120; color: #10b981; }
+    .status-badge.disconnected { background: #ef444420; color: #ef4444; }
+    .status-badge.pending { background: #f59e0b20; color: #f59e0b; }
+
+    .btn-outline { background: none; border: 1px solid #2d3643; color: white; padding: 0.6rem 1.2rem; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+    .btn-outline:hover { background: var(--glass); border-color: white; }
+
+    .status-pulse { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); animation: pulse 1.5s infinite; }
+    @@keyframes pulse { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(2.5); opacity: 0; } }
 </style>

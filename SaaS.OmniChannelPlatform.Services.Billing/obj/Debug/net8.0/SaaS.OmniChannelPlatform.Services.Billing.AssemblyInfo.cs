@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SaaS.OmniChannelPlatform.Services.Billing")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2421f168ce6b159428909a114862f5aa482b21e2")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+22dacaf5f63ac03ed5ef45674d747965e4197a1c")]
 [assembly: System.Reflection.AssemblyProductAttribute("SaaS.OmniChannelPlatform.Services.Billing")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SaaS.OmniChannelPlatform.Services.Billing")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

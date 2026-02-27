@@ -1,33 +1,129 @@
 @page "/messaging"
+@using Microsoft.AspNetCore.SignalR.Client
+@using SaaS.OmniChannelPlatform.AdminDashboards.Models
+@using SaaS.OmniChannelPlatform.AdminDashboards.Services
 @inject ApiService ApiService
+@inject IConfiguration Config
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
 
 @code {
     private List<ConversationModel> conversations = new();
     private ConversationModel? selectedConversation;
+    private List<MessageModel> messages = new();
+    private string newMessage = "";
+    private HubConnection? hubConnection;
+    private bool isConnected => hubConnection?.State == HubConnectionState.Connected;
+    private string statusMessage = "Conectando...";
 
     protected override async Task OnInitializedAsync()
     {
         conversations = await ApiService.GetConversationsAsync();
         selectedConversation = conversations.FirstOrDefault();
+        if (selectedConversation != null) await LoadMessages(selectedConversation.Id);
+
+        var hubUrl = Config["ApiSettings:ChatHubUrl"] ?? "http://localhost:5006/hubs/chat";
+        var tenantId = "88888888-4444-4444-4444-121212121212"; // Mock Tenant for MVP Demo
+
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl($"{hubUrl}?tenantId={tenantId}")
+            .WithAutomaticReconnect()
+            .Build();
+
+        hubConnection.On<object>("ReceiveMessage", (data) =>
+        {
+            InvokeAsync(async () =>
+            {
+                // In a real app we'd parse this properly. Here we refresh to keep it simple and consistent.
+                conversations = await ApiService.GetConversationsAsync();
+                if (selectedConversation != null) await LoadMessages(selectedConversation.Id);
+                StateHasChanged();
+            });
+        });
+
+        hubConnection.On<object>("ConversationHandedOver", (data) =>
+        {
+            InvokeAsync(async () =>
+            {
+                // Logic for notification could go here
+                conversations = await ApiService.GetConversationsAsync();
+                StateHasChanged();
+            });
+        });
+
+        try
+        {
+            await hubConnection.StartAsync();
+            statusMessage = "Conectado";
+        }
+        catch (Exception ex)
+        {
+            statusMessage = "Erro na conexão real-time. Usando modo polling.";
+            Console.WriteLine(ex.Message);
+        }
     }
 
-    private void SelectConversation(ConversationModel conv)
+    private async Task LoadMessages(Guid conversationId)
+    {
+        // Mocking message load for now as Messaging service history is behind another hop
+        messages = new List<MessageModel>
+        {
+            new() { Id = Guid.NewGuid(), Content = "Olá, gostaria de saber mais.", Sender = "Cliente", CreatedAt = DateTime.Now.AddMinutes(-10), IsBot = false },
+            new() { Id = Guid.NewGuid(), Content = "Olá! Como posso ajudar?", Sender = "Bot", CreatedAt = DateTime.Now.AddMinutes(-9), IsBot = true }
+        };
+    }
+
+    private async Task SelectConversation(ConversationModel conv)
     {
         selectedConversation = conv;
+        await LoadMessages(conv.Id);
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(newMessage) || selectedConversation == null) return;
+
+        var success = await ApiService.SendMessageAsync(selectedConversation.Id, newMessage);
+        if (success)
+        {
+            messages.Add(new MessageModel { Content = newMessage, Sender = "Agente", CreatedAt = DateTime.Now, IsBot = false });
+            newMessage = "";
+        }
+    }
+
+    private async Task Takeover()
+    {
+        if (selectedConversation == null) return;
+        var agentId = Guid.NewGuid(); // In real app, from Auth
+        var tenantId = Guid.Parse("88888888-4444-4444-4444-121212121212");
+        
+        await ApiService.TakeoverConversationAsync(selectedConversation.Id, agentId, tenantId);
+        selectedConversation.IsHandedOver = true;
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
     }
 }
 
 <PageTitle>Mensagens | OmniSaaS</PageTitle>
 
 <div class="animate-fade">
-    <div style="margin-bottom: 2.5rem;">
-        <h1 class="outfit" style="font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem;">Central de Mensagens</h1>
-        <p style="color: var(--text-muted);">Monitore todas as conversas em tempo real.</p>
+    <div style="margin-bottom: 2.5rem; display: flex; justify-content: space-between; align-items: flex-end;">
+        <div>
+            <h1 class="outfit" style="font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem;">Central de Mensagens</h1>
+            <p style="color: var(--text-muted);">Monitore todas as conversas em tempo real. <span style="font-size: 0.8rem; color: @(isConnected ? "#10b981" : "#ef4444")">● @statusMessage</span></p>
+        </div>
     </div>
 
-    <div style="display: grid; grid-template-columns: 350px 1fr; gap: 1.5rem; height: calc(100vh - 200px);">
+    <div style="display: grid; grid-template-columns: 350px 1fr; gap: 1.5rem; height: calc(100vh - 250px);">
         <!-- Sidebar: Conversation List -->
-        <div class="card" style="padding: 0; display: flex; flex-direction: column;">
+        <div class="card" style="padding: 0; display: flex; flex-direction: column; overflow: hidden;">
             <div style="padding: 1.5rem; border-bottom: 1px solid var(--border);">
                 <input type="text" placeholder="Buscar conversas..." style="width: 100%; background: var(--glass); border: 1px solid var(--border); border-radius: 12px; padding: 0.75rem 1rem; color: white;">
             </div>
@@ -35,65 +131,104 @@
                 @foreach (var conv in conversations)
                 {
                     <div @onclick="() => SelectConversation(conv)" 
-                         style="padding: 1.5rem; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.2s; @(selectedConversation?.Id == conv.Id ? "background: var(--primary-glow);" : "")"
-                         onmouseover="this.style.background='var(--glass)'"
-                         onmouseout="this.style.background='@(selectedConversation?.Id == conv.Id ? "var(--primary-glow)" : "transparent")'">
+                         style="padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); cursor: pointer; transition: all 0.2s; position: relative; @(selectedConversation?.Id == conv.Id ? "background: rgba(var(--primary-rgb), 0.15);" : "")"
+                         class="conv-item">
+                        @if (conv.IsHandedOver)
+                        {
+                            <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: #f59e0b;"></div>
+                        }
                         <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
-                            <span style="font-weight: 700;">@conv.ContactName</span>
+                            <span style="font-weight: 700; color: white;">@conv.ContactName</span>
                             <span style="font-size: 0.75rem; color: var(--text-muted);">@conv.LastUpdate.ToString("HH:mm")</span>
                         </div>
-                        <p style="font-size: 0.85rem; color: rgba(255,255,255,0.7); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">@conv.LastMessage</p>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <p style="font-size: 0.85rem; color: rgba(255,255,255,0.6); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; flex: 1;">@conv.LastMessage</p>
+                            @if (conv.IsHandedOver)
+                            {
+                                <span title="Aguardando Humano" style="background: #f59e0b; color: black; font-size: 0.6rem; padding: 2px 6px; border-radius: 4px; font-weight: 800; margin-left: 8px;">ESCALADO</span>
+                            }
+                        </div>
                     </div>
                 }
             </div>
         </div>
 
         <!-- Main: Chat Window -->
-        <div class="card" style="display: flex; flex-direction: column; padding: 0;">
+        <div class="card" style="display: flex; flex-direction: column; padding: 0; overflow: hidden;">
             @if (selectedConversation != null)
             {
-                <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02);">
                     <div style="display: flex; align-items: center; gap: 1rem;">
-                        <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 800;">@selectedConversation.ContactName.Substring(0, 2)</div>
+                        <div style="width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(135deg, var(--primary), #8b5cf6); display: flex; align-items: center; justify-content: center; font-weight: 800; color: white; box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);">
+                            @(selectedConversation.ContactName.Length > 2 ? selectedConversation.ContactName.Substring(0, 2) : "??")
+                        </div>
                         <div>
-                            <h4 style="margin: 0;" class="outfit">@selectedConversation.ContactName</h4>
-                            <span style="font-size: 0.75rem; color: #10b981;">● Online via @selectedConversation.Channel</span>
+                            <h4 style="margin: 0; font-size: 1.1rem;" class="outfit">@selectedConversation.ContactName</h4>
+                            <span style="font-size: 0.75rem; color: #10b981; display: flex; align-items: center; gap: 4px;">
+                                <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981; display: inline-block;"></span>
+                                Ativo via @selectedConversation.Channel
+                            </span>
                         </div>
                     </div>
-                    <button class="btn-primary" style="padding: 0.5rem 1rem; font-size: 0.85rem;">Assumir Chat</button>
+                    <div style="display: flex; gap: 0.75rem;">
+                        @if (selectedConversation.IsHandedOver)
+                        {
+                            <button @onclick="Takeover" class="btn-primary" style="padding: 0.6rem 1.25rem; font-size: 0.85rem; background: #f59e0b; border-color: #f59e0b; color: black;">Assumir Atendimento</button>
+                        }
+                        <button class="btn-primary" style="padding: 0.6rem 1.25rem; font-size: 0.85rem; background: transparent; border: 1px solid var(--border);">Transferir</button>
+                    </div>
                 </div>
                 
-                <div style="flex: 1; padding: 2rem; overflow-y: auto; background: rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 1.5rem;">
-                    <!-- Incoming -->
-                    <div style="max-width: 70%; align-self: flex-start;">
-                        <div style="background: var(--glass); padding: 1rem 1.25rem; border-radius: 20px 20px 20px 0; border: 1px solid var(--border);">
-                            @selectedConversation.LastMessage
+                <div style="flex: 1; padding: 2rem; overflow-y: auto; background: rgba(0,0,0,0.15); display: flex; flex-direction: column; gap: 1.25rem;">
+                    @foreach (var msg in messages)
+                    {
+                        <div style="max-width: 75%; align-self: @(msg.Sender == "Agente" || msg.IsBot ? "flex-end" : "flex-start"); margin-bottom: 0.5rem;">
+                            <div style="padding: 1rem 1.25rem; border-radius: @(msg.Sender == "Agente" || msg.IsBot ? "18px 18px 2px 18px" : "18px 18px 18px 2px"); 
+                                        background: @(msg.IsBot ? "rgba(var(--primary-rgb), 0.1)" : msg.Sender == "Agente" ? "var(--primary)" : "var(--glass)"); 
+                                        border: 1px solid @(msg.IsBot ? "var(--primary)" : msg.Sender == "Agente" ? "var(--primary)" : "var(--border)");
+                                        color: @(msg.Sender == "Agente" ? "white" : "white");">
+                                @msg.Content
+                            </div>
+                            <div style="display: flex; justify-content: @(msg.Sender == "Agente" || msg.IsBot ? "flex-end" : "flex-start"); gap: 6px; margin-top: 4px; align-items: center;">
+                                <span style="font-size: 0.65rem; color: var(--text-muted);">@msg.CreatedAt.ToString("HH:mm")</span>
+                                @if (msg.IsBot)
+                                {
+                                    <span style="font-size: 0.6rem; color: var(--primary); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">• Bot</span>
+                                }
+                            </div>
                         </div>
-                        <span style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.5rem; display: block;">@selectedConversation.LastUpdate.ToString("HH:mm")</span>
-                    </div>
-
-                    <!-- Outgoing (Bot) -->
-                    <div style="max-width: 70%; align-self: flex-end; text-align: right;">
-                        <div style="background: var(--primary); color: white; padding: 1rem 1.25rem; border-radius: 20px 20px 0 20px;">
-                            Olá! Sou o assistente virtual. Como posso ajudar com sua dúvida sobre "@selectedConversation.LastMessage"?
-                        </div>
-                        <span style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.5rem; display: block;">@selectedConversation.LastUpdate.AddMinutes(1).ToString("HH:mm") • Respondido por Bot Inteligente</span>
-                    </div>
+                    }
                 </div>
 
-                <div style="padding: 1.5rem; border-top: 1px solid var(--border);">
-                     <div style="display: flex; gap: 1rem;">
-                        <input type="text" placeholder="Digite sua mensagem..." style="flex: 1; background: var(--glass); border: 1px solid var(--border); border-radius: 12px; padding: 0.75rem 1rem; color: white;">
-                        <button class="btn-primary" style="border-radius: 12px; padding: 0.75rem;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg></button>
+                <div style="padding: 1.5rem; background: rgba(255,255,255,0.02); border-top: 1px solid var(--border);">
+                     <div style="display: flex; gap: 1rem; align-items: center;">
+                        <button style="background: none; border: none; color: var(--text-muted); cursor: pointer;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"></path></svg></button>
+                        <input type="text" @bind="newMessage" @bind:event="oninput" @onkeydown="@(e => { if(e.Key == "Enter") SendMessage(); })"
+                               placeholder="Digite sua mensagem..." 
+                               style="flex: 1; background: var(--glass); border: 1px solid var(--border); border-radius: 12px; padding: 0.85rem 1.25rem; color: white; outline: none; transition: border-color 0.2s;"
+                               onfocus="this.style.borderColor='var(--primary)'"
+                               onblur="this.style.borderColor='var(--border)'">
+                        <button class="btn-primary" @onclick="SendMessage" style="border-radius: 12px; width: 48px; height: 48px; padding: 0; display: flex; align-items: center; justify-content: center; transform: rotate(45deg); margin-left: 0.5rem;">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="transform: rotate(-10deg) translate(2px, -2px);"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                        </button>
                      </div>
                 </div>
             }
             else
             {
-                <div style="flex: 1; display: flex; align-items: center; justify-content: center; color: var(--text-muted);">
-                    Selecione uma conversa para começar
+                <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); gap: 1.5rem;">
+                    <div style="width: 80px; height: 80px; border-radius: 50%; background: var(--glass); display: flex; align-items: center; justify-content: center; opacity: 0.5;">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                    </div>
+                    <p style="font-size: 1.1rem;">Selecione uma conversa para começar o atendimento</p>
                 </div>
             }
         </div>
     </div>
 </div>
+
+<style>
+    .conv-item:hover {
+        background: rgba(255,255,255,0.05);
+    }
+</style>

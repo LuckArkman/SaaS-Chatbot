@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\SaaS.OmniChannelPlatform.AdminDashboards.csproj": {}
+    "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\SaaS.OmniChannelPlatform.AdminDashboards.csproj": {}
   },
   "projects": {
-    "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\SaaS.OmniChannelPlatform.AdminDashboards.csproj": {
+    "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\SaaS.OmniChannelPlatform.AdminDashboards.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\SaaS.OmniChannelPlatform.AdminDashboards.csproj",
+        "projectUniqueName": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\SaaS.OmniChannelPlatform.AdminDashboards.csproj",
         "projectName": "SaaS.OmniChannelPlatform.AdminDashboards",
-        "projectPath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\SaaS.OmniChannelPlatform.AdminDashboards.csproj",
+        "projectPath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\SaaS.OmniChannelPlatform.AdminDashboards.csproj",
         "packagesPath": "C:\\Users\\MPLopes\\.nuget\\packages\\",
-        "outputPath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\obj\\",
+        "outputPath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -50,6 +50,16 @@
       "frameworks": {
         "net8.0": {
           "targetAlias": "net8.0",
+          "dependencies": {
+            "Microsoft.AspNetCore.SignalR.Client": {
+              "target": "Package",
+              "version": "[10.0.3, )"
+            },
+            "Microsoft.Extensions.Http": {
+              "target": "Package",
+              "version": "[10.0.3, )"
+            }
+          },
           "imports": [
             "net461",
             "net462",

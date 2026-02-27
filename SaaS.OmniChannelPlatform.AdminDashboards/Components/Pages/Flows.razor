@@ -22,20 +22,20 @@
             <h1 class="outfit" style="font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem;">Fluxos de Atendimento</h1>
             <p style="color: var(--text-muted);">Configure a inteligência do seu bot e caminhos de conversação.</p>
         </div>
-        <button class="btn-primary" @onclick="CreateFlow">
+        <a href="/flows/edit" class="btn-primary" style="text-decoration: none;">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7L12 12L22 7L12 2Z"></path><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
             Criar Novo Fluxo
-        </button>
+        </a>
     </div>
 
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
         @foreach (var flow in _flows)
         {
-            <div class="card">
+            <a href="/flows/edit/@flow.Id" class="card" style="cursor: pointer; text-decoration: none; display: flex; flex-direction: column; color: inherit; transition: transform 0.2s, border-color 0.2s;">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem;">
                     <div>
-                        <h3 class="outfit">@flow.Name</h3>
-                        <p style="font-size: 0.85rem; color: var(--text-muted);">ID: @flow.Id.ToString().Substring(0,8)...</p>
+                        <h3 class="outfit" style="margin: 0;">@flow.Name</h3>
+                        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">ID: @flow.Id.ToString().Substring(0,8)...</p>
                     </div>
                     @if (flow.IsActive)
                     {
@@ -46,7 +46,7 @@
                         <div style="background: rgba(255, 255, 255, 0.1); color: var(--text-muted); padding: 0.2rem 0.6rem; border-radius: 6px; font-size: 0.75rem; font-weight: 700;">INATIVO</div>
                     }
                 </div>
-                <div style="margin-bottom: 2rem;">
+                <div style="margin-bottom: 2rem; flex: 1;">
                     <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem; color: var(--text-muted); font-size: 0.85rem;">
                         <span>@flow.StepsCount Passos</span>
                         <span>•</span>
@@ -55,19 +55,20 @@
                     <div style="font-size: 0.9rem;">Ultima edição: @flow.LastModified.ToString("g")</div>
                 </div>
                 <div style="display: flex; gap: 0.75rem;">
-                    <button class="btn-primary" style="flex: 1; font-size: 0.85rem; padding: 0.5rem;" @onclick="() => EditFlow(flow.Id)">Editar</button>
-                    <button style="flex: 1; font-size: 0.85rem; padding: 0.5rem; background: var(--glass); border: 1px solid var(--border); border-radius: 12px; color: var(--text-main); font-weight: 600; cursor: pointer;">
+                    <button class="btn-primary" style="flex: 1; font-size: 0.85rem; padding: 0.5rem;">Editar</button>
+                    <button @onclick:stopPropagation="true" @onclick:preventDefault="true"
+                            style="flex: 1; font-size: 0.85rem; padding: 0.5rem; background: var(--glass); border: 1px solid var(--border); border-radius: 12px; color: var(--text-main); font-weight: 600; cursor: pointer;">
                         @(flow.IsActive ? "Pausar" : "Ativar")
                     </button>
                 </div>
-            </div>
+            </a>
         }
 
-         <div class="card" @onclick="CreateFlow" style="display: flex; flex-direction: column; align-items: center; justify-content: center; border-style: dashed; background: none; cursor: pointer;">
+         <a href="/flows/edit" class="card" style="display: flex; flex-direction: column; align-items: center; justify-content: center; border-style: dashed; background: none; cursor: pointer; text-decoration: none; color: inherit;">
             <div style="background: var(--glass); padding: 1rem; border-radius: 50%; margin-bottom: 1rem;">
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </div>
             <p style="color: var(--text-muted); font-weight: 600;">Criar fluxo do zero</p>
-        </div>
+        </a>
     </div>
 </div>

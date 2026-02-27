@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SaaS.OmniChannelPlatform.Services.AI.Application.Consumers;
+using SaaS.OmniChannelPlatform.Services.AI.Infrastructure.Mcp;
+using SaaS.OmniChannelPlatform.Services.AI.Infrastructure.AI;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);

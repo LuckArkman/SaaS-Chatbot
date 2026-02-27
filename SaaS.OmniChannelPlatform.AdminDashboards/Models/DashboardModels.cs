@@ -68,6 +68,7 @@ namespace SaaS.OmniChannelPlatform.AdminDashboards.Models
         public string LastMessage { get; set; } = string.Empty;
         public DateTime LastUpdate { get; set; }
         public string Channel { get; set; } = "WhatsApp";
+        public bool IsHandedOver { get; set; }
     }
 
     public class BillingInfoModel

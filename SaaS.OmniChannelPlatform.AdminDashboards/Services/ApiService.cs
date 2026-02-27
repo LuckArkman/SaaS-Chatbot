@@ -43,7 +43,7 @@ namespace SaaS.OmniChannelPlatform.AdminDashboards.Services
                 {
                     new() 
                     { 
-                        Id = Guid.NewGuid(), 
+                        Id = Guid.Parse("500a5bc1-da1e-450b-8515-492728282828"), 
                         Name = "Boas Vindas", 
                         IsActive = true, 
                         IsAIEnabled = true, 
@@ -98,6 +98,26 @@ namespace SaaS.OmniChannelPlatform.AdminDashboards.Services
                 // Return persistent mock list for demo
                 return _mockConnections;
             }
+        }
+
+        public async Task<bool> SendMessageAsync(Guid conversationId, string content)
+        {
+            try
+            {
+                var response = await _httpClient.PostAsJsonAsync("api/Messaging/send", new { ConversationId = conversationId, Content = content });
+                return response.IsSuccessStatusCode;
+            }
+            catch { return false; }
+        }
+
+        public async Task<bool> TakeoverConversationAsync(Guid conversationId, Guid agentId, Guid tenantId)
+        {
+            try
+            {
+                var response = await _httpClient.PostAsJsonAsync($"api/conversations/{conversationId}/takeover", new { TenantId = tenantId, AgentId = agentId });
+                return response.IsSuccessStatusCode;
+            }
+            catch { return false; }
         }
 
         private static List<ChannelConnectionModel> _mockConnections = new()
