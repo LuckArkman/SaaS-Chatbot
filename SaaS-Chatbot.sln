@@ -1,7 +1,5 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SaaS.API", "SaaS.API\SaaS.API.csproj", "{7727CE6D-4920-4D91-9C12-7A1BAC234714}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SaaS.OmniChannelPlatform.BuildingBlocks", "SaaS.OmniChannelPlatform.BuildingBlocks\SaaS.OmniChannelPlatform.BuildingBlocks.csproj", "{3D235206-D38B-494A-8047-E3BC8447CF0B}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SaaS.OmniChannelPlatform.Services.Messaging", "SaaS.OmniChannelPlatform.Services.Messaging\SaaS.OmniChannelPlatform.Services.Messaging.csproj", "{8DD2FF31-33C7-44CD-8AD0-6338D7B4AF13}"
@@ -38,18 +36,6 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{7727CE6D-4920-4D91-9C12-7A1BAC234714}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{7727CE6D-4920-4D91-9C12-7A1BAC234714}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{7727CE6D-4920-4D91-9C12-7A1BAC234714}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{7727CE6D-4920-4D91-9C12-7A1BAC234714}.Debug|x64.Build.0 = Debug|Any CPU
-		{7727CE6D-4920-4D91-9C12-7A1BAC234714}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{7727CE6D-4920-4D91-9C12-7A1BAC234714}.Debug|x86.Build.0 = Debug|Any CPU
-		{7727CE6D-4920-4D91-9C12-7A1BAC234714}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{7727CE6D-4920-4D91-9C12-7A1BAC234714}.Release|Any CPU.Build.0 = Release|Any CPU
-		{7727CE6D-4920-4D91-9C12-7A1BAC234714}.Release|x64.ActiveCfg = Release|Any CPU
-		{7727CE6D-4920-4D91-9C12-7A1BAC234714}.Release|x64.Build.0 = Release|Any CPU
-		{7727CE6D-4920-4D91-9C12-7A1BAC234714}.Release|x86.ActiveCfg = Release|Any CPU
-		{7727CE6D-4920-4D91-9C12-7A1BAC234714}.Release|x86.Build.0 = Release|Any CPU
 		{3D235206-D38B-494A-8047-E3BC8447CF0B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{3D235206-D38B-494A-8047-E3BC8447CF0B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3D235206-D38B-494A-8047-E3BC8447CF0B}.Debug|x64.ActiveCfg = Debug|Any CPU

@@ -1,0 +1,54 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "D:\\SaaS-Chatbot\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{F5C8E962-8A20-48FD-9732-EC071571CDEA}|SaaS.OmniChannelPlatform.Services.Tenant\\SaaS.OmniChannelPlatform.Services.Tenant.csproj|d:\\saas-chatbot\\saas.omnichannelplatform.services.tenant\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{F5C8E962-8A20-48FD-9732-EC071571CDEA}|SaaS.OmniChannelPlatform.Services.Tenant\\SaaS.OmniChannelPlatform.Services.Tenant.csproj|solutionrelative:saas.omnichannelplatform.services.tenant\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{7727CE6D-4920-4D91-9C12-7A1BAC234714}|SaaS.API\\SaaS.API.csproj|d:\\saas-chatbot\\saas.api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{7727CE6D-4920-4D91-9C12-7A1BAC234714}|SaaS.API\\SaaS.API.csproj|solutionrelative:saas.api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "Program.cs",
+              "DocumentMoniker": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Services.Tenant\\Program.cs",
+              "RelativeDocumentMoniker": "SaaS.OmniChannelPlatform.Services.Tenant\\Program.cs",
+              "ToolTip": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Services.Tenant\\Program.cs",
+              "RelativeToolTip": "SaaS.OmniChannelPlatform.Services.Tenant\\Program.cs",
+              "ViewState": "AgIAADAAAAAAAAAAAADwvwAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-25T13:45:57.857Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "Program.cs",
+              "DocumentMoniker": "D:\\SaaS-Chatbot\\SaaS.API\\Program.cs",
+              "RelativeDocumentMoniker": "SaaS.API\\Program.cs",
+              "ToolTip": "D:\\SaaS-Chatbot\\SaaS.API\\Program.cs",
+              "RelativeToolTip": "SaaS.API\\Program.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAADwvwAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-25T13:45:28.621Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

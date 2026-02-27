@@ -51,3 +51,4 @@ D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Identity\bin\Debug\net8.0\Npgs
 D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Identity\bin\Debug\net8.0\System.IdentityModel.Tokens.Jwt.dll
 D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Identity\bin\Debug\net8.0\SaaS.OmniChannelPlatform.BuildingBlocks.dll
 D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Identity\bin\Debug\net8.0\SaaS.OmniChannelPlatform.BuildingBlocks.pdb
+D:\SaaS-Chatbot\SaaS.OmniChannelPlatform.Services.Identity\obj\Debug\net8.0\staticwebassets.upToDateCheck.txt

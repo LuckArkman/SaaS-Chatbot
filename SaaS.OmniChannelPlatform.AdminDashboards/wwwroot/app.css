@@ -54,6 +54,14 @@ h4,
     transition: var(--transition);
 }
 
+.main-content.no-padding {
+    padding: 0;
+}
+
+.h-full {
+    height: 100%;
+}
+
 /* Glassmorphism Sidebar */
 .sidebar {
     width: var(--sidebar-width);
