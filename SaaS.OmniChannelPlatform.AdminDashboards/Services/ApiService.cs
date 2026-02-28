@@ -54,6 +54,25 @@ namespace SaaS.OmniChannelPlatform.AdminDashboards.Services
             }
         }
 
+        public async Task<FlowModel?> GetFlowByIdAsync(Guid id)
+        {
+            try
+            {
+                return await _httpClient.GetFromJsonAsync<FlowModel>($"api/FlowEngine/flows/{id}");
+            }
+            catch { return null; }
+        }
+
+        public async Task<bool> SaveFlowAsync(FlowModel flow)
+        {
+            try
+            {
+                var response = await _httpClient.PostAsJsonAsync("api/FlowEngine/flows", flow);
+                return response.IsSuccessStatusCode;
+            }
+            catch { return false; }
+        }
+
         // Messaging
         public async Task<List<ConversationModel>> GetConversationsAsync()
         {

@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SaaS.OmniChannelPlatform.AdminDashboards")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2af5b2d2574fbcdc1e01b9f178847cd9f9068055")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ce5404ae1d1224beb70f72b68add1e1b4e0a8b8e")]
 [assembly: System.Reflection.AssemblyProductAttribute("SaaS.OmniChannelPlatform.AdminDashboards")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SaaS.OmniChannelPlatform.AdminDashboards")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
