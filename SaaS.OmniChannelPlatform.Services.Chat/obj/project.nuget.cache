@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "pHAAqiFCxAo=",
+  "dgSpecHash": "BM0ZsuqGIUs=",
   "success": true,
-  "projectFilePath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Services.Chat\\SaaS.OmniChannelPlatform.Services.Chat.csproj",
+  "projectFilePath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Services.Chat\\SaaS.OmniChannelPlatform.Services.Chat.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\MPLopes\\.nuget\\packages\\masstransit\\8.2.0\\masstransit.8.2.0.nupkg.sha512",
     "C:\\Users\\MPLopes\\.nuget\\packages\\masstransit.abstractions\\8.2.0\\masstransit.abstractions.8.2.0.nupkg.sha512",

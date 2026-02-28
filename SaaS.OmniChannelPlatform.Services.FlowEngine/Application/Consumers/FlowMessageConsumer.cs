@@ -73,7 +73,7 @@ namespace SaaS.OmniChannelPlatform.Services.FlowEngine.Application.Consumers
 
                 FlowStep? nextStep = null;
 
-                if (currentStep.Type == StepType.InternalModel)
+                if (currentStep.Type == "InternalModel")
                 {
                     var csvData = currentStep.Metadata.ContainsKey("CsvData") ? currentStep.Metadata["CsvData"] : "";
                     if (TryMatchInternalModel(csvData, @event.Content, out var preProgrammedResponse))
@@ -114,7 +114,7 @@ namespace SaaS.OmniChannelPlatform.Services.FlowEngine.Application.Consumers
                     session.CurrentStepId = nextStep.Id;
                     session.LastInteraction = DateTime.UtcNow;
                     
-                    if (nextStep.Type == StepType.Handover)
+                    if (nextStep.Type == "Handover")
                     {
                         session.IsHandedOver = true;
                         await _context.SaveChangesAsync();
@@ -142,7 +142,7 @@ namespace SaaS.OmniChannelPlatform.Services.FlowEngine.Application.Consumers
                     
                     // If the step just sent a response (InternalModel found), we might want to stop or move again.
                     // But for now, if it's not a router-only node, we send the content of the next step.
-                    if (nextStep.Type != StepType.InternalModel)
+                    if (nextStep.Type != "InternalModel")
                     {
                         await SendResponse(context, nextStep, @event);
                     }
@@ -181,13 +181,13 @@ namespace SaaS.OmniChannelPlatform.Services.FlowEngine.Application.Consumers
 
         private async Task SendResponse(ConsumeContext<MessageReceivedIntegrationEvent> context, FlowStep step, MessageReceivedIntegrationEvent originalEvent)
         {
-            if (step.Type == StepType.Handover)
+            if (step.Type == "Handover")
             {
                 _logger.LogInformation("Flow reached Handover. No automated response sent.");
                 return;
             }
 
-            if (step.Type == StepType.Ai)
+            if (step.Type == "LLMProcessor" || step.Type == "Ai")
             {
                 _logger.LogInformation("Step is AI. Publishing AI Request.");
                 await _publishEndpoint.Publish(new ProcessAIRequestIntegrationEvent(
@@ -201,13 +201,14 @@ namespace SaaS.OmniChannelPlatform.Services.FlowEngine.Application.Consumers
                 return;
             }
 
-            if (step.Type == StepType.InternalModel)
+            if (step.Type == "InternalModel")
             {
                 // This shouldn't normally be called directly for InternalModel because Consume handles it,
                 // but if it is, we just process the logic.
                 return;
             }
 
+            // Universal message sender for various output types
             await _publishEndpoint.Publish(new SendMessageIntegrationEvent(
                 originalEvent.TenantId,
                 Guid.Empty,

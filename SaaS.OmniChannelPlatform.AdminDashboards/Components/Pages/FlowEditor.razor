@@ -29,9 +29,15 @@
 
         if (Id.HasValue)
         {
-            var flows = await ApiService.GetFlowsAsync();
-            var found = flows.FirstOrDefault(f => f.Id == Id.Value);
+            var found = await ApiService.GetFlowByIdAsync(Id.Value);
             if (found != null) _flow = found;
+            else
+            {
+                // Partial fallback to list if direct fetch fails (e.g. mock mode)
+                var flows = await ApiService.GetFlowsAsync();
+                var listFound = flows.FirstOrDefault(f => f.Id == Id.Value);
+                if (listFound != null) _flow = listFound;
+            }
         }
 
         if (_connections.Any(c => c.Platform == "WhatsApp" && c.Status != "Connected"))
@@ -198,10 +204,26 @@
         else step.FallbackStepId = null;
     }
 
+    private bool _isSaving = false;
     private async Task SaveFlow()
     {
-        await Task.Delay(500);
-        Navigation.NavigateTo("/flows");
+        if (_isSaving) return;
+        _isSaving = true;
+        StateHasChanged();
+        
+        var success = await ApiService.SaveFlowAsync(_flow);
+        
+        await Task.Delay(800); // Visual feedback pulse
+        _isSaving = false;
+        
+        if (success)
+        {
+            Navigation.NavigateTo("/flows");
+        }
+        else
+        {
+            StateHasChanged(); 
+        }
     }
 }
 
@@ -221,7 +243,17 @@
         </div>
         <div class="header-actions">
             <button class="btn-outline" @onclick="() => _showConnectionsModal = true">Conexões</button>
-            <button class="btn-primary" @onclick="SaveFlow">Salvar Agente</button>
+            <button class="btn-primary" @onclick="SaveFlow" disabled="@_isSaving">
+                @if (_isSaving)
+                {
+                    <span class="status-pulse" style="width: 10px; height: 10px; display: inline-block; margin-right: 8px;"></span>
+                    <span>Salvando...</span>
+                }
+                else
+                {
+                    <span>Salvar Agente</span>
+                }
+            </button>
         </div>
     </header>
 

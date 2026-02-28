@@ -3272,11 +3272,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
+      "projectUniqueName": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
       "projectName": "SaaS.OmniChannelPlatform.Tests",
-      "projectPath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
+      "projectPath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
       "packagesPath": "C:\\Users\\MPLopes\\.nuget\\packages\\",
-      "outputPath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\obj\\",
+      "outputPath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -3298,17 +3298,17 @@
         "net10.0": {
           "targetAlias": "net10.0",
           "projectReferences": {
-            "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj": {
-              "projectPath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj"
+            "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj": {
+              "projectPath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj"
             },
-            "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Services.Billing\\SaaS.OmniChannelPlatform.Services.Billing.csproj": {
-              "projectPath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Services.Billing\\SaaS.OmniChannelPlatform.Services.Billing.csproj"
+            "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Services.Billing\\SaaS.OmniChannelPlatform.Services.Billing.csproj": {
+              "projectPath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Services.Billing\\SaaS.OmniChannelPlatform.Services.Billing.csproj"
             },
-            "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Services.Identity\\SaaS.OmniChannelPlatform.Services.Identity.csproj": {
-              "projectPath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Services.Identity\\SaaS.OmniChannelPlatform.Services.Identity.csproj"
+            "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Services.Identity\\SaaS.OmniChannelPlatform.Services.Identity.csproj": {
+              "projectPath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Services.Identity\\SaaS.OmniChannelPlatform.Services.Identity.csproj"
             },
-            "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Services.Messaging\\SaaS.OmniChannelPlatform.Services.Messaging.csproj": {
-              "projectPath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Services.Messaging\\SaaS.OmniChannelPlatform.Services.Messaging.csproj"
+            "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Services.Messaging\\SaaS.OmniChannelPlatform.Services.Messaging.csproj": {
+              "projectPath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Services.Messaging\\SaaS.OmniChannelPlatform.Services.Messaging.csproj"
             }
           }
         }

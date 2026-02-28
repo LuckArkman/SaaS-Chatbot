@@ -99,9 +99,9 @@ using (var scope = app.Services.CreateScope())
             IsActive = true
         };
 
-        flow.Steps.Add(new FlowStep { FlowDefinitionId = flow.Id, Order = 1, Content = "Olá! Bem-vindo ao atendimento inteligente. Como posso ajudar?", Type = StepType.Message });
-        flow.Steps.Add(new FlowStep { FlowDefinitionId = flow.Id, Order = 2, Content = "Você é um assistente virtual prestativo da plataforma OmniChannel.", Type = StepType.Ai });
-        flow.Steps.Add(new FlowStep { FlowDefinitionId = flow.Id, Order = 3, Content = "Transferindo para um humano para suporte avançado...", Type = StepType.Handover });
+        flow.Steps.Add(new FlowStep { FlowDefinitionId = flow.Id, Order = 1, Content = "Olá! Bem-vindo ao atendimento inteligente. Como posso ajudar?", Type = "Message" });
+        flow.Steps.Add(new FlowStep { FlowDefinitionId = flow.Id, Order = 2, Content = "Você é um assistente virtual prestativo da plataforma OmniChannel.", Type = "Ai" });
+        flow.Steps.Add(new FlowStep { FlowDefinitionId = flow.Id, Order = 3, Content = "Transferindo para um humano para suporte avançado...", Type = "Handover" });
 
         context.Flows.Add(flow);
         context.SaveChanges();
