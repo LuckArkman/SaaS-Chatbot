@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SaaS.OmniChannelPlatform.Services.AI")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ce5404ae1d1224beb70f72b68add1e1b4e0a8b8e")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+6f2f5762ee2057e4e28d024e272ca2dde40faddc")]
 [assembly: System.Reflection.AssemblyProductAttribute("SaaS.OmniChannelPlatform.Services.AI")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SaaS.OmniChannelPlatform.Services.AI")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
