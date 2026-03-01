@@ -98,6 +98,20 @@ services:
       - ASPNETCORE_URLS=http://+:5058
       - RabbitMQ__Host=127.0.0.1
 
+  whatsapp-bot-venom:
+    build:
+      context: .
+      dockerfile: SaaS.OmniChannelPlatform.Services.WhatsAppBot/Dockerfile
+    container_name: saas_whatsapp_venom
+    network_mode: host
+    environment:
+      - PORT=4000
+      - RABBITMQ_HOST=127.0.0.1
+      - RABBITMQ_USER=admin
+      - RABBITMQ_PASSWORD=password123
+    volumes:
+      - ./SaaS.OmniChannelPlatform.Services.WhatsAppBot/tokens:/app/tokens
+
   chat-service:
     build:
       context: .
@@ -120,6 +134,9 @@ services:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:5059
       - ConnectionStrings__DefaultConnection=Host=127.0.0.1;Database=saas_billing;Username=postgres;Password=password123
+      - RabbitMQ__Host=127.0.0.1
+      - RabbitMQ__UserName=admin
+      - RabbitMQ__Password=password123
 
   admin-dashboard:
     build:
