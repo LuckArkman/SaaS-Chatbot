@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj": {}
+    "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj": {}
   },
   "projects": {
-    "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj": {
+    "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj",
+        "projectUniqueName": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj",
         "projectName": "SaaS.OmniChannelPlatform.BuildingBlocks",
-        "projectPath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj",
+        "projectPath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\SaaS.OmniChannelPlatform.BuildingBlocks.csproj",
         "packagesPath": "C:\\Users\\MPLopes\\.nuget\\packages\\",
-        "outputPath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\obj\\",
+        "outputPath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.BuildingBlocks\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

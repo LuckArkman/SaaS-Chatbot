@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "NX6EEwF80Ik=",
+  "dgSpecHash": "1VvsY+ewCBo=",
   "success": true,
-  "projectFilePath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\SaaS.OmniChannelPlatform.AdminDashboards.csproj",
+  "projectFilePath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.AdminDashboards\\SaaS.OmniChannelPlatform.AdminDashboards.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\MPLopes\\.nuget\\packages\\microsoft.aspnetcore.connections.abstractions\\10.0.3\\microsoft.aspnetcore.connections.abstractions.10.0.3.nupkg.sha512",
     "C:\\Users\\MPLopes\\.nuget\\packages\\microsoft.aspnetcore.http.connections.client\\10.0.3\\microsoft.aspnetcore.http.connections.client.10.0.3.nupkg.sha512",
