@@ -1,5 +1,5 @@
 services:
-  # --- Infrastructure ---
+  # --- Infraestrutura ---
   postgres:
     image: postgres:16-alpine
     container_name: saas_postgres
@@ -35,7 +35,7 @@ services:
     volumes:
       - mongo_data:/data/db
 
-  # --- Core Microservices ---
+  # --- Microserviços ---
   identity-api:
     build:
       context: .
@@ -98,15 +98,6 @@ services:
       - ASPNETCORE_URLS=http://+:5058
       - RabbitMQ__Host=127.0.0.1
 
-  whatsapp-bot-venom:
-    build:
-      context: .
-      dockerfile: SaaS.OmniChannelPlatform.Services.WhatsAppBot/Dockerfile
-    container_name: saas_whatsapp_venom
-    network_mode: host
-    volumes:
-      - ./SaaS.OmniChannelPlatform.Services.WhatsAppBot/tokens:/app/tokens
-
   chat-service:
     build:
       context: .
@@ -130,25 +121,16 @@ services:
       - ASPNETCORE_URLS=http://+:5059
       - ConnectionStrings__DefaultConnection=Host=127.0.0.1;Database=saas_billing;Username=postgres;Password=password123
 
-  # --- UI & Gateways ---
   admin-dashboard:
     build:
       context: .
       dockerfile: SaaS.OmniChannelPlatform.AdminDashboards/Dockerfile
     container_name: saas_admin_dashboard
-    ports:
-      - "5142:8080"
+    network_mode: host
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - ApiSettings__BaseUrl=http://identity-api:8080
-    depends_on:
-      - identity-api
-    networks:
-      - saas_network
-
-networks:
-  saas_network:
-    driver: bridge
+      - ASPNETCORE_URLS=http://+:5050
+      - ApiSettings__BaseUrl=http://127.0.0.1:5051
 
 volumes:
   postgres_data:
