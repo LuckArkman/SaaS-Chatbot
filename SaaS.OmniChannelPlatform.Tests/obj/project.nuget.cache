@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "MbZu/9yBvVc=",
+  "dgSpecHash": "0VHkgyiAVs4=",
   "success": true,
-  "projectFilePath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
+  "projectFilePath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\MPLopes\\.nuget\\packages\\castle.core\\5.1.1\\castle.core.5.1.1.nupkg.sha512",
     "C:\\Users\\MPLopes\\.nuget\\packages\\coverlet.collector\\6.0.4\\coverlet.collector.6.0.4.nupkg.sha512",
@@ -74,9 +74,9 @@
       "code": "NU1903",
       "level": "Warning",
       "message": "Package 'Microsoft.Extensions.Caching.Memory' 8.0.0 has a known high severity vulnerability, https://github.com/advisories/GHSA-qj66-m88j-hmgj",
-      "projectPath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
+      "projectPath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
       "warningLevel": 1,
-      "filePath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
+      "filePath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
       "libraryId": "Microsoft.Extensions.Caching.Memory",
       "targetGraphs": [
         "net10.0"
@@ -86,9 +86,9 @@
       "code": "NU1902",
       "level": "Warning",
       "message": "Package 'Microsoft.IdentityModel.JsonWebTokens' 7.0.3 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-59j7-ghrg-fj52",
-      "projectPath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
+      "projectPath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
       "warningLevel": 1,
-      "filePath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
+      "filePath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
       "libraryId": "Microsoft.IdentityModel.JsonWebTokens",
       "targetGraphs": [
         "net10.0"
@@ -98,9 +98,9 @@
       "code": "NU1903",
       "level": "Warning",
       "message": "Package 'Npgsql' 8.0.0 has a known high severity vulnerability, https://github.com/advisories/GHSA-x9vc-6hfv-hg8c",
-      "projectPath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
+      "projectPath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
       "warningLevel": 1,
-      "filePath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
+      "filePath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
       "libraryId": "Npgsql",
       "targetGraphs": [
         "net10.0"
@@ -110,9 +110,9 @@
       "code": "NU1902",
       "level": "Warning",
       "message": "Package 'System.IdentityModel.Tokens.Jwt' 7.0.3 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-59j7-ghrg-fj52",
-      "projectPath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
+      "projectPath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
       "warningLevel": 1,
-      "filePath": "D:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
+      "filePath": "d:\\SaaS-Chatbot\\SaaS.OmniChannelPlatform.Tests\\SaaS.OmniChannelPlatform.Tests.csproj",
       "libraryId": "System.IdentityModel.Tokens.Jwt",
       "targetGraphs": [
         "net10.0"
