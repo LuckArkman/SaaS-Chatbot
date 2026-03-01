@@ -136,11 +136,19 @@ services:
       context: .
       dockerfile: SaaS.OmniChannelPlatform.AdminDashboards/Dockerfile
     container_name: saas_admin_dashboard
-    network_mode: host
+    ports:
+      - "5142:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:5050
-      - ApiSettings__BaseUrl=http://127.0.0.1:5051
+      - ApiSettings__BaseUrl=http://identity-api:8080
+    depends_on:
+      - identity-api
+    networks:
+      - saas_network
+
+networks:
+  saas_network:
+    driver: bridge
 
 volumes:
   postgres_data:
