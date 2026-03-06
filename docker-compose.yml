@@ -149,6 +149,15 @@ services:
       - ASPNETCORE_URLS=http://+:5050
       - ApiSettings__BaseUrl=http://127.0.0.1:5051
 
+  chat-ui:
+    build:
+      context: .
+      dockerfile: SaaS.ChatUI/Dockerfile
+    container_name: saas_chat_ui
+    network_mode: host
+    environment:
+      - VITE_API_URL=http://127.0.0.1:5051
+
 volumes:
   postgres_data:
   mongo_data:
