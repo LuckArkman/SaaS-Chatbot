@@ -76,15 +76,14 @@
 
 <script setup lang="ts">
 import { 
-  MessageSquare, 
-  Users, 
-  Workflow, 
-  Clock, 
-  Calendar, 
-  PlusCircle, 
-  User,
-  Zap,
-  TrendingUp
+import {
+  MessageSquare,
+  Users,
+  Workflow,
+  Clock,
+  Calendar,
+  PlusCircle,
+  User
 } from 'lucide-vue-next';
 
 const stats = [

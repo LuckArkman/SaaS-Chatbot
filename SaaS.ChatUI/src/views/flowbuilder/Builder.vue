@@ -84,17 +84,16 @@ import { ref } from 'vue';
 import { VueFlow, useVueFlow } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
-import { 
-  ArrowLeft, 
-  Save, 
-  MessageSquare, 
-  Bot, 
-  UserCheck, 
-  GitFork, 
-  Clock
+import {
+  ArrowLeft,
+  Save,
+  MessageSquare,
+  Bot,
+  Briefcase,
+  Users
 } from 'lucide-vue-next';
 
-const { addEdges, project } = useVueFlow();
+const { project } = useVueFlow();
 
 const elements = ref<any[]>([
   {
