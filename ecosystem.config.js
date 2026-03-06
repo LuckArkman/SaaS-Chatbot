@@ -92,7 +92,7 @@ module.exports = {
             name: "saas-whatsapp-bot",
             cwd: "./SaaS.OmniChannelPlatform.Services.WhatsAppBot",
             script: "npm",
-            args: "start",
+            args: ["start"],
             env: {
                 NODE_ENV: "production",
                 RabbitMQ__Host: "127.0.0.1"
@@ -103,9 +103,9 @@ module.exports = {
         {
             name: "saas-chat-ui",
             script: "serve",
-            args: "-s SaaS.ChatUI/dist -l 8081",
+            args: ["-s", "SaaS.ChatUI/dist", "-p", "8081"],
             env: {
-                VITE_API_URL: "http://126.0.0.1:5051" // Ajuste para o IP da sua VPS se for acesso externo
+                VITE_API_URL: "http://127.0.0.1:5051"
             }
         }
     ]
