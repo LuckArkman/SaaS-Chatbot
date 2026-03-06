@@ -2,162 +2,37 @@ services:
   saas_postgres:
     image: postgres:16-alpine
     container_name: saas_postgres
-    ports:
-      - "5432:5432"
+    network_mode: host
     environment:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=password123
       - POSTGRES_DB=SaaS_OmniChannel
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    restart: always
 
   saas_redis:
     image: redis:7-alpine
     container_name: saas_redis
-    ports:
-      - "6379:6379"
+    network_mode: host
+    restart: always
 
   saas_rabbitmq:
     image: rabbitmq:3-management-alpine
     container_name: saas_rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
+    network_mode: host
     environment:
       - RABBITMQ_DEFAULT_USER=admin
       - RABBITMQ_DEFAULT_PASS=password123
+    restart: always
 
   saas_mongo:
     image: mongo:7
     container_name: saas_mongo
-    ports:
-      - "27017:27017"
+    network_mode: host
     volumes:
       - mongo_data:/data/db
-
-  identity-api:
-    build:
-      context: .
-      dockerfile: SaaS.OmniChannelPlatform.Services.Identity/Dockerfile
-    container_name: saas_identity
-    ports:
-      - "5051:5051"
-    environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:5051
-      - ConnectionStrings__DefaultConnection=Host=saas_postgres;Database=SaaS_OmniChannel;Username=admin;Password=password123
-      - Redis__ConnectionString=saas_redis:6379
-      - RabbitMQ__Host=saas_rabbitmq
-      - RabbitMQ__UserName=admin
-      - RabbitMQ__Password=password123
-
-  flow-engine:
-    build:
-      context: .
-      dockerfile: SaaS.OmniChannelPlatform.Services.FlowEngine/Dockerfile
-    container_name: saas_flow_engine
-    ports:
-      - "5124:5124"
-    environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:5124
-      - MongoDb__ConnectionString=mongodb://saas_mongo:27017
-      - Redis__ConnectionString=saas_redis:6379
-      - RabbitMQ__Host=saas_rabbitmq
-
-  chat-service:
-    build:
-      context: .
-      dockerfile: SaaS.OmniChannelPlatform.Services.Chat/Dockerfile
-    container_name: saas_chat
-    ports:
-      - "5263:5263"
-    environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:5263
-      - Redis__ConnectionString=saas_redis:6379
-      - RabbitMQ__Host=saas_rabbitmq
-
-  messaging-service:
-    build:
-      context: .
-      dockerfile: SaaS.OmniChannelPlatform.Services.Messaging/Dockerfile
-    container_name: saas_messaging
-    ports:
-      - "5189:5189"
-    environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:5189
-      - RabbitMQ__Host=saas_rabbitmq
-
-  channel-gateway:
-    build:
-      context: .
-      dockerfile: SaaS.OmniChannelPlatform.Services.ChannelGateway/Dockerfile
-    container_name: saas_channel_gateway
-    ports:
-      - "5032:5032"
-    environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:5032
-      - RabbitMQ__Host=saas_rabbitmq
-
-  billing-service:
-    build:
-      context: .
-      dockerfile: SaaS.OmniChannelPlatform.Services.Billing/Dockerfile
-    container_name: saas_billing
-    ports:
-      - "5147:5147"
-    environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:5147
-      - RabbitMQ__Host=saas_rabbitmq
-
-  campaign-service:
-    build:
-      context: .
-      dockerfile: SaaS.OmniChannelPlatform.Services.Campaign/Dockerfile
-    container_name: saas_campaign
-    ports:
-      - "5211:5211"
-    environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:5211
-      - RabbitMQ__Host=saas_rabbitmq
-
-  whatsapp-bot-venom:
-    build:
-      context: .
-      dockerfile: SaaS.OmniChannelPlatform.Services.WhatsAppBot/Dockerfile
-    container_name: saas_whatsapp_venom
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-      - RabbitMQ__Host=saas_rabbitmq
-
-  admin-dashboard:
-    build:
-      context: .
-      dockerfile: SaaS.OmniChannelPlatform.AdminDashboards/Dockerfile
-    container_name: saas_admin_dashboard
-    ports:
-      - "5050:5050"
-    environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:5050
-      - ApiSettings__BaseUrl=http://identity-api:5051
-
-  chat-ui:
-    build:
-      context: ./SaaS.ChatUI
-      dockerfile: Dockerfile
-    container_name: saas_chat_ui
-    ports:
-      - "8081:8081"
-    environment:
-      - VITE_API_URL=http://<IP-DA-VPS>:5051
+    restart: always
 
 volumes:
   postgres_data:
