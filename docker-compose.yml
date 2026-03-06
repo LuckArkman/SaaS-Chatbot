@@ -11,12 +11,16 @@ services:
       - POSTGRES_DB=SaaS_OmniChannel
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - saas-network
 
   saas_redis:
     image: redis:7-alpine
     container_name: saas_redis
     ports:
       - "6379:6379"
+    networks:
+      - saas-network
 
   saas_rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -27,6 +31,8 @@ services:
     environment:
       - RABBITMQ_DEFAULT_USER=admin
       - RABBITMQ_DEFAULT_PASS=password123
+    networks:
+      - saas-network
 
   saas_mongo:
     image: mongo:7
@@ -35,6 +41,8 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    networks:
+      - saas-network
 
   # --- Microserviços ---
   identity-api:
@@ -170,6 +178,12 @@ services:
       - "8081:80"
     environment:
       - VITE_API_URL=http://<IP-DA-VPS>:5051
+    networks:
+      - saas-network
+
+networks:
+  saas-network:
+    driver: bridge
 
 volumes:
   postgres_data:
