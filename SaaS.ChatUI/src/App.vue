@@ -4,7 +4,6 @@
 
 <script setup lang="ts">
 import { onMounted } from 'vue';
-import { useAuthStore } from './stores/auth';
 
 onMounted(() => {
   // Logic to validate token or fetch user data on mount
