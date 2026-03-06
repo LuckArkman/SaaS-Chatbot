@@ -167,7 +167,7 @@ services:
       dockerfile: Dockerfile
     container_name: saas_chat_ui
     ports:
-      - "8081:8081"
+      - "8081:80"
     environment:
       - VITE_API_URL=http://<IP-DA-VPS>:5051
 
