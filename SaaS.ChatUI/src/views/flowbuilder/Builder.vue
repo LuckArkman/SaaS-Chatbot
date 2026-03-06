@@ -91,11 +91,10 @@ import {
   Bot, 
   UserCheck, 
   GitFork, 
-  Clock,
-  Plus
+  Clock
 } from 'lucide-vue-next';
 
-const { addNodes, addEdges, project } = useVueFlow();
+const { addEdges, project } = useVueFlow();
 
 const elements = ref<any[]>([
   {

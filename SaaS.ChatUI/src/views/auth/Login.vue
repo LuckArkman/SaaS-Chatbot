@@ -73,17 +73,20 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../../stores/auth';
-import { Mail, Lock, LogIn, ArrowRight, Bot } from 'lucide-vue-next';
+import { Mail, Lock, ArrowRight, Bot } from 'lucide-vue-next';
 
 const router = useRouter();
 const auth = useAuthStore();
 
+onMounted(() => {
+  // Logic to validate token or fetch user data on mount
+});
 const email = ref('');
 const password = ref('');
 const loading = ref(false);
 
 async function handleLogin() {
-  loading.ref = true;
+  loading.value = true;
   try {
     // Simulando login para MVP se a API não estiver respondendo
     if (email.value === 'admin@saas.com' && password.value === '123456') {
@@ -98,7 +101,7 @@ async function handleLogin() {
   } catch (error) {
     alert('Erro ao entrar. Verifique suas credenciais.');
   } finally {
-    loading.ref = false;
+    loading.value = false;
   }
 }
 </script>
