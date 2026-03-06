@@ -137,17 +137,14 @@ services:
       - RabbitMQ__Host=127.0.0.1
       - RabbitMQ__UserName=admin
       - RabbitMQ__Password=password123
-
-  admin-dashboard:
+  chat-ui:
     build:
       context: .
-      dockerfile: SaaS.OmniChannelPlatform.AdminDashboards/Dockerfile
-    container_name: saas_admin_dashboard
+      dockerfile: SaaS.ChatUI/Dockerfile
+    container_name: saas_chat_ui
     network_mode: host
     environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:5050
-      - ApiSettings__BaseUrl=http://127.0.0.1:5051
+      - VITE_API_URL=http://127.0.0.1:5051
 
 volumes:
   postgres_data:
