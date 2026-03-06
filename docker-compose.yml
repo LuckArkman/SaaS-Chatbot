@@ -1,37 +1,38 @@
 services:
   # --- Infraestrutura ---
-  postgres:
+  saas_postgres:
     image: postgres:16-alpine
     container_name: saas_postgres
-    restart: always
-    network_mode: host
+    ports:
+      - "5432:5432"
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password123
-      POSTGRES_DB: saas_platform
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password123
+      - POSTGRES_DB=SaaS_OmniChannel
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  redis:
+  saas_redis:
     image: redis:7-alpine
     container_name: saas_redis
-    restart: always
-    network_mode: host
+    ports:
+      - "6379:6379"
 
-  rabbitmq:
+  saas_rabbitmq:
     image: rabbitmq:3-management-alpine
     container_name: saas_rabbitmq
-    restart: always
-    network_mode: host
+    ports:
+      - "5672:5672"
+      - "15672:15672"
     environment:
-      RABBITMQ_DEFAULT_USER: admin
-      RABBITMQ_DEFAULT_PASS: password123
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=password123
 
-  mongo:
+  saas_mongo:
     image: mongo:7
     container_name: saas_mongo
-    restart: always
-    network_mode: host
+    ports:
+      - "27017:27017"
     volumes:
       - mongo_data:/data/db
 
@@ -41,12 +42,14 @@ services:
       context: .
       dockerfile: SaaS.OmniChannelPlatform.Services.Identity/Dockerfile
     container_name: saas_identity
-    network_mode: host
+    ports:
+      - "5051:5051"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:5051
-      - ConnectionStrings__DefaultConnection=Host=127.0.0.1;Database=saas_identity;Username=postgres;Password=password123
-      - RabbitMQ__Host=127.0.0.1
+      - ConnectionStrings__DefaultConnection=Host=saas_postgres;Database=SaaS_OmniChannel;Username=admin;Password=password123
+      - Redis__ConnectionString=saas_redis:6379
+      - RabbitMQ__Host=saas_rabbitmq
       - RabbitMQ__UserName=admin
       - RabbitMQ__Password=password123
 
@@ -55,58 +58,64 @@ services:
       context: .
       dockerfile: SaaS.OmniChannelPlatform.Services.FlowEngine/Dockerfile
     container_name: saas_flow_engine
-    network_mode: host
+    ports:
+      - "5124:5124"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:5054
-      - ConnectionStrings__DefaultConnection=Host=127.0.0.1;Database=saas_flow;Username=postgres;Password=password123
-      - RabbitMQ__Host=127.0.0.1
+      - ASPNETCORE_URLS=http://+:5124
+      - MongoDb__ConnectionString=mongodb://saas_mongo:27017
+      - Redis__ConnectionString=saas_redis:6379
+      - RabbitMQ__Host=saas_rabbitmq
 
   messaging-service:
     build:
       context: .
       dockerfile: SaaS.OmniChannelPlatform.Services.Messaging/Dockerfile
     container_name: saas_messaging
-    network_mode: host
+    ports:
+      - "5189:5189"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:5056
-      - ConnectionStrings__DefaultConnection=Host=127.0.0.1;Database=saas_messaging;Username=postgres;Password=password123
-      - RabbitMQ__Host=127.0.0.1
-      - MongoDB__ConnectionString=mongodb://127.0.0.1:27017
+      - ASPNETCORE_URLS=http://+:5189
+      - ConnectionStrings__DefaultConnection=Host=saas_postgres;Database=saas_messaging;Username=postgres;Password=password123
+      - RabbitMQ__Host=saas_rabbitmq
+      - MongoDB__ConnectionString=mongodb://saas_mongo:27017
 
   campaign-service:
     build:
       context: .
       dockerfile: SaaS.OmniChannelPlatform.Services.Campaign/Dockerfile
     container_name: saas_campaign
-    network_mode: host
+    ports:
+      - "5211:5211"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:5057
-      - ConnectionStrings__DefaultConnection=Host=127.0.0.1;Database=saas_campaign;Username=postgres;Password=password123
-      - RabbitMQ__Host=127.0.0.1
+      - ASPNETCORE_URLS=http://+:5211
+      - ConnectionStrings__DefaultConnection=Host=saas_postgres;Database=saas_campaign;Username=postgres;Password=password123
+      - RabbitMQ__Host=saas_rabbitmq
 
   channel-gateway:
     build:
       context: .
       dockerfile: SaaS.OmniChannelPlatform.Services.ChannelGateway/Dockerfile
     container_name: saas_channel_gateway
-    network_mode: host
+    ports:
+      - "5032:5032"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:5058
-      - RabbitMQ__Host=127.0.0.1
+      - ASPNETCORE_URLS=http://+:5032
+      - RabbitMQ__Host=saas_rabbitmq
 
   whatsapp-bot-venom:
     build:
       context: .
       dockerfile: SaaS.OmniChannelPlatform.Services.WhatsAppBot/Dockerfile
     container_name: saas_whatsapp_venom
-    network_mode: host
+    ports:
+      - "3000:3000"
     environment:
-      - PORT=4000
-      - RABBITMQ_HOST=127.0.0.1
+      - NODE_ENV=production
+      - RABBITMQ_HOST=saas_rabbitmq
       - RABBITMQ_USER=admin
       - RABBITMQ_PASSWORD=password123
     volumes:
@@ -117,24 +126,27 @@ services:
       context: .
       dockerfile: SaaS.OmniChannelPlatform.Services.Chat/Dockerfile
     container_name: saas_chat
-    network_mode: host
+    ports:
+      - "5263:5263"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:5055
-      - ConnectionStrings__DefaultConnection=Host=127.0.0.1;Database=saas_chat;Username=postgres;Password=password123
-      - RabbitMQ__Host=127.0.0.1
+      - ASPNETCORE_URLS=http://+:5263
+      - ConnectionStrings__DefaultConnection=Host=saas_postgres;Database=saas_chat;Username=postgres;Password=password123
+      - Redis__ConnectionString=saas_redis:6379
+      - RabbitMQ__Host=saas_rabbitmq
 
   billing-service:
     build:
       context: .
       dockerfile: SaaS.OmniChannelPlatform.Services.Billing/Dockerfile
     container_name: saas_billing
-    network_mode: host
+    ports:
+      - "5147:5147"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:5059
-      - ConnectionStrings__DefaultConnection=Host=127.0.0.1;Database=saas_billing;Username=postgres;Password=password123
-      - RabbitMQ__Host=127.0.0.1
+      - ASPNETCORE_URLS=http://+:5147
+      - ConnectionStrings__DefaultConnection=Host=saas_postgres;Database=saas_billing;Username=postgres;Password=password123
+      - RabbitMQ__Host=saas_rabbitmq
       - RabbitMQ__UserName=admin
       - RabbitMQ__Password=password123
   admin-dashboard:
@@ -142,20 +154,22 @@ services:
       context: .
       dockerfile: SaaS.OmniChannelPlatform.AdminDashboards/Dockerfile
     container_name: saas_admin_dashboard
-    network_mode: host
+    ports:
+      - "5050:5050"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:5050
-      - ApiSettings__BaseUrl=http://127.0.0.1:5051
+      - ApiSettings__BaseUrl=http://identity-api:5051
 
   chat-ui:
     build:
       context: ./SaaS.ChatUI
       dockerfile: Dockerfile
     container_name: saas_chat_ui
-    network_mode: host
+    ports:
+      - "8081:8081"
     environment:
-      - VITE_API_URL=http://127.0.0.1:5051
+      - VITE_API_URL=http://<IP-DA-VPS>:5051
 
 volumes:
   postgres_data:
