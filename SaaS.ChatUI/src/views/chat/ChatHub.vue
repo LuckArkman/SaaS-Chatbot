@@ -108,7 +108,6 @@ import {
   MoreVertical, 
   Paperclip, 
   Send, 
-  Mic,
-  User
+  Mic
 } from 'lucide-vue-next';
 </script>
