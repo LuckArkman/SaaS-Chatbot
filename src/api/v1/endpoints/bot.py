@@ -1,7 +1,7 @@
 from typing import Any, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from src.models.whatsapp import WhatsAppInstance
+from src import schemas
 from src.api import deps
 from src.services.whatsapp_manager_service import WhatsAppManagerService
 from src.core.database import get_db
@@ -10,7 +10,7 @@ from loguru import logger
 
 router = APIRouter()
 
-@router.get("/", response_model=WhatsAppInstance)
+@router.get("/", response_model=schemas.whatsapp.WhatsAppInstance)
 async def get_bot_status(
     db: Session = Depends(get_db),
     tenant_id: str = Depends(get_current_tenant_id),

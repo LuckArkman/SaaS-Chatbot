@@ -1,4 +1,5 @@
 from sqlalchemy import Boolean, Column, Integer, String, DateTime
+from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.core.database import Base
 from src.core.multi_tenancy import MultiTenantMixin
