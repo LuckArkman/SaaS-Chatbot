@@ -6,19 +6,19 @@
 ## 📋 Checklist de Migração
 
 ### 1. Configuração do Projeto
-- [ ] Criar ambiente virtual (`venv` ou `poetry`)
-- [ ] Definir arquivo `requirements.txt` ou `pyproject.toml` base
-- [ ] Configurar `.env` base (replicando variáveis do .NET)
-- [ ] Criar estrutura de pastas `/src/common` para Building Blocks
+- [x] Criar ambiente virtual (`venv` ou `poetry`)
+- [x] Definir arquivo `requirements.txt` ou `pyproject.toml` base
+- [x] Configurar `.env` base (replicando variáveis do .NET)
+- [x] Criar estrutura de pastas `/src/common` para Building Blocks
 
 ### 2. Base do Microserviço (FastAPI)
-- [ ] Implementar classe `BaseApplication` (equivalente ao `Program.cs`)
-- [ ] Configurar Injeção de Dependência (Dependency Injector ou nativo do FastAPI)
-- [ ] Configurar suporte a CORS e Middlewares de Segurança
+- [x] Implementar classe `BaseApplication` (equivalente ao `Program.cs`)
+- [x] Configurar Injeção de Dependência (Injetado via Depends nativo)
+- [x] Configurar suporte a CORS e Middlewares de Segurança
 
 ### 3. Docker & Local Dev
-- [ ] Criar `Dockerfile` multi-stage para Python
-- [ ] Atualizar `docker-compose.yml` para apontar para os novos serviços Python (em paralelo ou gradual)
+- [x] Criar `Dockerfile` multi-stage para Python
+- [x] Atualizar `docker-compose.yml` para apontar para os novos serviços Python (em paralelo ou gradual)
 
 ## 🏗️ Mapeamento .NET -> Python (Exemplos)
 
