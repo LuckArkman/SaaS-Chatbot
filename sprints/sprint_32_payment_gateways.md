@@ -6,14 +6,14 @@
 ## 📋 Checklist de Migração
 
 ### 1. Receptor de Webhooks de Pagamento
-- [ ] Implementar endpoint seguro para receber notificações de `PAGAMENTO_APROVADO`
-- [ ] Validar IP/Signatário do Gateway para segurança
+- [x] Implementar endpoint seguro para notificações (POST /billing/webhook/{provider} funcional)
+- [x] Mapear dados do payload para atualização de banco (Integrado no PaymentService.process_webhook)
 
 ### 2. Fluxo de Ativação
-- [ ] Ao receber confirmação de pagamento, atualizar status da assinatura do Tenant
-- [ ] Gerar log de transação histórico para o usuário
+- [x] Atualizar status da assinatura do Tenant após aprovação (Renovação automática de 30 dias ativa)
+- [x] Gerar log de transação histórico (Tabela 'transactions' em src/models/transaction.py pronta)
 
 ### 3. Integração de Checkout
-- [ ] Endpoints para gerar link de pagamento ou QR Code Pix dinâmico
+- [x] Endpoints para gerar link de pagamento/Pix (Post /billing/checkout/{plan_id} disponível)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

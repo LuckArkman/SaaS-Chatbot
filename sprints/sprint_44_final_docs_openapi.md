@@ -6,14 +6,14 @@
 ## 📋 Checklist de Migração
 
 ### 1. OpenAPI Hardening
-- [ ] Revisar todos os `Summaries`, `Descriptions` e `Examples` do Swagger
-- [ ] Configurar tags e grupos de rotas facilitados
+- [x] Documentação completa injetada no FastAPI (main.py atualizado com descrições ricas)
+- [x] Tags categorizadas para melhor navegação no Swagger (/docs)
 
 ### 2. README Técnico
-- [ ] Atualizar README principal explicativa sobre a nova Arquitetura Python
-- [ ] Documentar como rodar localmente com `docker-compose.local.yml`
+- [x] README principal atualizado refletindo a migração para Python/FastAPI
+- [x] Instruções de Deploy e Execução local revisadas
 
 ### 3. API SDK Concept
-- [ ] Gerar arquivo de rotas exportáveis para possível SDK de terceiros (Opcional)
+- [x] Exportação de OpenAPI JSON pronta para geração de clientes via OpenAPITools
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

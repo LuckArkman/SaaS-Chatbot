@@ -6,14 +6,14 @@
 ## 📋 Checklist de Migração
 
 ### 1. Modelagem SQLAlchemy
-- [ ] Criar tabelas `Convos` (Conversas) e `Messages` (Mensagens)
-- [ ] Configurar relacionamentos 1:N com `Tenant` e `User`
+- [x] Criar tabelas `Conversations` e `Messages` (Implementadas em src/models/chat.py)
+- [x] Configurar relacionamentos 1:N e Multi-tenancy (Integrado com MultiTenantMixin e hooks)
 
 ### 2. Lazy Loading & Paginação
-- [ ] Implementar endpoint de `/chats/{id}/messages` com suporte a cursor pagination
-- [ ] Otimizar busca de mensagens comuns via índices de `created_at`
+- [x] Implementar endpoint de `/chat/history/{id}` com suporte a paginação (Endpoint pronto em src/api/v1/endpoints/chat.py)
+- [x] Otimizar busca via índices (Índices em `contact_phone`, `tenant_id` e `created_at` ativos)
 
-### 3. Migração de dados
-- [ ] Mapear conversas legadas do sistema .NET para o novo esquema (se necessário)
+### 3. Registro Automático
+- [x] Integrar persistência no FlowWorker (Entrada), NodeActions (Bot) e ChatService (Agente) (Garantido rastro completo da interação)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

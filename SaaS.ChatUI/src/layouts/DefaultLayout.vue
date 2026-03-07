@@ -77,6 +77,7 @@ const auth = useAuthStore();
 
 const menuItems = [
   { name: 'Dashboard', path: '/', icon: LayoutDashboard },
+  { name: 'WhatsApp', path: '/bots', icon: Bot },
   { name: 'Conversas', path: '/chat', icon: MessageSquare },
   { name: 'Flow Builder', path: '/agent-builder', icon: Workflow },
   { name: 'Tenants', path: '/tenants', icon: Users },

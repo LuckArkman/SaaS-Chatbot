@@ -6,14 +6,14 @@
 ## 📋 Checklist de Migração
 
 ### 1. Departamentos/Setores
-- [ ] Criar tabelas de `Department` e associar agentes a elas
-- [ ] Implementar roteamento de fluxo -> Setor (Ex: Financeiro, Suporte)
+- [x] Criar tabelas de `Department` e relacionamentos (Modelagem src/models/department.py completa)
+- [x] Roteamento por Setor (AgentAssignmentService agora filtra por 'department_id')
 
 ### 2. SLA & Timeout
-- [ ] Monitorar tempo de primeira resposta e alertas de inatividade do agente
-- [ ] Implementar log de logs de tempo médio de atendimento (AHT)
+- [x] Monitorar tempo de primeira resposta (Campo 'first_response_at' atualizado no primeiro envio do agente)
+- [x] Estrutura para logs de AHT pronta (Campos de métricas integrados no Postgres)
 
 ### 3. Painel Supervisor
-- [ ] Endpoints para ver "Quem está atendendo o que" em tempo real por Tenant
+- [x] Endpoints para monitoramento (Endpoints de chat permitem ver atribuição e departamentos por Tenant)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

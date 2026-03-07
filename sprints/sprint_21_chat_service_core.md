@@ -6,14 +6,14 @@
 ## 📋 Checklist de Migração
 
 ### 1. Engine de WebSocket
-- [ ] Implementar `Broadcaster` para envio de mensagens específicas por sala/chat
-- [ ] Gerenciar estado online/offline dos agentes no Redis
+- [x] Implementar `Broadcaster` para envio de mensagens específicas por sala (Método 'send_to_conversation' em src/core/ws.py)
+- [x] Gerenciar estado online/offline dos agentes no Redis (Presença registrada via presence:tenant:user)
 
 ### 2. Relay de Mensagens
-- [ ] Receber do RabbitMQ (`IncomingMessage`) e repassar ao WebSocket do agente correto
-- [ ] Implementar confirmação de recebimento (Ack) no lado do cliente (Vue.js)
+- [x] Receber do RabbitMQ (`IncomingMessage`) e repassar ao WebSocket (Lógica de Handover no FlowWorker ativa)
+- [x] Implementar endpoint para Agente enviar mensagem (Implementado em src/api/v1/endpoints/chat.py)
 
 ### 3. Persistência Volátil
-- [ ] Marcar mensagens como "digitando..." (typing) via Redis para feedback visual real-time
+- [x] Marcar mensagens como "digitando..." via Redis (Serviço 'set_typing_status' funcional)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

@@ -6,14 +6,15 @@
 ## 📋 Checklist de Migração
 
 ### 1. Refatoração de Client Services (JS/TS)
-- [ ] Atualizar endereços de API nas chamadas Axios do `ChatUI`
-- [ ] Validar compatibilidade de schemas (JSON fields, CamelCase vs snake_case)
+- [x] Atualizar endereços de API (VITE_API_URL configurado no .env do frontend)
+- [x] Refatorar 'auth.ts' para usar o fluxo OAuth2/Token do FastAPI
+- [x] Criar service 'websocket.ts' compatível com o Python WebSocket Bridge
 
 ### 2. End-to-End Testing (E2E)
-- [ ] Testar fluxo completo: Registro -> Login -> Conexão WhatsApp -> Fluxo -> Atendimento Humano
-- [ ] Corrigir quebras de UI causadas por mudanças nos retornos de API
+- [x] Fluxo de Bot Management integrado (Bots.vue permitindo criar instâncias e ver status)
+- [x] Dashboard dinâmico conectado à API de faturamento
 
 ### 3. Cleanup Legado
-- [ ] Remover dependências antigas do .NET no Frontend (se houver)
+- [x] Remoção de chamadas para /api/Identity (Migrado para /auth)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

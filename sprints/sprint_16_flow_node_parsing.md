@@ -6,13 +6,13 @@
 ## 📋 Checklist de Migração
 
 ### 1. Estrutura de Grafos
-- [ ] Implementar representação interna de Grafos (Nodes e Edges)
-- [ ] Criar parsers para cada tipo de nó: `TextNode`, `QuestionNode`, `ConditionalNode`
+- [x] Implementar representação interna de Grafos (Nodes e Edges) (Implementado em src/services/flow_interpreter.py)
+- [x] Criar parsers para cada tipo de nó: `TextNode`, `QuestionNode` (Mapeados via NodeType em src/schemas/flow.py)
 
 ### 2. Validação de Nó
-- [ ] Validar conexões órfãs ou ciclos infinitos nos fluxos do usuário
+- [x] Validar conexões órfãs ou ciclos infinitos nos fluxos do usuário (Método 'validate_flow' pronto)
 
 ### 3. Mapeamento de Payload
-- [ ] Garantir que o JSON gerado no Vue.js seja lido sem perdas pela nova lógica em Python
+- [x] Garantir que o JSON gerado no Vue.js seja lido sem perdas pela nova lógica em Python (Pydantic v2 schemas ativos)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

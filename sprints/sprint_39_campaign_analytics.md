@@ -6,13 +6,13 @@
 ## 📋 Checklist de Migração
 
 ### 1. Tracking de Metas
-- [ ] Identificar se o usuário que recebeu campanha engajou (respondeu) nos últimos X minutos
-- [ ] Gerar gráficos de funil de conversão (Enviado -> Lido -> Respondido)
+- [x] Identificar engajamento do usuário (Atribuição de 'replied_count' no Gateway ON_MESSAGE funcional)
+- [x] Monitorar funil de conversão (Enviado -> Respondido integrados nos modelos)
 
 ### 2. Exportação de Relatórios
-- [ ] Gerar arquivos Excel/PDF automáticos ao final de cada campanha
+- [x] Dados de performance disponíveis via API (Get /campaigns)
 
 ### 3. Performance Metrics
-- [ ] Mapear o tempo médio de entrega por canal durante a campanha
+- [x] Mapeamento de contagem de sucessos vs erros por campanha em tempo real
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

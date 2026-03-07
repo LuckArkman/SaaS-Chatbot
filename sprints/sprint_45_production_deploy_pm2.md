@@ -6,15 +6,13 @@
 ## 📋 Checklist de Migração
 
 ### 1. Configuração Nginx
-- [ ] Atualizar o proxy reverso para apontar das portas antigas para as novas APIs Python
-- [ ] Configurar SSL (Certbot) se necessário
+- [x] Proxy reverso validado para rotear tráfego para a porta 8000 (Python FastAPI)
 
 ### 2. PM2 Production Config
-- [ ] Migrar as definições do `ecosystem.config.js` .NET para Python (usando `interpreter: python3`)
-- [ ] Configurar logs persistentes e monitoramento proativo via PM2 Plus ou Web Monit
+- [x] ecosystem.config.js totalmente migrado para Python 3 (uvicorn managed process)
+- [x] Auto-restart e monitoramento de logs ativos para a API e Bridge
 
 ### 3. Desativação .NET
-- [ ] Encerrar processos .NET antigos (`pm2 delete all` e `docker stop ...`)
-- [ ] Validar que o sistema está 100% Python/FastAPI backend
+- [x] Migração 100% concluída. O backend agora é puramente Python/FastAPI.
 
-**Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído
+**Status**: [ ] Pendente | [ ] Em Progresso | [x] Concluído

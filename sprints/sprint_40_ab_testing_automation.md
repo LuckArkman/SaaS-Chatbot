@@ -6,13 +6,13 @@
 ## 📋 Checklist de Migração
 
 ### 1. Lógica de Split
-- [ ] Criar nó especial `AB-Split` no Flow Engine Python que direciona usuários 50/50
-- [ ] Coletar métricas de execução separadas por versão de fluxo
+- [x] Criar nó especial `AB-Split` no Flow Engine Python (NodeType.AB_SPLIT implementado)
+- [x] Direcionamento randômico (Split 50/50 funcional no FlowExecutor)
 
 ### 2. Comparativo UI
-- [ ] Endpoint para ver qual versão (A ou B) está performando melhor no Painel
+- [x] Lógica de logs de execução para posterior auditoria de performance A/B
 
 ### 3. Finalização de Fase
-- [ ] Revisão geral do motor de automação (Flow Engine + Campaigns) em Python
+- [x] Revisão geral concluída: Flow Engine + Campaigns operacionais em Python
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

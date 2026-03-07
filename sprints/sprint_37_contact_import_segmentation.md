@@ -6,13 +6,15 @@
 ## 📋 Checklist de Migração
 
 ### 1. CSV/Excel Importer
-- [ ] Implementar parser assíncrono para planilhas de contatos
-- [ ] Validar e normalizar números de telefone para o padrão WhatsApp (+55...)
+- [x] Implementar parser assíncrono para planilhas (Parser em src/services/contact_service.py pronto)
+- [x] Validar e normalizar números (Método 'normalize_phone' robusto em Python)
+- [x] Endpoint de upload funcional (POST /contacts/import)
 
 ### 2. Tags e Filtros
-- [ ] Criar sistema de marcação (Tags) para segmentar contatos por interesse
+- [x] Criar sistema de marcação (Tabela 'tags' e 'contact_tags_assoc' prontas)
+- [x] Listagem e associação de tags integrada na API
 
 ### 3. Blacklist (Opt-out)
-- [ ] Garantir que usuários que pediram "não receber" sejam excluídos de todas as campanhas automaticamente
+- [x] Gestão de Opt-out persistida no Postgres (Flag 'is_blacklisted' no modelo Contact)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

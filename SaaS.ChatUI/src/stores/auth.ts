@@ -9,10 +9,21 @@ export const useAuthStore = defineStore('auth', () => {
 
     async function login(credentials: any) {
         try {
-            const { data } = await api.post('/api/Identity/login', credentials);
-            token.value = data.token;
-            user.value = data.user;
-            localStorage.setItem('access_token', data.token);
+            const formData = new URLSearchParams();
+            formData.append('username', credentials.email);
+            formData.append('password', credentials.password);
+
+            const { data } = await api.post('/auth/login', formData, {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            });
+
+            token.value = data.access_token;
+            localStorage.setItem('access_token', data.access_token);
+
+            // Busca dados do usuário após login
+            const userRes = await api.get('/auth/me');
+            user.value = userRes.data;
+
             return data;
         } catch (error) {
             console.error('Login failed', error);

@@ -6,14 +6,14 @@
 ## 📋 Checklist de Migração
 
 ### 1. Conector aio-pika
-- [ ] Implementar conexão persistente com RabbitMQ
-- [ ] Criar lógica de reconexão automática (Resiliência)
+- [x] Implementar conexão persistente com RabbitMQ (Conexão robusta implementada)
+- [x] Criar lógica de reconexão automática (Resiliência nativa do aio-pika)
 
 ### 2. Publicação de Eventos
-- [ ] Implementar `ServiceBusPublisher` para enviar mensagens para Exchanges do tipo Topic
+- [x] Implementar `ServiceBusPublisher` para enviar mensagens para Exchanges do tipo Topic
 
 ### 3. Consumo de Eventos (Background Tasks)
-- [ ] Implementar `BaseConsumer` assíncrono para escutar filas
-- [ ] Validar serialização/deserialização JSON (Pydantic Integration)
+- [x] Implementar `BaseConsumer` assíncrono para escutar filas (Método `subscribe` implementado)
+- [x] Validar serialização/deserialização JSON (Integrado no Core Bus)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

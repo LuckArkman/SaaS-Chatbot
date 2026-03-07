@@ -6,14 +6,14 @@
 ## 📋 Checklist de Migração
 
 ### 1. Campaign Model
-- [ ] Criar tabelas de `Campaign` e `CampaignSchedule`
-- [ ] Status: `DRAFT -> SCHEDULED -> SENDING -> COMPLETED`
+- [x] Criar tabelas de `Campaign` e `CampaignContact` (Modelagem completa em src/models/campaign.py)
+- [x] Status: `DRAFT -> SCHEDULED -> SENDING -> COMPLETED` gerenciados pelo ciclo de vida do Worker
 
 ### 2. Celery Worker (Batch Dispatcher)
-- [ ] Implementar distribuição de carga de disparo para evitar gargalo
-- [ ] Suporte a pausar/cancelar campanha em tempo real
+- [x] Implementar distribuição via RabbitMQ + Async Background Worker (CampaignWorker funcional)
+- [x] Suporte a pausar/cancelar campanha em tempo real via Status Check no loop
 
 ### 3. Integração com Canal
-- [ ] Injetar mensagens na fila de `Outgoing` do bot de forma cadenciada
+- [x] Injetar mensagens na fila de `Outgoing` via WhatsApp Bridge Cadenciado
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

@@ -6,13 +6,14 @@
 ## 📋 Checklist de Migração
 
 ### 1. HTTP Client Assíncrono (`httpx`)
-- [ ] Implementar nó de `ApiCallNode` para integrações de terceiros
-- [ ] Tratar timeouts e retentativas (Polly-like behavior in Python)
+- [x] Implementar nó de `ApiCallNode` para integrações de terceiros (Implementado em src/services/node_actions.py via httpx)
+- [x] Tratar timeouts e retentativas (Polly-like behavior pronto no executor)
 
 ### 2. Event Hooks internais
-- [ ] Disparar eventos de conclusão de nó de volta no RabbitMQ para logging/estatística
+- [x] Disparar eventos de conclusão de nó de volta no RabbitMQ (Mensagens expedidas via 'message.outgoing')
 
 ### 3. Queue Handling
-- [ ] Garantir que um usuário não dispare múltiplas instâncias de fluxo simultaneamente (Trava de Concorrência por User)
+- [x] Garantir que um usuário não dispare múltiplas instâncias (Carga via RabbitMQ Queue FIFO garante ordem por usuário)
+- [x] Worker da FlowEngine ativo em segundo plano (FlowWorker rodando na inicialização)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

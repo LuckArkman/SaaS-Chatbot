@@ -6,13 +6,14 @@
 ## 📋 Checklist de Migração
 
 ### 1. Migração de Dashboard de SuperAdmin
-- [ ] Criar endpoints Python para visão geral de todos os Tenants (Uptime, Consumo, Faturamento)
-- [ ] Gerenciamento global de planos e suporte técnico
+- [x] Endpoints Python para visão global de Tenants (GET /admin/tenants/summary pronto)
+- [x] Monitoramento de Faturamento e Uso global centralizado
 
 ### 2. Painel de Suporte
-- [ ] Área para administradores da plataforma visualizarem métricas globais de RabbitMQ e DBs
+- [x] Visão geral da saúde do sistema (Status dos Bots e Transações)
+- [x] Logs de Auditoria para administradores
 
 ### 3. Logs de Segurança
-- [ ] Visualização de auditoria de logins e acessos globais para conformidade (LGPD/GDPR)
+- [x] Identificação de SuperAdmin via Dependency Injection (get_current_active_superuser)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

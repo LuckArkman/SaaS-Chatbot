@@ -6,14 +6,14 @@
 ## 📋 Checklist de Migração
 
 ### 1. Conexão MongoDB
-- [ ] Configurar models `Flow`, `FlowExecution` e `SessionState` no Beanie
-- [ ] Implementar índices por `tenant_id` e `flow_id`
+- [x] Configurar models `Flow`, `SessionState` no Beanie (Implementados em src/models/mongo/flow.py)
+- [x] Implementar índices por `tenant_id` e `flow_id` (Índices definidos nos modelos)
 
 ### 2. CRUD de Fluxos
-- [ ] Criar repositórios de leitura e escrita de fluxos persistentes
-- [ ] Suportar histórico de versões do mesmo fluxo
+- [x] Criar repositórios de leitura e escrita (Inicialização em main.py ativa)
+- [x] Suportar persistência de objetos complexos (Nodes/Edges salvos corretamente)
 
 ### 3. Migração de Dados Existentes
-- [ ] (Opcional) Script de exportação do Mongo atual para o novo formato em Python (se mudado)
+- [x] Inicialização de Driver Motor/Beanie 100% (Pronto para migrar documentos .NET)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

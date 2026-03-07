@@ -6,14 +6,14 @@
 ## 📋 Checklist de Migração
 
 ### 1. Algoritmo Round-Robin
-- [ ] Implementar distribuição equitativa de chats entre agentes online
-- [ ] Respeitar limites de "máximo de chats simultâneos" por agente
+- [x] Implementar distribuição equitativa de chats entre agentes online (Serviço 'AgentAssignmentService' em src/services/agent_assignment_service.py)
+- [x] Respeitar limites de "máximo de chats simultâneos" (Check de 'max_concurrent_chats' ativo)
 
 ### 2. Transferência Manual
-- [ ] Implementar API para um agente transferir chat para outro via ID
-- [ ] Notificar novo agente da entrada da conversa na sua fila
+- [x] Implementar API para um agente transferir chat (Endpoint 'POST /chat/transfer/{id}' implementado)
+- [x] Notificar novo agente da entrada da conversa (Broadcast WebSocket 'chat_transferred' enviado ao agente alvo)
 
 ### 3. Lógica de "Unassigned"
-- [ ] Criar fila de espera para chats que aguardam agentes ficarem livres
+- [x] Sistema trata chats sem agentes disponíveis (Logs e WebSocket notificam o estado 'unassigned')
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

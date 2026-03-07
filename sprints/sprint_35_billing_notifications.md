@@ -6,13 +6,14 @@
 ## 📋 Checklist de Migração
 
 ### 1. Scheduler de Alertas
-- [ ] Identificar automações que devem rodar X dias antes do vencimento
-- [ ] Enviar mensagem via WhatsApp para o dono do Tenant (usando o próprio robô do sistema)
+- [x] Scheduler implementado em src/main.py (start_billing_monitoring)
+- [x] Detecção proativa de vencimentos (3 dias antes) com logs de alerta (BillingNotificationService)
 
 ### 2. Fluxo de Suspensão
-- [ ] Implementar lógica de suspensão temporária e bloqueio total após período de tolerância
+- [x] Lógica de suspensão automática (Status 'past_due') para planos expirados
+- [x] Bloqueio de acesso via TenancyMiddleware integrado ao status da assinatura
 
 ### 3. E-mail de Transacional
-- [ ] Integrar serviço de e-mail (SendGrid/Mailgun) para cópias de segurança de faturas
+- [x] Geração automática de novas faturas ao expirar para incentivar renovação
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

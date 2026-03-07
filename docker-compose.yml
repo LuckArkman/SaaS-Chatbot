@@ -2,38 +2,91 @@ services:
   saas_postgres:
     image: postgres:16-alpine
     container_name: saas_postgres
-    network_mode: host
     environment:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=password123
       - POSTGRES_DB=SaaS_OmniChannel
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     restart: always
 
   saas_redis:
     image: redis:7-alpine
     container_name: saas_redis
-    network_mode: host
+    ports:
+      - "6379:6379"
     restart: always
 
   saas_rabbitmq:
     image: rabbitmq:3-management-alpine
     container_name: saas_rabbitmq
-    network_mode: host
     environment:
       - RABBITMQ_DEFAULT_USER=admin
       - RABBITMQ_DEFAULT_PASS=password123
+    ports:
+      - "5672:5672"
+      - "15672:15672"
     restart: always
 
   saas_mongo:
     image: mongo:7
     container_name: saas_mongo
-    network_mode: host
     volumes:
       - mongo_data:/data/db
+    ports:
+      - "27017:27017"
+    restart: always
+
+  saas_api:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    container_name: saas_api
+    depends_on:
+      - saas_postgres
+      - saas_redis
+      - saas_rabbitmq
+      - saas_mongo
+    environment:
+      - POSTGRES_SERVER=saas_postgres
+      - MONGODB_URL=mongodb://saas_mongo:27017
+      - REDIS_URL=redis://saas_redis:6379/0
+      - RABBITMQ_URL=amqp://admin:password123@saas_rabbitmq/
+      - WHATSAPP_BRIDGE_URL=http://saas_bridge:4000
+    ports:
+      - "8000:8000"
+    restart: always
+
+  saas_bridge:
+    build:
+      context: ./SaaS.OmniChannelPlatform.Services.WhatsAppBot
+      dockerfile: Dockerfile
+    container_name: saas_bridge
+    depends_on:
+      - saas_api
+    environment:
+      - WEBHOOK_URL=http://saas_api:8000/api/v1/gateway/webhook/whatsapp
+      - PORT=4000
+    ports:
+      - "4000:4000"
+    volumes:
+      - bridge_tokens:/app/tokens
+    restart: always
+
+  saas_ui:
+    build:
+      context: ./SaaS.ChatUI
+      dockerfile: Dockerfile
+    container_name: saas_ui
+    depends_on:
+      - saas_api
+    ports:
+      - "8081:8081"
     restart: always
 
 volumes:
   postgres_data:
   mongo_data:
+  bridge_tokens:

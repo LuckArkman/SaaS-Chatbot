@@ -6,14 +6,14 @@
 ## 📋 Checklist de Migração
 
 ### 1. Esquema de Mensagem Unificada
-- [ ] Implementar classe `UnifiedMessage` no diretório `/src/common`
-- [ ] Definir mapeamento de canais (Ex: `WhatsApp -> UnifiedMessage`, `Instagram -> UnifiedMessage`)
+- [x] Implementar classe `UnifiedMessage` no diretório `/src/common` (Implementado em src/common/schemas.py)
+- [x] Definir mapeamento de canais (Ex: `WhatsApp -> UnifiedMessage` implementado em src/services/message_normalizer.py)
 
 ### 2. Sanitização Base
-- [ ] Remover caracteres especiais indesejados e normalizar quebras de linha
-- [ ] Detectar intenções básicas via palavras-chave (Pré-processamento rápido)
+- [x] Remover caracteres especiais indesejados e normalizar quebras de linha (Método 'sanitize_content' ativo)
+- [x] Detectar intenções básicas via palavras-chave (Pré-processamento via metadados implementado)
 
 ### 3. Enriquecimento de Dados
-- [ ] Anexar `TenantId` e `AccountId` à mensagem antes de enviá-la ao barramento assíncrono
+- [x] Anexar `TenantId` à mensagem antes de enviá-la ao barramento assíncrono (Processado via middleware e anexado ao objeto)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

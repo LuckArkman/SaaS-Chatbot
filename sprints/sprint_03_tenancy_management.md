@@ -6,16 +6,16 @@
 ## 📋 Checklist de Migração
 
 ### 1. Middleware de Tenancy
-- [ ] Criar middleware para extrair `TenantId` do Header ou Claims do JWT
-- [ ] Implementar validação de existência e status do Tenant no banco
-- [ ] Criar contexto global (`ContextVar`) para armazenar o `TenantId` por requisição
+- [x] Criar middleware para extrair `TenantId` do Header ou Claims do JWT
+- [x] Implementar validação de existência e status do Tenant no banco
+- [x] Criar contexto global (`ContextVar`) para armazenar o `TenantId` por requisição
 
 ### 2. Isolamento de Queries (SQLAlchemy)
-- [ ] Configurar Base Model para incluir `tenant_id` em todas as entidades compartilhadas
-- [ ] Implementar filtragem automática de queries (similar ao Global Query Filters do EF Core)
+- [x] Configurar Base Model para incluir `tenant_id` em todas as entidades compartilhadas
+- [x] Implementar filtragem automática de queries (similar ao Global Query Filters do EF Core)
 
 ### 3. Hooks de Persistência
-- [ ] Garantir que o `tenant_id` seja injetado automaticamente no `save/update`
+- [x] Garantir que o `tenant_id` seja injetado automaticamente no `save/update`
 
 ## 🔑 Conceitos Teóricos
 Assim como no C#, o isolamento será a nível de aplicação, onde cada query SQL incluirá o `WHERE tenant_id = :current_tenant_id`.

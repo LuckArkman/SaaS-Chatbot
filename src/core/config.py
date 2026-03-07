@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     # RabbitMQ
     RABBITMQ_URL: str = os.getenv("RABBITMQ_URL", "amqp://admin:password123@127.0.0.1/")
 
+    # WhatsApp Bridge - Node.js (Sprint 26)
+    WHATSAPP_BRIDGE_URL: str = os.getenv("WHATSAPP_BRIDGE_URL", "http://127.0.0.1:8081")
+    BRIDGE_API_KEY: str = os.getenv("BRIDGE_API_KEY", "BOT_API_KEY_CHANGE_ME")
+
     model_config = SettingsConfigDict(case_sensitive=True, env_file=".env")
 
 settings = Settings()

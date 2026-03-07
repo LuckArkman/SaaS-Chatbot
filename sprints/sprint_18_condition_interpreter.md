@@ -6,14 +6,14 @@
 ## 📋 Checklist de Migração
 
 ### 1. Motor de Expressões
-- [ ] Implementar interpretador básico de expressões (Ex: `{{user.name}} == "Teste"`)
-- [ ] Integrar acesso a variáveis de ambiente e globais do sistema
+- [x] Implementar interpretador básico de expressões (Implementado em src/services/condition_evaluator.py)
+- [x] Integrar acesso a variáveis de ambiente e globais do sistema (Injeção de variáveis via placeholders `{{var}}` funcional)
 
 ### 2. Gerenciamento de Sessão (State Machine)
-- [ ] Armazenar e recuperar o estado atual da conversa do MongoDB em cada interação
-- [ ] Cachear os estados quentes no Redis para performance "instantânea"
+- [x] Armazenar e recuperar o estado atual da conversa do MongoDB (Implementado em src/services/session_service.py)
+- [x] Cachear os estados quentes no Redis para performance "instantânea" (Estratégia de Cache 30min ativa)
 
 ### 3. Input Handling
-- [ ] Coletar dados de entrada do usuário (`QuestionNode`) e salvar na variável correta da sessão
+- [x] Coletar dados de entrada do usuário (`QuestionNode`) e salvar na variável correta da sessão (Preparado no SessionService para uso na Sprint 19)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

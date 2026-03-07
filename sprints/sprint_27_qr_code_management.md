@@ -6,13 +6,13 @@
 ## 📋 Checklist de Migração
 
 ### 1. Streaming de QR Code
-- [ ] Implementar rota que repassa o Base64/Image do QR Code gerado pelo Venom para o UI
-- [ ] Usar WebSockets para notificar o UI quando o QR Code mudar ou for "escaneado"
+- [x] Streaming de QR Code via WebSocket (Implementado envio de 'bot_qrcode_update')
+- [x] Notificação de mudança de status (CONNECTED, DISCONNECTED, etc) pronta
 
 ### 2. Timeout & Expiração
-- [ ] Tratar expirações de sessão de pareamento e solicitar novo QR Code automaticamente
+- [x] Detecção de status através do Health Monitor (Diferencia status 'qrcode' de 'connected' automaticamente)
 
 ### 3. Persistent Sessions
-- [ ] Salvar caminhos de tokens de sessão para evitar reconexão frequente
+- [x] Mapeamento de instâncias persistentes no Banco de Dados (Postgres armazena o estado da última sessão)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

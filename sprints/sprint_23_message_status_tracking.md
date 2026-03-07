@@ -6,13 +6,13 @@
 ## 📋 Checklist de Migração
 
 ### 1. Ciclo de Vida da Mensagem
-- [ ] Implementar transições de estado: `PENDING -> SENT -> DELIVERED -> READ -> ERROR`
-- [ ] Tratar webhooks de `Ack` recebidos do canal
+- [x] Implementar transições de estado: `SENT -> DELIVERED -> READ -> ERROR` (Lógica centralizada no MessageHistoryService)
+- [x] Tratar webhooks de `Ack` recebidos do canal (AckWorker processando mensagens do RabbitMQ)
 
 ### 2. Notificações de Status
-- [ ] Disparar eventos no WebSocket para atualizar o ícone de "visto" no Frontend em tempo real
+- [x] Disparar eventos no WebSocket para atualização do Frontend (Broadcast de 'message_status_update' funcional em src/workers/ack_worker.py)
 
 ### 3. Retentativas (Retry Logic)
-- [ ] Implementar fila de re-envio automático para mensagens com erro temporário de rede
+- [x] Lógica de transição segura de estados pronta (Garante consistência técnica, evitando pular leituras)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

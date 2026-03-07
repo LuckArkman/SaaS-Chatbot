@@ -6,18 +6,18 @@
 ## 📋 Checklist de Migração
 
 ### 1. Modelagem de Segurança
-- [ ] Criar modelos Pydantic para `User`, `Role` e `Claims`
-- [ ] Implementar hashing de senhas usando `passlib[bcrypt]`
-- [ ] Migrar lógica de autenticação do Postgres (`IdentityDbContext`)
+- [x] Criar modelos Pydantic para `User`, `Role` e `Claims`
+- [x] Implementar hashing de senhas usando `passlib[bcrypt]`
+- [x] Migrar lógica de autenticação do Postgres (`IdentityDbContext`)
 
 ### 2. JWT & Tokens
-- [ ] Implementar geração de Access Tokens e Refresh Tokens
-- [ ] Criar dependência `get_current_user` para proteção de rotas
-- [ ] Implementar lógica de expiração e invalidação de tokens
+- [x] Implementar geração de Access Tokens e Refresh Tokens
+- [x] Criar dependência `get_current_user` para proteção de rotas
+- [x] Implementar lógica de expiração e invalidação de tokens
 
 ### 3. Integração FastAPI
-- [ ] Configurar `OAuth2PasswordBearer`
-- [ ] Criar endpoints `/auth/login` e `/auth/refresh`
+- [x] Configurar `OAuth2PasswordBearer`
+- [x] Criar endpoints `/auth/login` e `/auth/refresh`
 
 ## 🏗️ Mapeamento .NET -> Python
 

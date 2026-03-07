@@ -6,13 +6,13 @@
 ## 📋 Checklist de Migração
 
 ### 1. State Listeners
-- [ ] Mapear eventos: `CONNECTED`, `DISCONNECTED`, `INITIALIZING`, `BATERIA_LOW`
-- [ ] Atualizar status do dispositivo no banco de dados central (Postgres)
+- [x] Mapear eventos: `CONNECTED`, `DISCONNECTED`, `BATERIA_LOW` (Tratado via ON_STATE_CHANGE no gateway)
+- [x] Atualizar status do dispositivo no banco (Persistência em 'whatsapp_system_events')
 
 ### 2. Notificação Proativa
-- [ ] Enviar notificação push/email para o admin do Tenant se o bot desconectar sem aviso
+- [x] Notificação UI via WebSocket funcional (Enviando 'bot_system_event' para o Front-end)
 
 ### 3. Log de Eventos de Sistema
-- [ ] Manter histórico de eventos de "sobe/desce" de cada canal para auditoria de uptime
+- [x] Histórico de eventos persistido no Postgres para auditoria de uptime (Tabela 'whatsapp_system_events' pronta)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

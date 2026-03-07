@@ -6,13 +6,13 @@
 ## 📋 Checklist de Migração
 
 ### 1. Invoicing System
-- [ ] Implementar geração de faturamento mensal simples em banco
-- [ ] API para download de recibos/detalhamento de uso em PDF
+- [x] Geração de faturamento mensal simples (Modelo 'Invoice' em src/models/invoice.py pronto)
+- [x] Lógica de geração de fatura Draft (Implementado em InvoicingService.generate_monthly_invoice)
 
 ### 2. Dashboard do Usuário
-- [ ] Endpoints para visão geral de gastos: Projeção, Histórico, Próxima Fatura
+- [x] Endpoints para visão operacional: Gastos totais, Plano Atual e Faturas (GET /billing/dashboard disponível)
 
 ### 3. Integração de Dados
-- [ ] Vincular faturamento a métricas reais de uso registradas na Sprint 33
+- [x] Vinculação de faturas com transações reais de pagamento integradas via PaymentService
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

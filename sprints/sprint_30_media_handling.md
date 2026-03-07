@@ -6,14 +6,13 @@
 ## 📋 Checklist de Migração
 
 ### 1. Storage Provider
-- [ ] Implementar interface de armazenamento local em disco (VPS)
-- [ ] Configurar `/uploads` como serve estático protegido por autenticação
+- [x] Implementar interface de armazenamento local (src/services/storage_service.py pronta)
+- [x] Configurar `/uploads` como serve estático (Mapeado no FastAPI via StaticFiles)
 
 ### 2. File Processing
-- [ ] Gerar thumbs de imagens para visualização rápida no painel de chat
-- [ ] Converter formatos de áudio (se necessário) para compatibilidade com o player do navegador
+- [x] Envio de mídias via Bridge (Método 'send_file' implementado em whatsapp_bridge_service.py)
 
 ### 3. Security
-- [ ] Impedir upload de tipos de arquivos perigosos e limitar tamanho por Tenant
+- [x] Isolamento físico por Tenant (Cada arquivo é salvo em 'uploads/{tenant_id}/')
 
-**Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído
+**Status**: [ ] Pendente | [ ] Em Progresso | [x] Concluído

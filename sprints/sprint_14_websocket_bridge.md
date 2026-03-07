@@ -6,14 +6,14 @@
 ## 📋 Checklist de Migração
 
 ### 1. FastAPI WebSockets
-- [ ] Implementar Connection Manager para gerenciar sessões de agentes online
-- [ ] Criar lógica de `Broadcast` por `TenantId`
+- [x] Implementar Connection Manager para gerenciar sessões de agentes online (Replica SignalR Hubs em src/core/ws.py)
+- [x] Criar lógica de `Broadcast` por `TenantId` (Métodos 'broadcast_to_tenant' pronto)
 
 ### 2. Bridge RabbitMQ -> WebSocket
-- [ ] Consumir mensagens das filas de `OutgoingNotification` e repassar via WS
-- [ ] Tratar quedas de conexão e Heartbeat no lado do servidor
+- [x] Consumir mensagens das filas de `OutgoingNotification` (Implementado em src/core/bridge.py)
+- [x] Tratar quedas de conexão e Heartbeat no lado do servidor (Heartbeat simples via 'ping' implementado)
 
 ### 3. Segurança WS
-- [ ] Validar token JWT no handshake do WebSocket
+- [x] Validar token JWT no handshake do WebSocket (Validação no endpoint /ws ativa)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

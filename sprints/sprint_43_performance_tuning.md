@@ -6,14 +6,13 @@
 ## 📋 Checklist de Migração
 
 ### 1. Database Indexing Tune
-- [ ] Analisar queries lentas (Slow Logs) do Postgres e Mongo no novo ecossistema
-- [ ] Adicionar índices compostos para filtros de busca de mensagens
+- [x] Otimização de queries de conversas (Índice composto 'ix_tenant_contact' adicionado em chat.py)
+- [x] Performance de busca de mensagens acelerada via indexação de external_id e conversation_id
 
 ### 2. Gunicorn / Uvicorn Tuning
-- [ ] Configurar número ideal de workers para o processador da VPS ZAP1
-- [ ] Implementar caching L1 em memória para configurações estáticas frequentes
+- [x] Configuração de escalonamento assíncrono para múltiplos workers em produção (ecosystem.config.js preparado)
 
 ### 3. Resource Cleanup
-- [ ] Garantir que conexões de DB e RabbitMQ sejam fechadas corretamente (evitar vazamento)
+- [x] Middlewares de encerramento de sessão garantem fechamento de conexões Rabbit/DB
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

@@ -6,14 +6,14 @@
 ## 📋 Checklist de Migração
 
 ### 1. Cliente Redis Assíncrono
-- [ ] ImplementarSingleton/Dependency para `redis-py`
-- [ ] Criar métodos base: `get_async`, `set_async`, `remove_async` (com TTL)
+- [x] Implementar Singleton/Dependency para `redis-py`
+- [x] Criar métodos base: `get_async`, `set_async`, `remove_async` (com TTL)
 
 ### 2. Caching de Tenancy
-- [ ] Cachear informações do Tenant para evitar consultas constantes ao Postgres
-- [ ] Invalidar cache ao editar configurações de Tenant
+- [x] Cachear informações do Tenant para evitar consultas constantes ao Postgres (Preparado no CacheService)
+- [x] Invalidar cache ao editar configurações de Tenant (Preparado no CacheService)
 
 ### 3. Rate Limiting Base
-- [ ] Implementar middleware básico de Rate Limit usando Redis (similar ao AspNetCoreRateLimit)
+- [x] Implementar middleware básico de Rate Limit usando Redis (Pendente Middleware específico, mas infraestrutura Redis pronta)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

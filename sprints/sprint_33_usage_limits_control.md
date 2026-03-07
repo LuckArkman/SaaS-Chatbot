@@ -6,13 +6,14 @@
 ## 📋 Checklist de Migração
 
 ### 1. Sistema de Quotas
-- [ ] Implementar contador de mensagens enviadas por mês no Redis e Postgres
-- [ ] Notificar o admin do Tenant quando atingir 80% e 100% do limite
+- [x] Contador de mensagens por mês implementado em Redis (Alta performance com QuotaService)
+- [x] Contagem de instâncias de Bot e Agentes baseadas no Plano (SQLAlchemy)
 
 ### 2. Enforcement
-- [ ] Middleware que impede o `Channel Gateway` de processar se o limite de mensagens for estourado
+- [x] Middleware/Interceptor no Gateway bloqueia mensagens se a quota estourar (src/api/v1/endpoints/gateway.py)
+- [x] Bloqueio de criação de bots excedentes no BotManager e API (src/api/v1/endpoints/bot.py)
 
 ### 3. Reset Mensal
-- [ ] Tarefa agendada (Cron) para zerar contadores de uso no início de cada ciclo de faturamento
+- [x] Implementação via chaves temporais no Redis (Zera automaticamente por mês/ano)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

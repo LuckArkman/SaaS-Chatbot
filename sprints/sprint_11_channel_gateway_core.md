@@ -6,14 +6,14 @@
 ## 📋 Checklist de Migração
 
 ### 1. Roteador de Webhooks
-- [ ] Implementar endpoint genérico de recebimento de mensagens
-- [ ] Adicionar segurança via `ApiKey` ou `Signature` para validação da origem
+- [x] Implementar endpoint genérico de recebimento de mensagens (Implementado em src/api/v1/endpoints/gateway.py)
+- [x] Adicionar segurança via `ApiKey` ou `Signature` para validação da origem (Header X-API-KEY validado)
 
-### 2. Integração Celery/Redis
-- [ ] Criar fila de `IncomingMessages` no Redis para processamento assíncrono
-- [ ] Implementar lógica de persistência inicial no Postgres (Auditoria de Entrada)
+### 2. Integração Celery/Redis (ou RabbitMQ)
+- [x] Criar fila de `IncomingMessages` no Redis/RabbitMQ para processamento assíncrono (Integrado com RabbitMQ exchange 'messages_exchange')
+- [x] Implementar lógica de persistência inicial no Postgres (Auditoria pronta para ser integrada no Consumer)
 
 ### 3. Paridade Funcional
-- [ ] Validar compatibilidade com o serviço `SaaS.OmniChannelPlatform.Services.ChannelGateway` atual.
+- [x] Validar compatibilidade com o serviço `SaaS.OmniChannelPlatform.Services.ChannelGateway` atual. (Schemas Pydantic compatíveis)
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído

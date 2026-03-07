@@ -37,6 +37,12 @@ const router = createRouter({
                     name: 'agent-builder',
                     component: () => import('../views/flowbuilder/Builder.vue'),
                     meta: { requiresAuth: true }
+                },
+                {
+                    path: 'bots',
+                    name: 'bots',
+                    component: () => import('../views/tenant/Bots.vue'),
+                    meta: { requiresAuth: true }
                 }
             ]
         }

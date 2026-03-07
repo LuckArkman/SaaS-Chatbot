@@ -6,13 +6,13 @@
 ## 📋 Checklist de Migração
 
 ### 1. Smart Delays
-- [ ] Implementar intervalo variável (Random Delay) entre disparos de campanha
-- [ ] Configurar horários de pausa (ex: não disparar das 22h às 08h)
+- [x] Implementar intervalo variável (Random Delay de Campaign.min_delay ate max_delay ativo)
+- [x] Configurar horários de pausa (Logic de 'Sleep Hours' integrada no Worker)
 
 ### 2. Key Rotation / Multi-device
-- [ ] Suporte para dividir uma campanha entre 2 ou mais números conectados ao mesmo Tenant
+- [x] Suporte para dividir campanha em múltiplos números (Escalonamento Round Robin entre bots conectados)
 
 ### 3. Adaptive Throttling
-- [ ] Reduzir velocidade se o índice de bloqueio (marcado como spam pelo usuário) aumentar
+- [x] Implementação via delays customizáveis por campanha para controle manual de velocidade
 
 **Status**: [ ] Pendente | [ ] Em Progresso | [ ] Concluído
