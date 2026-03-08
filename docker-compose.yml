@@ -8,15 +8,11 @@ services:
       - POSTGRES_DB=SaaS_OmniChannel
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     restart: always
 
   saas_redis:
     image: redis:7-alpine
     container_name: saas_redis
-    ports:
-      - "6379:6379"
     restart: always
 
   saas_rabbitmq:
@@ -25,9 +21,6 @@ services:
     environment:
       - RABBITMQ_DEFAULT_USER=admin
       - RABBITMQ_DEFAULT_PASS=password123
-    ports:
-      - "5672:5672"
-      - "15672:15672"
     restart: always
 
   saas_mongo:
@@ -35,8 +28,6 @@ services:
     container_name: saas_mongo
     volumes:
       - mongo_data:/data/db
-    ports:
-      - "27017:27017"
     restart: always
 
   saas_api:
@@ -55,8 +46,8 @@ services:
       - REDIS_URL=redis://saas_redis:6379/0
       - RABBITMQ_URL=amqp://admin:password123@saas_rabbitmq/
       - WHATSAPP_BRIDGE_URL=http://saas_bridge:4000
-    ports:
-      - "8000:8000"
+    volumes:
+      - ./uploads:/app/uploads
     restart: always
 
   saas_bridge:
@@ -69,8 +60,6 @@ services:
     environment:
       - WEBHOOK_URL=http://saas_api:8000/api/v1/gateway/webhook/whatsapp
       - PORT=4000
-    ports:
-      - "4000:4000"
     volumes:
       - bridge_tokens:/app/tokens
     restart: always
@@ -82,8 +71,17 @@ services:
     container_name: saas_ui
     depends_on:
       - saas_api
+    restart: always
+
+  saas_proxy:
+    build: ./nginx
+    container_name: saas_proxy
     ports:
-      - "8081:8081"
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - saas_api
+      - saas_ui
     restart: always
 
 volumes:
