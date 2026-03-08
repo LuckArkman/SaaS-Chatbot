@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SaaS.OmniChannelPlatform.Services.FlowEngine")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c90a1f8fe86c1490f5f83ba98d2d3276c42f6b4b")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b7e6e3a0a0f5aa0c84a6ff71966d2d071d4f015a")]
 [assembly: System.Reflection.AssemblyProductAttribute("SaaS.OmniChannelPlatform.Services.FlowEngine")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SaaS.OmniChannelPlatform.Services.FlowEngine")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
