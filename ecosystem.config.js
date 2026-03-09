@@ -11,14 +11,19 @@ module.exports = {
             max_memory_restart: "1G",
             env: {
                 NODE_ENV: "production",
-                PYTHONPATH: "."
+                PYTHONPATH: ".",
+                WHATSAPP_BRIDGE_URL: "http://127.0.0.1:4000"
             }
         },
         {
             name: "saas-whatsapp-bridge",
-            script: "SaaS.OmniChannelPlatform.Services.WhatsAppBot/index.js", // Bridge de WhatsApp Node.js
+            script: "SaaS.OmniChannelPlatform.Services.WhatsAppBot/index.js",
             instances: 1,
-            autorestart: true
+            autorestart: true,
+            env: {
+                PORT: 4000,
+                WEBHOOK_URL: "http://127.0.0.1:8000/api/v1/gateway/webhook/whatsapp"
+            }
         }
     ]
 };
