@@ -6,6 +6,8 @@ services:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=password123
       - POSTGRES_DB=saas_omnichannel
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: always
@@ -13,6 +15,8 @@ services:
   saas_redis:
     image: redis:7-alpine
     container_name: saas_redis
+    ports:
+      - "6379:6379"
     restart: always
 
   saas_rabbitmq:
@@ -21,72 +25,20 @@ services:
     environment:
       - RABBITMQ_DEFAULT_USER=admin
       - RABBITMQ_DEFAULT_PASS=password123
+    ports:
+      - "5672:5672"
+      - "15672:15672"
     restart: always
 
   saas_mongo:
     image: mongo:7
     container_name: saas_mongo
+    ports:
+      - "27017:27017"
     volumes:
       - mongo_data:/data/db
-    restart: always
-
-  saas_api:
-    build:
-      context: .
-      dockerfile: Dockerfile.python
-    container_name: saas_api
-    depends_on:
-      - saas_postgres
-      - saas_redis
-      - saas_rabbitmq
-      - saas_mongo
-    environment:
-      - POSTGRES_SERVER=saas_postgres
-      - MONGODB_URL=mongodb://saas_mongo:27017/SaaS_Chatbot
-      - REDIS_URL=redis://saas_redis:6379/0
-      - RABBITMQ_URL=amqp://admin:password123@saas_rabbitmq/
-      - WHATSAPP_BRIDGE_URL=http://saas_bridge:4000
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./uploads:/app/uploads
-    restart: always
-
-  saas_bridge:
-    build:
-      context: ./SaaS.OmniChannelPlatform.Services.WhatsAppBot
-      dockerfile: Dockerfile
-    container_name: saas_bridge
-    depends_on:
-      - saas_api
-    environment:
-      - WEBHOOK_URL=http://saas_api:8000/api/v1/gateway/webhook/whatsapp
-      - PORT=4000
-    volumes:
-      - bridge_tokens:/app/tokens
-    restart: always
-
-  saas_ui:
-    build:
-      context: ./SaaS.ChatUI
-      dockerfile: Dockerfile
-    container_name: saas_ui
-    depends_on:
-      - saas_api
-    restart: always
-
-  saas_proxy:
-    build: ./nginx
-    container_name: saas_proxy
-    ports:
-      - "80:80"
-      - "443:443"
-    depends_on:
-      - saas_api
-      - saas_ui
     restart: always
 
 volumes:
   postgres_data:
   mongo_data:
-  bridge_tokens:
