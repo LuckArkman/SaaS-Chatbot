@@ -4,6 +4,7 @@ from src.core.database import SessionLocal
 from src.models.campaign import Campaign, CampaignContact, CampaignStatus
 from src.services.whatsapp_bridge_service import whatsapp_bridge
 from loguru import logger
+from datetime import datetime
 import asyncio
 import random
 

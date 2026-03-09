@@ -2,30 +2,33 @@ module.exports = {
     apps: [
         {
             name: "saas-chatbot-api",
-            script: "uvicorn",
-            args: "src.main:app --host 0.0.0.0 --port 8000 --workers 4",
-            interpreter: "python3",
+            script: "src/main.py",
+            interpreter: "./venv/bin/python",
             instances: 1,
             autorestart: true,
             max_memory_restart: "1G",
+            error_file: "./logs/api_error.log",
+            out_file: "./logs/api_out.log",
+            log_date_format: "YYYY-MM-DD HH:mm:ss",
             env_production: {
                 NODE_ENV: "production",
-                PYTHONPATH: ".",
-                // As variáveis serão lidas do arquivo .env ou do sistema
+                PYTHONPATH: "."
             },
             env_development: {
                 NODE_ENV: "development",
                 PYTHONPATH: ".",
-                watch: true,
-                // Sobrescreve args para modo debug (reload e worker único)
-                args: "src.main:app --host 0.0.0.0 --port 8000 --reload"
+                watch: false
             }
         },
         {
             name: "saas-whatsapp-bridge",
-            script: "SaaS.OmniChannelPlatform.Services.WhatsAppBot/index.js",
+            script: "index.js",
+            cwd: "./SaaS.OmniChannelPlatform.Services.WhatsAppBot",
             instances: 1,
             autorestart: true,
+            error_file: "../logs/bridge_error.log",
+            out_file: "../logs/bridge_out.log",
+            log_date_format: "YYYY-MM-DD HH:mm:ss",
             env: {
                 NODE_ENV: "production",
                 PORT: 4000
