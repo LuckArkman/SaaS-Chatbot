@@ -104,10 +104,21 @@ def create_application() -> FastAPI:
     async def startup_event():
         logger.info("🚀 Iniciando SaaS Chatbot API em Python...")
         
-        # 🟢 Inicializar Banco de Dados Relacional (SQLAlchemy)
-        # Em produção idealmente usaríamos Alembic, mas aqui garantimos a criação das tabelas.
-        Base.metadata.create_all(bind=engine)
-        logger.info("✅ Tabelas SQL verificadas/criadas.")
+        # 🟢 Teste de Conectividade do Banco de Dados
+        try:
+            logger.info(f"🔍 Testando conexão com PostgreSQL: {settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}...")
+            # Testa ping simples no engine
+            with engine.connect() as conn:
+                pass
+            logger.info("✅ Conexão PostgreSQL OK.")
+            
+            Base.metadata.create_all(bind=engine)
+            logger.info("✅ Tabelas SQL verificadas/criadas.")
+        except Exception as e:
+            logger.error(f"❌ Falha crítica ao conectar no PostgreSQL: {e}")
+            # Aguarda um pouco em caso de falha para não sobrecarregar o CPU em loop de restart do PM2
+            await asyncio.sleep(5)
+            raise
         await redis_client.connect()
         
         # 🟢 Conectar RabbitMQ
@@ -152,4 +163,5 @@ app = create_application()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # Em produção/PM2 evitamos o reload=True para não conflitar com gerenciadores de processo
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
