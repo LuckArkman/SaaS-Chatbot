@@ -50,6 +50,7 @@ services:
       - saas_rabbitmq
       - saas_mongo
     environment:
+      - DOCKER_CONTAINER=true
       - POSTGRES_SERVER=saas_postgres
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=password123
