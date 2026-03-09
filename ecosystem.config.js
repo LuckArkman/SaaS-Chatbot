@@ -11,13 +11,13 @@ module.exports = {
             env_production: {
                 NODE_ENV: "production",
                 PYTHONPATH: ".",
-                # As variáveis serão lidas do arquivo.env ou do sistema
+                // As variáveis serão lidas do arquivo .env ou do sistema
             },
             env_development: {
                 NODE_ENV: "development",
                 PYTHONPATH: ".",
                 watch: true,
-                # Sobrescreve args para modo debug(reload e worker único)
+                // Sobrescreve args para modo debug (reload e worker único)
                 args: "src.main:app --host 0.0.0.0 --port 8000 --reload"
             }
         },
