@@ -15,9 +15,12 @@ from src.models.mongo.flow import FlowDocument, SessionStateDocument
 from src.workers.flow_worker import flow_worker
 from src.workers.ack_worker import ack_worker
 from src.services.whatsapp_manager_service import WhatsAppManagerService
-from src.core.database import SessionLocal
+from src.core.database import SessionLocal, engine, Base
 from loguru import logger
 import asyncio
+
+# Importa todos os modelos para registro no SQLAlchemy (Metadata)
+from src.models import user, chat, whatsapp, billing, campaign, contact, department, invoice, transaction
 
 from fastapi.staticfiles import StaticFiles
 from src.services.storage_service import StorageService
@@ -33,7 +36,7 @@ def create_application() -> FastAPI:
     StorageService.ensure_upload_dir()
 
     application = FastAPI(
-        title="LuckArkman SaaS Chatbot",
+        title="SaaS Chatbot",
         description="""
         🚀 Plataforma OmniChannel de Chatbots e Atendimento Humano.
         Migrada de .NET para Python (FastAPI) para alta performance e escalabilidade.
@@ -46,8 +49,8 @@ def create_application() -> FastAPI:
         """,
         version="2.0.0",
         contact={
-            "name": "Luck Arkman Support",
-            "url": "https://luckarkman.com.br",
+            "name": "Mauricio Paixão Lopes",
+            "url": "https://mauriciopaixaolopes.vercel.app/",
         },
         openapi_url=f"{settings.API_V1_STR}/openapi.json"
     )
@@ -101,7 +104,10 @@ def create_application() -> FastAPI:
     async def startup_event():
         logger.info("🚀 Iniciando SaaS Chatbot API em Python...")
         
-        # 🟢 Conectar Redis
+        # 🟢 Inicializar Banco de Dados Relacional (SQLAlchemy)
+        # Em produção idealmente usaríamos Alembic, mas aqui garantimos a criação das tabelas.
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ Tabelas SQL verificadas/criadas.")
         await redis_client.connect()
         
         # 🟢 Conectar RabbitMQ

@@ -40,4 +40,5 @@ class StorageService:
     def get_public_url(file_path: str) -> str:
         """Retorna a URL pública para acesso externo (Bot/Venom)."""
         # Em dev: http://localhost:8000/uploads/tenant_1/file.jpg
-        return f"/{file_path.replace('\\', '/')}"
+        clean_path = file_path.replace('\\', '/')
+        return f"/{clean_path}"

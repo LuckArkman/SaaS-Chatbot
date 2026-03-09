@@ -17,14 +17,14 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "password123")
     POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER", "127.0.0.1")
     POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
-    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "SaaS_OmniChannel")
+    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "saas_omnichannel")
     
     @property
     def DATABASE_URL(self) -> str:
         return f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
     # MongoDB
-    MONGODB_URL: str = os.getenv("MONGODB_URL", "mongodb://127.0.0.1:27017")
+    MONGODB_URL: str = os.getenv("MONGODB_URL", "mongodb://127.0.0.1:27017/SaaS_Chatbot")
     
     # Redis
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")

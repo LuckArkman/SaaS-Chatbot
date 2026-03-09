@@ -5,7 +5,7 @@ services:
     environment:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=password123
-      - POSTGRES_DB=SaaS_OmniChannel
+      - POSTGRES_DB=saas_omnichannel
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: always
@@ -42,10 +42,12 @@ services:
       - saas_mongo
     environment:
       - POSTGRES_SERVER=saas_postgres
-      - MONGODB_URL=mongodb://saas_mongo:27017
+      - MONGODB_URL=mongodb://saas_mongo:27017/SaaS_Chatbot
       - REDIS_URL=redis://saas_redis:6379/0
       - RABBITMQ_URL=amqp://admin:password123@saas_rabbitmq/
       - WHATSAPP_BRIDGE_URL=http://saas_bridge:4000
+    ports:
+      - "8000:8000"
     volumes:
       - ./uploads:/app/uploads
     restart: always
