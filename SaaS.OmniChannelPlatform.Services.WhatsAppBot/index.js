@@ -42,8 +42,10 @@ async function startBot(sessionId) {
             console.log(`[${sessionId}] Message from ${message.from}: ${message.body}`);
 
             try {
-                // Forward to Channel Gateway Webhook
-                await axios.post(`http://saas_channel_gateway:8080/api/webhooks/whatsapp/00000000-0000-0000-0000-000000000001`, {
+                // Forward to Channel Gateway Webhook (Sprint 28 - Python Migration)
+                const webhookUrl = process.env.WEBHOOK_URL || 'http://saas_api:8000/api/v1/gateway/webhook/whatsapp';
+                await axios.post(webhookUrl, {
+                    sessionId,
                     messageId: message.id,
                     content: message.body,
                     senderPhone: message.from,
@@ -74,6 +76,7 @@ app.get('/status/:sessionId', (req, res) => {
     res.json({ status: venoms[sessionId] ? 'Connected' : 'Disconnected' });
 });
 
-server.listen(4000, () => {
-    console.log('Venom Logic Service running on port 4000');
+const PORT = process.env.PORT || 4000;
+server.listen(PORT, () => {
+    console.log(`Venom Logic Service running on port ${PORT}`);
 });

@@ -43,10 +43,10 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY SaaS.OmniChannelPlatform.Services.WhatsAppBot/package*.json ./
+COPY package*.json ./
 RUN npm install
 
-COPY SaaS.OmniChannelPlatform.Services.WhatsAppBot/ ./
+COPY . ./
 
 EXPOSE 4000
 CMD ["node", "index.js"]

@@ -1,0 +1,36 @@
+# Stage 1: Build
+FROM python:3.11-slim as builder
+
+WORKDIR /app
+
+# Instala dependências de build se necessário (ex: para psycopg2)
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+# Stage 2: Final
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Instala runtime de bibliotecas necessárias
+RUN apt-get update && apt-get install -y \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copia dependências instaladas do builder
+COPY --from=builder /root/.local /root/.local
+COPY . .
+
+# Garante que o path do python encontre as libs instaladas
+ENV PATH=/root/.local/bin:$PATH
+ENV PYTHONPATH=/app
+
+EXPOSE 8000
+
+# Usamos o uvicorn para rodar a aplicação
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
