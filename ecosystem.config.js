@@ -7,12 +7,18 @@ module.exports = {
             interpreter: "python3",
             instances: 1,
             autorestart: true,
-            watch: false,
             max_memory_restart: "1G",
-            env: {
+            env_production: {
                 NODE_ENV: "production",
                 PYTHONPATH: ".",
-                WHATSAPP_BRIDGE_URL: "http://127.0.0.1:4000"
+                # As variáveis serão lidas do arquivo.env ou do sistema
+            },
+            env_development: {
+                NODE_ENV: "development",
+                PYTHONPATH: ".",
+                watch: true,
+                # Sobrescreve args para modo debug(reload e worker único)
+                args: "src.main:app --host 0.0.0.0 --port 8000 --reload"
             }
         },
         {
@@ -21,8 +27,12 @@ module.exports = {
             instances: 1,
             autorestart: true,
             env: {
-                PORT: 4000,
-                WEBHOOK_URL: "http://127.0.0.1:8000/api/v1/gateway/webhook/whatsapp"
+                NODE_ENV: "production",
+                PORT: 4000
+            },
+            env_development: {
+                NODE_ENV: "development",
+                PORT: 4000
             }
         }
     ]
