@@ -16,6 +16,9 @@ def _add_tenant_filter(execute_state):
     de modelos que herdam de MultiTenantMixin.
     Equivalente ao Global Query Filter do EF Core.
     """
+    if execute_state.execution_options.get("ignore_tenant", False):
+        return
+
     tenant_id = get_current_tenant_id()
     
     if (
