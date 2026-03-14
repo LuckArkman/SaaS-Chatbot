@@ -5,6 +5,7 @@ from src.schemas.flow import FlowCreate, FlowUpdate
 from src.api import deps
 from src.core.tenancy import get_current_tenant_id
 from loguru import logger
+from beanie import PydanticObjectId
 
 router = APIRouter()
 
@@ -35,7 +36,7 @@ async def create_flow(
 
 @router.get("/{flow_id}", response_model=FlowDocument)
 async def get_flow(
-    flow_id: str,
+    flow_id: PydanticObjectId,
     tenant_id: str = Depends(get_current_tenant_id),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
@@ -47,7 +48,7 @@ async def get_flow(
 
 @router.patch("/{flow_id}", response_model=FlowDocument)
 async def update_flow(
-    flow_id: str,
+    flow_id: PydanticObjectId,
     flow_in: FlowUpdate,
     tenant_id: str = Depends(get_current_tenant_id),
     current_user: Any = Depends(deps.get_current_active_user)
@@ -64,7 +65,7 @@ async def update_flow(
 
 @router.delete("/{flow_id}")
 async def delete_flow(
-    flow_id: str,
+    flow_id: PydanticObjectId,
     tenant_id: str = Depends(get_current_tenant_id),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:

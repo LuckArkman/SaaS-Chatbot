@@ -5,6 +5,7 @@ from src.schemas.whatsapp import WhatsAppPayload, WhatsAppMessageEvent, WhatsApp
 from src.services.message_normalizer import MessageNormalizer
 from src.core.bus import rabbitmq_bus
 from src.core.tenancy import get_current_tenant_id
+from src.core.database import SessionLocal
 from loguru import logger
 import json
 

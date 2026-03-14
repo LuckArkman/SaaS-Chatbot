@@ -4,6 +4,7 @@ from fastapi.exceptions import RequestValidationError
 from src.common.exceptions import AppException
 from loguru import logger
 import traceback
+from fastapi.encoders import jsonable_encoder
 
 def register_error_handlers(app: FastAPI):
     
@@ -26,6 +27,16 @@ def register_error_handlers(app: FastAPI):
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         """Handler para erros de validação do Pydantic (FastAPI)."""
         logger.warning(f"Validation error: {exc.errors()}")
+        
+        # Strip complex objects like ValueError from Pydantic V2 errors
+        errors_clean = []
+        for err in exc.errors():
+            errors_clean.append({
+                "loc": err.get("loc"),
+                "msg": err.get("msg"),
+                "type": err.get("type")
+            })
+            
         return JSONResponse(
             status_code=422,
             content={
@@ -33,7 +44,7 @@ def register_error_handlers(app: FastAPI):
                 "error": {
                     "message": "Validation Error",
                     "code": 422,
-                    "details": exc.errors()
+                    "details": errors_clean
                 }
             }
         )
