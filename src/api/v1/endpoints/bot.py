@@ -35,7 +35,7 @@ async def start_bot(
 
     success = await WhatsAppManagerService.initialize_bot(db, tenant_id)
     if not success:
-        raise HTTPException(status_code=500, detail="Erro ao iniciar o Bridge do Bot")
+        raise HTTPException(status_code=status.HTTP_424_FAILED_DEPENDENCY, detail="Erro ao comunicar com o Bridge do WhatsApp (Offline ou Inacessível)")
         
     return {"status": "starting", "success": True}
 
