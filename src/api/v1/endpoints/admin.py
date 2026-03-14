@@ -38,13 +38,27 @@ def get_global_summary(
         }
     }
 
-@router.get("/transactions", response_model=List[Dict])
+@router.get("/transactions")
 def list_all_transactions(
     db: Session = Depends(get_db),
     current_superuser: Any = Depends(deps.get_current_active_superuser)
 ) -> Any:
     """Lista todas as transações financeiras da plataforma."""
-    return db.query(Transaction).order_by(Transaction.created_at.desc()).limit(100).all()
+    transactions = db.query(Transaction).order_by(Transaction.created_at.desc()).limit(100).all()
+    return [
+        {
+            "id": t.id,
+            "tenant_id": t.tenant_id,
+            "external_id": t.external_id,
+            "provider": t.provider,
+            "amount": t.amount,
+            "currency": t.currency,
+            "status": t.status,
+            "payment_method": t.payment_method,
+            "created_at": t.created_at
+        } 
+        for t in transactions
+    ]
 
 @router.post("/system/maintenance")
 def toggle_maintenance_mode(
