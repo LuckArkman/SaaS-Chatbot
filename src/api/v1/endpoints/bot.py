@@ -26,11 +26,11 @@ async def start_bot(
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """Inicia o processo Node.js do Bot (Sprint 33)."""
-    from src.services.quota_service import QuotaService
-    if not QuotaService.can_create_bot(db, tenant_id):
+    from src.services.billing_service import BillingService
+    if not BillingService.check_plan_validity(db, tenant_id):
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail="Seu plano atual não permite mais instâncias de bot. Por favor, faça um upgrade."
+            detail="Seu plano atual não permite instâncias de bot ou está expirado. Por favor, faça um upgrade."
         )
 
     success = await WhatsAppManagerService.initialize_bot(db, tenant_id)
