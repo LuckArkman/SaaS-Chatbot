@@ -29,12 +29,17 @@ class UserInDBBase(UserBase):
 class User(UserInDBBase):
     pass
 
+from pydantic import BaseModel, EmailStr, Field
+
 # Registration Schemas
 class UserRegister(BaseModel):
     email: EmailStr
     password: str
-    full_name: str
-    tenant_name: str # Name for the new tenant to be created
+    full_name: str = Field(alias="fullName")
+    tenant_name: str = Field(alias="tenantName")
+
+    class Config:
+        populate_by_name = True
 
 # Password Management
 class PasswordResetRequest(BaseModel):
