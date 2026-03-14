@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 import subprocess
 
-base_url = "http://76.13.168.200:8000"
+base_url = "http://localhost:8000"
 
 def get_auth_token(email, password="TestPassword123!"):
     login_resp = httpx.post(f"{base_url}/api/v1/auth/login", data={"username": email, "password": password}, timeout=30.0)
@@ -27,7 +27,7 @@ def make_superuser(email):
     import psycopg2
     try:
         conn = psycopg2.connect(
-            host="saas_postgres",
+            host="76.13.168.200",
             database="saas_omnichannel",
             user="admin",
             password="password123"
