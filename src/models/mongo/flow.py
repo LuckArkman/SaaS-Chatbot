@@ -1,6 +1,6 @@
 from typing import List, Optional, Any
 from datetime import datetime
-from beanie import Document, Indexed
+from beanie import Document, Indexed, PydanticObjectId
 from pydantic import Field
 from src.schemas.flow import FlowNode, FlowEdge
 
@@ -9,6 +9,7 @@ class FlowDocument(Document):
     Representação persistente de um Fluxo no MongoDB via Beanie.
     Replaces the 'Flow' C# entity from .NET.
     """
+    id: Optional[PydanticObjectId] = Field(None, alias="_id")
     tenant_id: Indexed(str)
     name: str = Field(..., max_length=100)
     description: Optional[str] = None
