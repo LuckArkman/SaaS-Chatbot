@@ -32,7 +32,14 @@ async function startBot(sessionId) {
             {
                 headless: 'new',
                 sessionDataPath: './tokens',
-                browserArgs: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+                browserArgs: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-extensions',
+                    '--disable-gpu'
+                ],
+                createTimeout: 60000, // 1 minute
             }
         );
 
