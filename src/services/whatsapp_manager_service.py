@@ -39,9 +39,9 @@ class WhatsAppManagerService:
         instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
         
         # 🟢 Solicita criação no Node.js Bridge
-        result = await whatsapp_bridge.create_session(instance.session_name)
+        success = await whatsapp_bridge.create_session(instance.session_name)
         
-        if result.get("success") or "instance" in result or result.get("message") == "Initializing":
+        if success:
             instance.status = WhatsAppStatus.CONNECTING
             db.commit()
             return True

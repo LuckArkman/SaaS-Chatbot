@@ -4,6 +4,8 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 app.use(cors());
@@ -19,6 +21,20 @@ async function startBot(sessionId) {
 
     try {
         console.log(`[*] Starting bot for session: ${sessionId}`);
+        const tokenPath = path.join(__dirname, 'tokens', sessionId);
+        
+        // Ensure directory exists
+        if (!fs.existsSync(tokenPath)) {
+            fs.mkdirSync(tokenPath, { recursive: true });
+        }
+
+        // Potential fix for "no open browser": delete SingletonLock if it exists
+        const lockPath = path.join(tokenPath, 'SingletonLock');
+        if (fs.existsSync(lockPath)) {
+            console.log(`[!] Removing existing SingletonLock for ${sessionId}`);
+            fs.unlinkSync(lockPath);
+        }
+
         const client = await venom.create(
             sessionId,
             (base64Qr, asciiQR, attempts, urlCode) => {
@@ -26,21 +42,23 @@ async function startBot(sessionId) {
                 io.emit('qr', { sessionId, qr: base64Qr });
             },
             (statusSession, session) => {
-                console.log('Status Session:', statusSession, 'Session name:', session);
+                console.log(`[${sessionId}] Status: ${statusSession}`);
                 io.emit('status', { sessionId, status: statusSession });
             },
             {
-                headless: true,
+                headless: true, // Legacy headless or 'new'
                 sessionDataPath: './tokens',
                 browserArgs: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
-                    '--disable-extensions',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--no-zygote',
                     '--disable-gpu'
                 ],
                 executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome-stable',
-                createTimeout: 90000,
+                createTimeout: 60000,
             }
         );
 

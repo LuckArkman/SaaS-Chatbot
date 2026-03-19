@@ -39,6 +39,8 @@ RUN apt-get update && apt-get install -y \
     wget \
     xdg-utils \
     gnupg \
+    dbus-x11 \
+    xvfb \
     --no-install-recommends
 
 # Install Google Chrome stable
@@ -47,6 +49,9 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key
     && apt-get update \
     && apt-get install -y google-chrome-stable --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
+
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 
 WORKDIR /app
 
