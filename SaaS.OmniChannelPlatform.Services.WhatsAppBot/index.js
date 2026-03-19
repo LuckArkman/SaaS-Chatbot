@@ -39,7 +39,7 @@ async function startBot(sessionId) {
                     '--disable-extensions',
                     '--disable-gpu'
                 ],
-                executablePath: '/usr/bin/google-chrome-stable',
+                executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome-stable',
                 createTimeout: 90000,
             }
         );
