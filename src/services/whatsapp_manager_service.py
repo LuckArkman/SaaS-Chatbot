@@ -41,12 +41,32 @@ class WhatsAppManagerService:
         # 🟢 Solicita criação no Node.js Bridge
         result = await whatsapp_bridge.create_session(instance.session_name)
         
-        if result.get("success") or "instance" in result:
+        if result.get("success") or "instance" in result or result.get("message") == "Initializing":
             instance.status = WhatsAppStatus.CONNECTING
             db.commit()
             return True
             
         return False
+
+    @staticmethod
+    async def stop_bot(db: Session, tenant_id: str) -> bool:
+        """Para o bot no Bridge."""
+        instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+        success = await whatsapp_bridge.stop_instance(instance.session_name)
+        if success:
+            instance.status = WhatsAppStatus.DISCONNECTED
+            db.commit()
+        return success
+
+    @staticmethod
+    async def restart_bot(db: Session, tenant_id: str) -> bool:
+        """Reinicia o bot no Bridge."""
+        instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+        success = await whatsapp_bridge.restart_instance(instance.session_name)
+        if success:
+            instance.status = WhatsAppStatus.CONNECTING
+            db.commit()
+        return success
 
     @staticmethod
     async def health_check_all(db: Session):

@@ -7,6 +7,7 @@ const axios = require('axios');
 
 const app = express();
 app.use(cors());
+app.use(express.json());
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
@@ -17,6 +18,7 @@ async function startBot(sessionId) {
     if (venoms[sessionId]) return;
 
     try {
+        console.log(`[*] Starting bot for session: ${sessionId}`);
         const client = await venom.create(
             sessionId,
             (base64Qr, asciiQR, attempts, urlCode) => {
@@ -30,7 +32,7 @@ async function startBot(sessionId) {
             {
                 headless: 'new',
                 sessionDataPath: './tokens',
-                browserArgs: ['--no-sandbox', '--disable-setuid-sandbox']
+                browserArgs: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
             }
         );
 
@@ -58,9 +60,85 @@ async function startBot(sessionId) {
 
     } catch (err) {
         console.error('Error starting venom:', err);
+        delete venoms[sessionId];
     }
 }
 
+// Routes compatible with Evolution API expectations in Python backend
+app.post('/instance/create', (req, res) => {
+    const { instanceName } = req.body;
+    if (!instanceName) return res.status(400).json({ error: "instanceName missing" });
+    
+    startBot(instanceName);
+    res.json({ message: "Initializing", success: True });
+});
+
+app.get('/instance/qrcode', (req, res) => {
+    const { instance } = req.query;
+    if (latestQrs[instance]) {
+        res.json({ base64: latestQrs[instance], status: 'Pending' });
+    } else {
+        res.status(404).json({ error: "QR not ready" });
+    }
+});
+
+app.get('/instance/connectionState', (req, res) => {
+    const { instance } = req.query;
+    const client = venoms[instance];
+    
+    // Simplistic mapping for Python's WhatsAppStatus
+    const state = client ? "open" : "close";
+    res.json({ instance: { state: state } });
+});
+
+app.delete('/instance/logout', async (req, res) => {
+    const { instance } = req.query;
+    const client = venoms[instance];
+    if (client) {
+        try {
+            await client.logout();
+            delete venoms[instance];
+            delete latestQrs[instance];
+            res.json({ success: true });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    } else {
+        res.status(404).json({ error: "Instance not found" });
+    }
+});
+
+// Implementation of Stop and Reboot as requested
+app.post('/instance/stop', async (req, res) => {
+    const { instance } = req.body;
+    const client = venoms[instance];
+    if (client) {
+        try {
+            await client.close();
+            delete venoms[instance];
+            res.json({ success: true, message: "Instance stopped" });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    } else {
+        res.status(404).json({ error: "Instance not found" });
+    }
+});
+
+app.post('/instance/restart', async (req, res) => {
+    const { instance } = req.body;
+    const client = venoms[instance];
+    if (client) {
+        try {
+            await client.close();
+            delete venoms[instance];
+        } catch (e) {}
+    }
+    startBot(instance);
+    res.json({ success: true, message: "Instance restarting" });
+});
+
+// Original legacy routes
 app.get('/qr/:sessionId', (req, res) => {
     const { sessionId } = req.params;
     if (latestQrs[sessionId]) {
@@ -77,6 +155,6 @@ app.get('/status/:sessionId', (req, res) => {
 });
 
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`Venom Logic Service running on port ${PORT}`);
 });

@@ -103,5 +103,33 @@ class WhatsAppBridgeService:
             logger.error(f"❌ Falha ao enviar mídia para {to}: {e}")
             return False
 
+    async def stop_instance(self, session_key: str) -> bool:
+        """Para o processo do bot no Bridge."""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/instance/stop",
+                    json={"instance": session_key},
+                    headers=self.headers
+                )
+                return response.status_code == 200
+        except Exception as e:
+            logger.error(f"❌ Falha ao parar instância {session_key}: {e}")
+            return False
+
+    async def restart_instance(self, session_key: str) -> bool:
+        """Reinicia o processo do bot no Bridge."""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/instance/restart",
+                    json={"instance": session_key},
+                    headers=self.headers
+                )
+                return response.status_code == 200
+        except Exception as e:
+            logger.error(f"❌ Falha ao reiniciar instância {session_key}: {e}")
+            return False
+
 # Instância Global
 whatsapp_bridge = WhatsAppBridgeService()

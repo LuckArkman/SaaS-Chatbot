@@ -39,6 +39,30 @@ async def start_bot(
         
     return {"status": "starting", "success": True}
 
+@router.post("/stop")
+async def stop_bot(
+    db: Session = Depends(get_db),
+    tenant_id: str = Depends(get_current_tenant_id),
+    current_user: Any = Depends(deps.get_current_active_user)
+) -> Any:
+    """Para o processo do Bot no Bridge."""
+    success = await WhatsAppManagerService.stop_bot(db, tenant_id)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Falha ao parar o bot no Bridge")
+    return {"status": "stopped", "success": True}
+
+@router.post("/restart")
+async def restart_bot(
+    db: Session = Depends(get_db),
+    tenant_id: str = Depends(get_current_tenant_id),
+    current_user: Any = Depends(deps.get_current_active_user)
+) -> Any:
+    """Reinicia o processo do Bot no Bridge."""
+    success = await WhatsAppManagerService.restart_bot(db, tenant_id)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Falha ao reiniciar o bot no Bridge")
+    return {"status": "restarting", "success": True}
+
 @router.delete("/logout")
 async def logout_bot(
     db: Session = Depends(get_db),
