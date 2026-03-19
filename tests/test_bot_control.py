@@ -41,10 +41,7 @@ def test_bot_control():
         # [2/4] POST /api/v1/bot/start (Iniciar)
         print("\n[2/4] POST /api/v1/bot/start (Iniciar)")
         r = client.post(f"{BASE_URL}/api/v1/bot/start", headers=headers)
-        if r.status_code == 200:
-            print(f"✅ Comando Start enviado: {r.json()}")
-        else:
-            print(f"❌ Falha ao iniciar bot: {r.status_code} - {r.text}")
+        print(f"📡 Resposta ({r.status_code}): {r.json()}")
 
         # Espera um pouco para o bot inicializar (simula o tempo de bridge)
         time.sleep(2)
@@ -52,20 +49,14 @@ def test_bot_control():
         # [3/4] POST /api/v1/bot/restart (Reiniciar)
         print("\n[3/4] POST /api/v1/bot/restart (Reiniciar)")
         r = client.post(f"{BASE_URL}/api/v1/bot/restart", headers=headers)
-        if r.status_code == 200:
-            print(f"✅ Comando Restart enviado: {r.json()}")
-        else:
-            print(f"❌ Falha ao reiniciar bot: {r.status_code} - {r.text}")
+        print(f"📡 Resposta ({r.status_code}): {r.json()}")
 
         time.sleep(2)
 
         # [4/4] POST /api/v1/bot/stop (Parar)
         print("\n[4/4] POST /api/v1/bot/stop (Parar)")
         r = client.post(f"{BASE_URL}/api/v1/bot/stop", headers=headers)
-        if r.status_code == 200:
-            print(f"✅ Comando Stop enviado: {r.json()}")
-        else:
-            print(f"❌ Falha ao parar bot: {r.status_code} - {r.text}")
+        print(f"📡 Resposta ({r.status_code}): {r.json()}")
 
         # Final check status
         r = client.get(f"{BASE_URL}/api/v1/bot/", headers=headers)

@@ -94,11 +94,10 @@ class WhatsAppManagerService:
                     "session": inst.session_name
                 })
 
-            # --- 🟢 Lógica de Resiliência (Sprint 29) ---
-            # Se a instância deveria estar ativa mas está desconectada, tenta reiniciar
-            if new_status == WhatsAppStatus.DISCONNECTED and inst.is_active:
-                logger.warning(f"🧟 Instância {inst.session_name} caiu. Tentando reanimação automática...")
-                await whatsapp_bridge.create_session(inst.session_name)
+            # --- 🟢 Lógica de Resiliência (Desativada temporariamente para debug) ---
+            # if new_status == WhatsAppStatus.DISCONNECTED and inst.is_active:
+            #     logger.warning(f"🧟 Instância {inst.session_name} caiu. Tentando reanimação automática...")
+            #     await whatsapp_bridge.create_session(inst.session_name)
                 
             # Se for QRCODE, busca o novo e envia (Streaming de QR Code)
             if new_status == WhatsAppStatus.QRCODE:
