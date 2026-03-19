@@ -49,6 +49,7 @@ services:
       - saas_redis
       - saas_rabbitmq
       - saas_mongo
+      - saas_whatsapp_bridge
     environment:
       - DOCKER_CONTAINER=true
       - POSTGRES_SERVER=saas_postgres
@@ -58,13 +59,21 @@ services:
       - MONGODB_URL=mongodb://saas_mongo:27017/SaaS_Chatbot
       - REDIS_URL=redis://saas_redis:6379/0
       - RABBITMQ_URL=amqp://admin:password123@saas_rabbitmq/
-      - WHATSAPP_BRIDGE_URL=http://host.docker.internal:4000
+      - WHATSAPP_BRIDGE_URL=http://saas_whatsapp_bridge:4000
     ports:
       - "8000:8000"
     volumes:
       - ./uploads:/app/uploads
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    restart: always
+
+  saas_whatsapp_bridge:
+    build:
+      context: ./SaaS.OmniChannelPlatform.Services.WhatsAppBot
+    container_name: saas_whatsapp_bridge
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./SaaS.OmniChannelPlatform.Services.WhatsAppBot/tokens:/app/tokens
     restart: always
 
 volumes:
