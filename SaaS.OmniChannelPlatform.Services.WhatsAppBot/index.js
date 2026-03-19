@@ -30,7 +30,7 @@ async function startBot(sessionId) {
                 io.emit('status', { sessionId, status: statusSession });
             },
             {
-                headless: 'new',
+                headless: true,
                 sessionDataPath: './tokens',
                 browserArgs: [
                     '--no-sandbox',
@@ -39,7 +39,8 @@ async function startBot(sessionId) {
                     '--disable-extensions',
                     '--disable-gpu'
                 ],
-                createTimeout: 60000, // 1 minute
+                executablePath: '/usr/bin/google-chrome-stable',
+                createTimeout: 90000,
             }
         );
 
