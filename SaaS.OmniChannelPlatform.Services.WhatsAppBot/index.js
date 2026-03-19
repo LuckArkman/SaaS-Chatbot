@@ -13,9 +13,9 @@ app.use(express.json());
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-let venoms = {}; // Map of sessionId -> venom client
-let latestQrs = {}; // Map of sessionId -> latest QR code
-let sessionStatuses = {}; // Map of sessionId -> status string
+let venoms = {};
+let latestQrs = {};
+let sessionStatuses = {};
 
 async function startBot(sessionId) {
     if (venoms[sessionId]) return;
@@ -23,7 +23,7 @@ async function startBot(sessionId) {
     sessionStatuses[sessionId] = 'CONNECTING';
 
     try {
-        console.log(`[*] Starting bot for session: ${sessionId}`);
+        console.log(`[*] Iniciando bot para sessão: ${sessionId}`);
         const tokenPath = path.join(__dirname, 'tokens', sessionId);
         
         if (!fs.existsSync(tokenPath)) {
@@ -32,7 +32,7 @@ async function startBot(sessionId) {
 
         const lockPath = path.join(tokenPath, 'SingletonLock');
         if (fs.existsSync(lockPath)) {
-            console.log(`[!] Removing existing SingletonLock for ${sessionId}`);
+            console.log(`[!] Removendo SingletonLock para ${sessionId}`);
             try { fs.unlinkSync(lockPath); } catch (e) {}
         }
 
@@ -80,12 +80,12 @@ async function startBot(sessionId) {
                     senderName: message.sender.name || message.from
                 });
             } catch (err) {
-                console.error(`[${sessionId}] Error forwarding message:`, err.message);
+                console.error(`[${sessionId}] Erro ao encaminhar mensagem:`, err.message);
             }
         });
 
     } catch (err) {
-        console.error(`[${sessionId}] Error starting venom:`, err);
+        console.error(`[${sessionId}] Erro ao iniciar venom:`, err);
         delete venoms[sessionId];
         sessionStatuses[sessionId] = 'DISCONNECTED';
     }
@@ -97,10 +97,11 @@ app.post('/instance/create', (req, res) => {
     const { sessionId } = req.body;
     if (!sessionId) return res.status(400).json({ error: 'sessionId missing' });
     
-    if (!venoms[sessionId]) {
-        console.log(`[HTTP] Creating session: ${sessionId}`);
-        startBot(sessionId).catch(e => console.error(e));
+    if (venoms[sessionId]) {
+        return res.json({ success: true, state: sessionStatuses[sessionId] || 'CONNECTED' });
     }
+
+    startBot(sessionId).catch(e => console.error(e));
     res.status(202).json({ success: true, state: 'CONNECTING' });
 });
 
@@ -164,7 +165,7 @@ app.post('/instance/logout', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT || 4000;
+const PORT = 4000;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`WhatsApp Bridge (Venom) listening on port ${PORT}`);
 });

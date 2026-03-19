@@ -27,7 +27,7 @@ class WhatsAppBridgeService:
                 headers=self.headers
             )
             
-            if response.status_code in [200, 201]:
+            if response.status_code in [200, 201, 202]:
                 logger.info(f"✅ Bridge respondeu OK para {session_id}: {response.json()}")
                 return True
             
