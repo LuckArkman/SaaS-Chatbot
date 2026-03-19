@@ -70,6 +70,7 @@ services:
     build:
       context: ./SaaS.OmniChannelPlatform.Services.WhatsAppBot
     container_name: saas_whatsapp_bridge
+    shm_size: '2gb'
     ports:
       - "4000:4000"
     volumes:
