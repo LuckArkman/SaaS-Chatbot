@@ -41,26 +41,39 @@ def test_bot_control():
         # [2/4] POST /api/v1/bot/start (Iniciar)
         print("\n[2/4] POST /api/v1/bot/start (Iniciar)")
         r = client.post(f"{BASE_URL}/api/v1/bot/start", headers=headers)
-        print(f"📡 Resposta ({r.status_code}): {r.json()}")
+        print(f"📡 Resposta Start ({r.status_code}): {r.json()}")
 
         # Espera um pouco para o bot inicializar (simula o tempo de bridge)
-        time.sleep(2)
+        print("⏳ Aguardando 5s para inicialização do Puppeteer...")
+        time.sleep(5)
+
+        # [Check QR]
+        print("\n[Check] Buscando QR Code (se disponível)...")
+        r = client.get(f"{BASE_URL}/api/v1/bot/qr", headers=headers)
+        if r.status_code == 200:
+            print(f"✅ QR Code recebido (tamanho: {len(r.json().get('qrcode', ''))})")
+        else:
+            print(f"ℹ️ QR Code ainda não disponível: {r.status_code} - {r.json().get('detail')}")
 
         # [3/4] POST /api/v1/bot/restart (Reiniciar)
         print("\n[3/4] POST /api/v1/bot/restart (Reiniciar)")
         r = client.post(f"{BASE_URL}/api/v1/bot/restart", headers=headers)
-        print(f"📡 Resposta ({r.status_code}): {r.json()}")
+        print(f"📡 Resposta Restart ({r.status_code}): {r.json()}")
 
         time.sleep(2)
 
         # [4/4] POST /api/v1/bot/stop (Parar)
         print("\n[4/4] POST /api/v1/bot/stop (Parar)")
         r = client.post(f"{BASE_URL}/api/v1/bot/stop", headers=headers)
-        print(f"📡 Resposta ({r.status_code}): {r.json()}")
+        print(f"📡 Resposta Stop ({r.status_code}): {r.json()}")
 
         # Final check status
         r = client.get(f"{BASE_URL}/api/v1/bot/", headers=headers)
-        print(f"\n🏁 Status Final: {r.json().get('status')}")
+        data = r.json()
+        if isinstance(data, list) and len(data) > 0:
+            print(f"\n🏁 Status Final: {data[0].get('whatsapp_status')}")
+        else:
+            print(f"\n🏁 Status Final: Nenhuma instância retornada - {data}")
 
 if __name__ == "__main__":
     test_bot_control()

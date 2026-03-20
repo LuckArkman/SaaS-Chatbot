@@ -94,7 +94,7 @@ class WhatsAppBridgeService:
                 "CONNECTED": WhatsAppStatus.CONNECTED,
                 "CONNECTING": WhatsAppStatus.CONNECTING,
                 "DISCONNECTED": WhatsAppStatus.DISCONNECTED,
-                "QRCODE": WhatsAppStatus.SCAN_QRCODE,
+                "QRCODE": WhatsAppStatus.QRCODE,
             }
             return mapping.get(state, WhatsAppStatus.DISCONNECTED)
         except Exception as e:

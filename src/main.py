@@ -142,8 +142,8 @@ def create_application() -> FastAPI:
         asyncio.create_task(ack_worker.start())
         
         from src.workers.campaign_worker import campaign_worker
-        # 🟢 Inicia Monitoramento de Bots (Desativado para estabilizar bridge)
-        # asyncio.create_task(start_bot_monitoring())
+        # 🟢 Inicia Monitoramento de Bots (BotMonitor Equivalent)
+        asyncio.create_task(start_bot_monitoring())
         
         # 🟢 Inicia Monitoramento Financeiro (BillingMonitor)
         asyncio.create_task(start_billing_monitoring())

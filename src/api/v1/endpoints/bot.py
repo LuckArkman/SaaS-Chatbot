@@ -19,6 +19,20 @@ async def get_bot_status(
     """Busca o estado do Bot do Tenant."""
     return WhatsAppManagerService.get_or_create_instance(db, tenant_id)
 
+@router.get("/qr")
+async def get_bot_qr(
+    db: Session = Depends(get_db),
+    tenant_id: str = Depends(get_current_tenant_id),
+    current_user: Any = Depends(deps.get_current_active_user)
+) -> Any:
+    """Busca o QR Code atualizado para pareamento."""
+    instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+    from src.services.whatsapp_bridge_service import whatsapp_bridge
+    qr = await whatsapp_bridge.get_qrcode(instance.session_name)
+    if not qr:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="QR Code ainda não gerado ou expirado.")
+    return {"qrcode": qr}
+
 @router.post("/start")
 async def start_bot(
     db: Session = Depends(get_db),
