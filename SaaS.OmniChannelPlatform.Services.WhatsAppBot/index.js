@@ -43,18 +43,27 @@ async function startBot(sessionId) {
         const client = await venom.create(
             sessionId,
             (base64Qr) => {
+                console.log(`[${sessionId}] QR Geração detectada.`);
                 latestQrs[sessionId] = base64Qr;
                 sessionStatuses[sessionId] = 'QRCODE';
                 io.emit('qr', { sessionId, qr: base64Qr });
             },
             (statusSession) => {
-                console.log(`[${sessionId}] Status: ${statusSession}`);
-                sessionStatuses[sessionId] = statusSession.toUpperCase();
-                io.emit('status', { sessionId, status: statusSession });
+                const status = statusSession.toUpperCase();
+                console.log(`[${sessionId}] Mudança de Status: ${status}`);
+                sessionStatuses[sessionId] = status;
+                io.emit('status', { sessionId, status });
+
+                if (status === 'DISCONNECTED' || status === 'CLOSED') {
+                  delete venoms[sessionId];
+                  delete latestQrs[sessionId];
+                }
             },
             {
-                headless: 'new', // Use "new" headless mode as per warning
-                sessionDataPath: './tokens',
+                headless: 'new',
+                sessionDataPath: path.join(__dirname, 'tokens'),
+                logQR: false,
+                disableSpins: true,
                 browserArgs: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
@@ -63,10 +72,13 @@ async function startBot(sessionId) {
                     '--no-first-run',
                     '--no-zygote',
                     '--disable-gpu',
-                    '--user-data-dir=' + tokenPath // Force user data dir
+                    '--disable-extensions',
+                    '--disable-features=IsolateOrigins,site-per-process'
                 ],
                 executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome-stable',
-                createTimeout: 90000, // Increase timeout for slow VPS
+                createTimeout: 90000, 
+                waitForLogin: true, 
+                useChrome: false
             }
         );
 
