@@ -61,7 +61,7 @@ services:
       - RABBITMQ_URL=amqp://admin:password123@saas_rabbitmq/
       - WHATSAPP_BRIDGE_URL=http://saas_whatsapp_bridge:4000
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - ./uploads:/app/uploads
     restart: always

@@ -4,7 +4,7 @@ from loguru import logger
 
 import uuid
 
-BASE_URL = "http://76.13.168.200:8000"
+BASE_URL = "http://76.13.168.200:8001"
 EMAIL = "user@example.com"
 PASSWORD = "Qwert@3702959"
 
