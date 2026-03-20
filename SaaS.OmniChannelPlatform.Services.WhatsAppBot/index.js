@@ -31,10 +31,14 @@ async function startBot(sessionId) {
         }
 
         const lockPath = path.join(tokenPath, 'SingletonLock');
-        if (fs.existsSync(lockPath)) {
-            console.log(`[!] Removendo SingletonLock para ${sessionId}`);
-            try { fs.unlinkSync(lockPath); } catch (e) {}
-        }
+        const cookiePath = path.join(tokenPath, 'SingletonCookie');
+        const socketPath = path.join(tokenPath, 'SingletonSocket');
+        [lockPath, cookiePath, socketPath].forEach(p => {
+            if (fs.existsSync(p)) {
+                console.log(`[!] Removendo trava ${p} para ${sessionId}`);
+                try { fs.unlinkSync(p); } catch (e) {}
+            }
+        });
 
         const client = await venom.create(
             sessionId,
@@ -49,7 +53,7 @@ async function startBot(sessionId) {
                 io.emit('status', { sessionId, status: statusSession });
             },
             {
-                headless: true,
+                headless: 'new', // Use "new" headless mode as per warning
                 sessionDataPath: './tokens',
                 browserArgs: [
                     '--no-sandbox',
@@ -58,10 +62,11 @@ async function startBot(sessionId) {
                     '--disable-accelerated-2d-canvas',
                     '--no-first-run',
                     '--no-zygote',
-                    '--disable-gpu'
+                    '--disable-gpu',
+                    '--user-data-dir=' + tokenPath // Force user data dir
                 ],
                 executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome-stable',
-                createTimeout: 60000,
+                createTimeout: 90000, // Increase timeout for slow VPS
             }
         );
 

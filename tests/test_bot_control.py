@@ -48,12 +48,20 @@ def test_bot_control():
         time.sleep(5)
 
         # [Check QR]
-        print("\n[Check] Buscando QR Code (se disponível)...")
-        r = client.get(f"{BASE_URL}/api/v1/bot/qr", headers=headers)
-        if r.status_code == 200:
-            print(f"✅ QR Code recebido (tamanho: {len(r.json().get('qrcode', ''))})")
-        else:
-            print(f"ℹ️ QR Code ainda não disponível: {r.status_code} - {r.json().get('detail')}")
+        print("\n[Check] Buscando QR Code (aguardando geração)...")
+        qr_received = False
+        for i in range(10): # Tenta por 30 segundos
+            r = client.get(f"{BASE_URL}/api/v1/bot/qr", headers=headers)
+            if r.status_code == 200:
+                print(f"✅ QR Code recebido! (tamanho: {len(r.json().get('qrcode', ''))})")
+                qr_received = True
+                break
+            else:
+                print(f"⏳ QR ainda não disponível ({i+1}/10)...")
+                time.sleep(3)
+        
+        if not qr_received:
+            print("❌ Falha ao obter QR Code após 30 segundos.")
 
         # [3/4] POST /api/v1/bot/restart (Reiniciar)
         print("\n[3/4] POST /api/v1/bot/restart (Reiniciar)")
