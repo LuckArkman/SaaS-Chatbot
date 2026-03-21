@@ -73,7 +73,10 @@ async function startBot(sessionId) {
                     '--no-zygote',
                     '--disable-gpu',
                     '--disable-extensions',
-                    '--disable-features=IsolateOrigins,site-per-process'
+                    '--disable-features=IsolateOrigins,site-per-process',
+                    '--proxy-server="direct://"',
+                    '--proxy-bypass-list=*',
+                    '--disable-ipv6'
                 ],
                 executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome-stable',
                 createTimeout: 90000, 
