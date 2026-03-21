@@ -62,23 +62,14 @@ async function startBot(sessionId) {
             {
                 headless: true,
                 sessionDataPath: path.join(__dirname, 'tokens'),
-                logQR: false,
+                logQR: true,
                 disableSpins: true,
                 browserArgs: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-accelerated-2d-canvas',
-                    '--no-first-run',
-                    '--no-zygote',
-                    '--disable-gpu',
-                    '--disable-extensions',
-                    '--disable-features=IsolateOrigins,site-per-process',
-                    '--proxy-server="direct://"',
-                    '--proxy-bypass-list=*',
-                    '--disable-ipv6'
+                    '--disable-dev-shm-usage'
                 ],
-                executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome-stable',
+                executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
                 createTimeout: 90000, 
                 waitForLogin: true, 
                 useChrome: false
