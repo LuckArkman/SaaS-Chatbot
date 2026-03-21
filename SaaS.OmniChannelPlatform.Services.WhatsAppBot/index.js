@@ -60,7 +60,7 @@ async function startBot(sessionId) {
                 }
             },
             {
-                headless: 'new',
+                headless: true,
                 sessionDataPath: path.join(__dirname, 'tokens'),
                 logQR: false,
                 disableSpins: true,
