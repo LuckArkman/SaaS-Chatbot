@@ -58,6 +58,8 @@ async function connectToWhatsApp(sessionId) {
             latestQrs[sessionId] = base64Qr;
             sessionStatuses[sessionId] = 'QRCODE';
             io.emit('qr', { sessionId, qr: base64Qr });
+
+            await notifyStatus(sessionId, 'QRCODE', base64Qr);
         }
 
         if (connection === 'close') {
@@ -68,6 +70,8 @@ async function connectToWhatsApp(sessionId) {
             delete latestQrs[sessionId];
             sessionStatuses[sessionId] = 'DISCONNECTED';
 
+            await notifyStatus(sessionId, 'DISCONNECTED');
+
             if (shouldReconnect) {
                 connectToWhatsApp(sessionId);
             }
@@ -76,6 +80,8 @@ async function connectToWhatsApp(sessionId) {
             sessionStatuses[sessionId] = 'CONNECTED';
             delete latestQrs[sessionId];
             io.emit('status', { sessionId, status: 'CONNECTED' });
+            
+            await notifyStatus(sessionId, 'CONNECTED');
         }
     });
 
@@ -87,7 +93,8 @@ async function connectToWhatsApp(sessionId) {
                 if (!msg.key.fromMe && msg.message) {
                     try {
                         const content = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
-                        const webhookUrl = process.env.WEBHOOK_URL || 'http://saas_api:8000/api/v1/gateway/webhook/whatsapp';
+                        const webhookUrl = process.env.WEBHOOK_URL || 'http://127.0.0.1:8001/api/v1/gateway/webhook/whatsapp';
+                        const headers = { 'x-api-key': 'SaaS_Secret_Gateway_Key_2026' };
                         
                         await axios.post(webhookUrl, {
                             sessionId,
@@ -95,7 +102,7 @@ async function connectToWhatsApp(sessionId) {
                             content: content,
                             senderPhone: msg.key.remoteJid,
                             senderName: msg.pushName || msg.key.remoteJid
-                        });
+                        }, { headers });
                     } catch (err) {
                         console.error(`[${sessionId}] Erro ao encaminhar para webhook:`, err.message);
                     }
@@ -103,6 +110,25 @@ async function connectToWhatsApp(sessionId) {
             }
         }
     });
+}
+
+// Helper para notificação de status unificada
+async function notifyStatus(sessionId, state, qrcode = null) {
+    const webhookUrl = process.env.WEBHOOK_URL || 'http://127.0.0.1:8001/api/v1/gateway/webhook/whatsapp';
+    const headers = { 'x-api-key': 'SaaS_Secret_Gateway_Key_2026' };
+    
+    try {
+        await axios.post(webhookUrl, {
+            event: 'on_state_change',
+            session: sessionId,
+            payload: {
+                state: state,
+                qrcode: qrcode
+            }
+        }, { headers });
+    } catch (e) {
+        console.error(`[${sessionId}] Erro ao notificar status (${state}) no webhook:`, e.message);
+    }
 }
 
 // --- Bridge Endpoints ---

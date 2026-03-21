@@ -104,14 +104,26 @@ async def incoming_webhook(
             # --- 🟢 Tratamento de Eventos de Sistema (Sprint 28) ---
             elif ws_payload.event == WhatsAppMessageEvent.ON_STATE_CHANGE:
                 from src.models.whatsapp_events import WhatsAppSystemEvent
+                from src.models.whatsapp import WhatsAppInstance
                 from src.core.database import SessionLocal
                 from src.core.ws import ws_manager
                 
                 state_body = ws_payload.payload # Ex: {"state": "CONNECTED", "battery": 80}
                 state = state_body.get("state", "UNKNOWN")
                 battery = state_body.get("battery")
+                qrcode = state_body.get("qrcode")
                 
                 with SessionLocal() as db:
+                    # ✅ Atualização Reativa do Estado da Instância (Sprint 28)
+                    instance = db.query(WhatsAppInstance).filter(
+                        WhatsAppInstance.session_name == ws_payload.session
+                    ).first()
+                    if instance:
+                        instance.status = state
+                        if qrcode:
+                            instance.qrcode_base64 = qrcode
+                        db.commit()
+
                     event_log = WhatsAppSystemEvent(
                         tenant_id=tenant_id,
                         session_name=ws_payload.session,
@@ -122,13 +134,24 @@ async def incoming_webhook(
                     db.commit()
                 
                 # Notifica UI via WebSocket (Broadcaster Sprint 21)
-                await ws_manager.broadcast_to_tenant(tenant_id, {
+                socket_payload = {
                     "type": "bot_system_event",
                     "event": state,
                     "battery": battery,
                     "session": ws_payload.session
-                })
-                logger.info(f"🦾 Bot {ws_payload.session} reportou estado: {state} (Bateria: {battery}%)")
+                }
+                
+                if state == "QRCODE" and qrcode:
+                    socket_payload["type"] = "bot_qrcode_update"
+                    socket_payload["qrcode"] = qrcode
+
+                await ws_manager.broadcast_to_tenant(tenant_id, {
+                    "data": socket_payload,
+                    "type": socket_payload["type"] # Garantir retrocompatibilidade com handlers antigos
+                } if False else socket_payload) # Ajuste de payload WebSocket unificado
+                
+                # Log final
+                logger.info(f"🦾 Bot {ws_payload.session} reportou estado: {state} (QR: {'Sim' if qrcode else 'Não'})")
 
             return {"success": True, "status": "processed"}
 
