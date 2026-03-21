@@ -41,6 +41,10 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     dbus-x11 \
     xvfb \
+    libxshmfence1 \
+    libglu1-mesa \
+    libgdk-pixbuf2.0-0 \
+    libnss3-tools \
     --no-install-recommends
 
 # Install Google Chrome stable
@@ -61,4 +65,4 @@ RUN npm install
 COPY . ./
 
 EXPOSE 4000
-CMD ["node", "index.js"]
+CMD ["xvfb-run", "-a", "node", "index.js"]
