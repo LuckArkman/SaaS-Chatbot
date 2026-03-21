@@ -54,9 +54,10 @@ async function startBot(sessionId) {
                 sessionStatuses[sessionId] = status;
                 io.emit('status', { sessionId, status });
 
-                if (status === 'DISCONNECTED' || status === 'CLOSED') {
-                  delete venoms[sessionId];
-                  delete latestQrs[sessionId];
+                const errorStatuses = ['DISCONNECTED', 'CLOSED', 'ERROPAGEWHATSAPP', 'NOTLOGGED', 'BROWSERCLOSE'];
+                if (errorStatuses.includes(status)) {
+                    delete venoms[sessionId];
+                    delete latestQrs[sessionId];
                 }
             },
             {
@@ -70,8 +71,8 @@ async function startBot(sessionId) {
                     '--disable-dev-shm-usage'
                 ],
                 executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-                createTimeout: 90000, 
-                waitForLogin: true, 
+                createTimeout: 90000,
+                waitForLogin: false,
                 useChrome: false
             }
         );

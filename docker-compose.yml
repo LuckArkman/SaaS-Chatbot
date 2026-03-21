@@ -59,7 +59,7 @@ services:
       - MONGODB_URL=mongodb://saas_mongo:27017/SaaS_Chatbot
       - REDIS_URL=redis://saas_redis:6379/0
       - RABBITMQ_URL=amqp://admin:password123@saas_rabbitmq/
-      - WHATSAPP_BRIDGE_URL=http://76.13.168.200:4000
+      - WHATSAPP_BRIDGE_URL=http://172.18.0.1:4000
     ports:
       - "8001:8000"
     volumes:
@@ -73,7 +73,7 @@ services:
     network_mode: host
     environment:
       - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
     shm_size: '2gb'
     volumes:
       - ./SaaS.OmniChannelPlatform.Services.WhatsAppBot/tokens:/app/tokens
