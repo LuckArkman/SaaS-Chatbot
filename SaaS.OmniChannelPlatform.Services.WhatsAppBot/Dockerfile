@@ -66,4 +66,4 @@ RUN npm install
 COPY . ./
 
 EXPOSE 4000
-CMD ["xvfb-run", "-a", "node", "index.js"]
+CMD ["node", "index.js"]
