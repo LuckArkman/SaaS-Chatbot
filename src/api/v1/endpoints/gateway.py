@@ -8,6 +8,8 @@ from src.core.tenancy import get_current_tenant_id
 from src.core.database import SessionLocal
 from loguru import logger
 import json
+from src.services.chat_service import chat_service
+from src.models.mongo.chat import MessageSource
 
 router = APIRouter()
 
@@ -51,37 +53,14 @@ async def incoming_webhook(
                 # Normalização e Filas (Sprint 13)
                 unified_msg = MessageNormalizer.from_whatsapp(tenant_id, msg_body)
                 
-                # --- 🟢 Lead Attribution & Conversion (Sprint 39) ---
-                if ws_payload.event == WhatsAppMessageEvent.ON_MESSAGE:
-                    from src.models.contact import Contact
-                    from src.models.campaign import Campaign
-                    with SessionLocal() as db:
-                        lead = db.query(Contact).filter(
-                            Contact.tenant_id == tenant_id,
-                            Contact.phone_number == unified_msg.from_id
-                        ).first()
-                        if lead and lead.last_campaign_id:
-                            campaign = db.query(Campaign).get(lead.last_campaign_id)
-                            if campaign:
-                                campaign.replied_count += 1
-                                lead.last_campaign_id = None # Marcou como respondido, limpa pra próxima
-                                db.commit()
-
-                # --- 🟢 Controle de Quotas (Sprint 33) ---
-                from src.services.quota_service import QuotaService
-                from src.core.database import SessionLocal
-                with SessionLocal() as db:
-                    if not await QuotaService.increment_message_usage(db, tenant_id):
-                        logger.warning(f"⚠️ Mensagem de {tenant_id} descartada por falta de saldo/quota.")
-                        return {"success": False, "status": "quota_exceeded"}
-
-                # Publicar para o Barramento de Eventos Unificado
+                # ✅ Publicar para o Barramento de Eventos Unificado (Sprint 13)
                 await rabbitmq_bus.publish(
                     exchange_name="messages_exchange",
                     routing_key="message.incoming",
                     message={
+                        "tenant_id": tenant_id, # Requerido pelo FlowWorker
                         "session": ws_payload.session,
-                        "data": unified_msg.model_dump(mode='json') # Pydantic v2 dump
+                        "data": unified_msg.model_dump(mode='json')
                     }
                 )
                 logger.debug(f"📤 Mensagem Unificada expedida: {unified_msg.message_id} (Tenant: {tenant_id})")
@@ -144,14 +123,21 @@ async def incoming_webhook(
                 if state == "QRCODE" and qrcode:
                     socket_payload["type"] = "bot_qrcode_update"
                     socket_payload["qrcode"] = qrcode
+                
+                # 🟢 Restauração de Histórico (Sprint 40)
+                # Quando conectar, envia o bairo de histórico para o front "refletir"
+                history_data = []
+                if state == "CONNECTED":
+                    logger.info(f"🔄 Bot {ws_payload.session} conectado. Restaurando histórico para o Front-end...")
+                    history = await chat_service.get_session_history(tenant_id, ws_payload.session)
+                    history_data = [msg.model_dump(mode='json') for msg in history]
+                    socket_payload["history"] = history_data
+                    socket_payload["type"] = "chat_history_restored"
 
-                await ws_manager.broadcast_to_tenant(tenant_id, {
-                    "data": socket_payload,
-                    "type": socket_payload["type"] # Garantir retrocompatibilidade com handlers antigos
-                } if False else socket_payload) # Ajuste de payload WebSocket unificado
+                await ws_manager.broadcast_to_tenant(tenant_id, socket_payload)
                 
                 # Log final
-                logger.info(f"🦾 Bot {ws_payload.session} reportou estado: {state} (QR: {'Sim' if qrcode else 'Não'})")
+                logger.info(f"🦾 Bot {ws_payload.session} reportou estado: {state} (Histórico Restaurado: {len(history_data)} msgs)")
 
             return {"success": True, "status": "processed"}
 

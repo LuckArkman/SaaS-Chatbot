@@ -32,7 +32,7 @@ class MessageHistoryService:
         return conversation
 
     @staticmethod
-    def record_message(
+    async def record_message(
         db: Session, 
         contact_phone: str, 
         content: str, 
@@ -40,12 +40,14 @@ class MessageHistoryService:
         agent_id: Optional[int] = None,
         msg_type: str = "text",
         external_id: Optional[str] = None,
-        status: MessageStatus = MessageStatus.SENT
+        status: MessageStatus = MessageStatus.SENT,
+        session_name: Optional[str] = None
     ) -> Message:
-        """Salva uma mensagem no histórico e atualiza a última interação da conversa."""
+        """Salva uma mensagem no histórico (Postgres + MongoDB) e atualiza a última interação."""
         conversation = MessageHistoryService.get_or_create_conversation(db, contact_phone)
+        tenant_id = get_current_tenant_id()
         
-        # Cria a mensagem
+        # 🟢 1. Persistência Postgres
         message = Message(
             conversation_id=conversation.id,
             side=side,
@@ -56,15 +58,38 @@ class MessageHistoryService:
             status=status
         )
         
-        # Atualiza o preview da conversa
         conversation.last_message_content = content[:50] + ("..." if len(content) > 50 else "")
         conversation.last_interaction = datetime.utcnow()
         
         db.add(message)
         db.commit()
         db.refresh(message)
+
+        # 🟢 2. Persistência MongoDB (Sprint 40 - Requisito de Restauração)
+        from src.services.chat_service import chat_service
+        from src.models.mongo.chat import MessageSource
         
-        logger.debug(f"💾 Mensagem salva (ID: {message.id}) para {contact_phone}")
+        source_map = {
+            MessageSide.CLIENT: MessageSource.USER,
+            MessageSide.BOT: MessageSource.AGENT,
+            MessageSide.AGENT: MessageSource.HUMAN,
+            MessageSide.SYSTEM: MessageSource.SYSTEM
+        }
+        
+        try:
+            await chat_service.save_message(
+                tenant_id=tenant_id,
+                session_name=session_name or f"tenant_{tenant_id}",
+                contact_phone=contact_phone,
+                content=content,
+                source=source_map.get(side, MessageSource.SYSTEM),
+                message_type=msg_type,
+                external_id=external_id
+            )
+        except Exception as e:
+            logger.error(f"⚠️ Falha ao espelhar mensagem no MongoDB: {e}")
+        
+        logger.debug(f"💾 Mensagem salva (ID Postgres: {message.id}) para {contact_phone}")
         return message
 
     @staticmethod

@@ -22,13 +22,14 @@ class NodeActions:
         # Injeção de variáveis (Sprint 18)
         processed_text = ConditionEvaluator.inject_variables(raw_text, variables)
         
-        # 🟢 Persistência Postgres (Histórico do Bot)
+        # 🟢 Persistência Postgres + MongoDB (Histórico do Bot)
         with SessionLocal() as db:
-            MessageHistoryService.record_message(
+            await MessageHistoryService.record_message(
                 db=db,
                 contact_phone=contact_phone,
                 content=processed_text,
-                side=MessageSide.BOT
+                side=MessageSide.BOT,
+                session_name=f"tenant_{tenant_id}"
             )
 
         # Envia para a fila de saída para que o bot entregue

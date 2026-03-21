@@ -46,14 +46,15 @@ class FlowWorker:
             user_input = data.get("content", "")
             external_id = data.get("message_id")
 
-            # 🟢 Persistência Postgres (Histórico) antes de qualquer lógica
+            # 🟢 Persistência Postgres + MongoDB (Histórico) antes de qualquer lógica
             with SessionLocal() as db:
-                MessageHistoryService.record_message(
+                await MessageHistoryService.record_message(
                     db=db,
                     contact_phone=contact_phone,
                     content=user_input,
                     side=MessageSide.CLIENT,
-                    external_id=external_id
+                    external_id=external_id,
+                    session_name=f"tenant_{tenant_id}" # Tagged for restoration
                 )
 
             # 2. Busca Fluxo Ativo para o Tenant (Regras de Prioridade .NET)
