@@ -41,6 +41,7 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     dbus-x11 \
     xvfb \
+    xauth \
     libxshmfence1 \
     libglu1-mesa \
     libgdk-pixbuf2.0-0 \
