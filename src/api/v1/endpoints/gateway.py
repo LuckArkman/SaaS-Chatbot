@@ -80,34 +80,47 @@ async def incoming_webhook(
                 )
                 logger.debug(f"✔️ ACK recebido para msg: {ack_body.get('id')} Status: {ack_body.get('status')}")
 
-            # --- 🟢 Tratamento de Eventos de Sistema (Sprint 28) ---
+                # --- 🟢 Tratamento de Eventos de Sistema (Sprint 28) ---
             elif ws_payload.event == WhatsAppMessageEvent.ON_STATE_CHANGE:
                 from src.models.whatsapp_events import WhatsAppSystemEvent
                 from src.models.whatsapp import WhatsAppInstance
                 from src.core.database import SessionLocal
                 from src.core.ws import ws_manager
+                from src.core.tenancy import set_current_tenant_id
                 
                 state_body = ws_payload.payload # Ex: {"state": "CONNECTED", "battery": 80}
                 state = state_body.get("state", "UNKNOWN")
                 battery = state_body.get("battery")
                 qrcode = state_body.get("qrcode")
                 
+                # Sincroniza Tenant ID a partir da sessão se estiver vazio (voto de confiança para o Bridge)
+                if not tenant_id and ws_payload.session.startswith("tenant_"):
+                    tenant_id = ws_payload.session.replace("tenant_", "")
+                    set_current_tenant_id(tenant_id)
+
                 with SessionLocal() as db:
                     # ✅ Atualização Reativa do Estado da Instância (Sprint 28)
                     instance = db.query(WhatsAppInstance).filter(
                         WhatsAppInstance.session_name == ws_payload.session
                     ).first()
+                    
                     if instance:
                         instance.status = state
                         if qrcode:
                             instance.qrcode_base64 = qrcode
                         db.commit()
 
+                    # Para evitar truncamento em visualizadores de log e inchaço no DB,
+                    # salvamos o qrcode resumido nos detalhes do evento de sistema
+                    log_details = state_body.copy()
+                    if qrcode and len(qrcode) > 100:
+                        log_details["qrcode"] = f"{qrcode[:50]}...[TRUNCATED]"
+
                     event_log = WhatsAppSystemEvent(
                         tenant_id=tenant_id,
                         session_name=ws_payload.session,
                         event_type=state,
-                        details=json.dumps(state_body)
+                        details=json.dumps(log_details)
                     )
                     db.add(event_log)
                     db.commit()
@@ -121,8 +134,12 @@ async def incoming_webhook(
                 }
                 
                 if state == "QRCODE" and qrcode:
-                    socket_payload["type"] = "bot_qrcode_update"
-                    socket_payload["qrcode"] = qrcode
+                    logger.info(f"📤 Encaminhando QR Code para WebSocket do Tenant {tenant_id} ({len(qrcode)} chars)")
+                    socket_payload = {
+                        "type": "bot_qrcode_update",
+                        "qrcode": qrcode.strip(),
+                        "session": ws_payload.session
+                    }
                 
                 # 🟢 Restauração de Histórico (Sprint 40)
                 # Quando conectar, envia o bairo de histórico para o front "refletir"
@@ -137,7 +154,7 @@ async def incoming_webhook(
                 await ws_manager.broadcast_to_tenant(tenant_id, socket_payload)
                 
                 # Log final
-                logger.info(f"🦾 Bot {ws_payload.session} reportou estado: {state} (Histórico Restaurado: {len(history_data)} msgs)")
+                logger.debug(f"🦾 Bot {ws_payload.session} reportou estado: {state} (Histórico Restaurado: {len(history_data)} msgs)")
 
             return {"success": True, "status": "processed"}
 
