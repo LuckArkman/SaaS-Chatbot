@@ -99,31 +99,41 @@ async def incoming_webhook(
                     set_current_tenant_id(tenant_id)
 
                 with SessionLocal() as db:
-                    # ✅ Atualização Reativa do Estado da Instância (Sprint 28)
-                    instance = db.query(WhatsAppInstance).filter(
-                        WhatsAppInstance.session_name == ws_payload.session
-                    ).first()
-                    
-                    if instance:
-                        instance.status = state
-                        if qrcode:
-                            instance.qrcode_base64 = qrcode
+                    # ✅ Bloco 1: Atualiza a instância (CRÍTICO - não pode falhar)
+                    try:
+                        instance = db.query(WhatsAppInstance).filter(
+                            WhatsAppInstance.session_name == ws_payload.session
+                        ).execution_options(ignore_tenant=True).first()
+                        
+                        if instance:
+                            instance.status = state
+                            if qrcode:
+                                instance.qrcode_base64 = qrcode
+                            db.commit()
+                            logger.info(f"✅ Instância {ws_payload.session} atualizada: status={state}, qrcode={'sim' if qrcode else 'não'}")
+                        else:
+                            logger.warning(f"⚠️ Instância não encontrada para sessão: {ws_payload.session}")
+                    except Exception as e_inst:
+                        db.rollback()
+                        logger.error(f"❌ Falha ao atualizar instância WhatsApp: {e_inst}")
+
+                    # ✅ Bloco 2: Auditoria (NÃO CRÍTICO - falha silenciosa se tabela não existir)
+                    try:
+                        log_details = state_body.copy()
+                        if qrcode and len(qrcode) > 100:
+                            log_details["qrcode"] = f"{qrcode[:50]}...[TRUNCATED]"
+
+                        event_log = WhatsAppSystemEvent(
+                            tenant_id=tenant_id,
+                            session_name=ws_payload.session,
+                            event_type=state,
+                            details=json.dumps(log_details)
+                        )
+                        db.add(event_log)
                         db.commit()
-
-                    # Para evitar truncamento em visualizadores de log e inchaço no DB,
-                    # salvamos o qrcode resumido nos detalhes do evento de sistema
-                    log_details = state_body.copy()
-                    if qrcode and len(qrcode) > 100:
-                        log_details["qrcode"] = f"{qrcode[:50]}...[TRUNCATED]"
-
-                    event_log = WhatsAppSystemEvent(
-                        tenant_id=tenant_id,
-                        session_name=ws_payload.session,
-                        event_type=state,
-                        details=json.dumps(log_details)
-                    )
-                    db.add(event_log)
-                    db.commit()
+                    except Exception as e_log:
+                        db.rollback()
+                        logger.warning(f"⚠️ Log de auditoria falhou (tabela pode não existir ainda): {e_log}")
                 
                 # Notifica UI via WebSocket (Broadcaster Sprint 21)
                 socket_payload = {
