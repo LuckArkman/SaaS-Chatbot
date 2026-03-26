@@ -25,13 +25,48 @@ async def get_bot_qr(
     tenant_id: str = Depends(get_current_tenant_id),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
-    """Busca o QR Code atualizado para pareamento."""
-    instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+    """
+    Busca o QR Code para pareamento.
+    Estratégia de dupla fonte:
+    1. Primeiro tenta o banco (atualizado pelo webhook do Bridge em tempo real).
+    2. Se não houver no banco, consulta o Bridge diretamente.
+    3. Se nenhum dos dois tiver, retorna 202 (Aceito/Aguardando) com o status atual.
+    """
     from src.services.whatsapp_bridge_service import whatsapp_bridge
+    from src.models.whatsapp import WhatsAppStatus
+
+    instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+
+    # 1. Tenta o DB primeiro (mais rápido, atualizado pelo webhook on_state_change)
+    if instance.qrcode_base64:
+        logger.debug(f"✅ QR Code servido do banco para {instance.session_name}")
+        return {
+            "status": instance.status,
+            "qrcode": instance.qrcode_base64
+        }
+
+    # 2. Fallback: consulta o Bridge diretamente
     qr = await whatsapp_bridge.get_qrcode(instance.session_name)
-    if not qr:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="QR Code ainda não gerado ou expirado.")
-    return {"qrcode": qr}
+    if qr:
+        # Persiste no banco para as próximas chamadas
+        instance.qrcode_base64 = qr
+        db.commit()
+        logger.debug(f"✅ QR Code obtido do Bridge e cacheado no banco para {instance.session_name}")
+        return {
+            "status": instance.status,
+            "qrcode": qr
+        }
+
+    # 3. Ainda não disponível - retorna 202 com status atual para o cliente continuar tentando
+    logger.info(f"⏳ QR Code ainda não disponível para {instance.session_name} (status: {instance.status})")
+    raise HTTPException(
+        status_code=status.HTTP_202_ACCEPTED,
+        detail={
+            "message": "QR Code ainda não gerado. O bot está inicializando.",
+            "status": str(instance.status),
+            "retry_after_seconds": 3
+        }
+    )
 
 @router.post("/start")
 async def start_bot(
