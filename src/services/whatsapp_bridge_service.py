@@ -48,8 +48,8 @@ class WhatsAppBridgeService:
                 headers=self.headers
             )
             
-            if response.status_code == 200:
-                logger.info(f"✅ Instância {session_id} parada com sucesso")
+            if response.status_code == 200 or response.status_code == 404:
+                logger.info(f"✅ Instância {session_id} parada com sucesso (ou já estava parada. Status: {response.status_code})")
                 return True
             
             logger.error(f"❌ Erro ao parar instância {session_id}. Status: {response.status_code}, Resposta: {response.text}")
