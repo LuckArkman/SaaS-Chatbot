@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     WHATSAPP_BRIDGE_URL: str = os.getenv("WHATSAPP_BRIDGE_URL", "http://127.0.0.1:8081")
     BRIDGE_API_KEY: str = os.getenv("BRIDGE_API_KEY", "BOT_API_KEY_CHANGE_ME")
 
+    # Google Gemini AI (Sprint 50)
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+
     model_config = SettingsConfigDict(
         case_sensitive=True, 
         env_file=".env" if not os.getenv("DOCKER_CONTAINER") else None,

@@ -1,5 +1,5 @@
 import httpx
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from src.schemas.flow import FlowNode, NodeType
 from src.common.schemas import UnifiedMessage, UnifiedMessageType
 from src.core.bus import rabbitmq_bus
@@ -101,3 +101,64 @@ class NodeActions:
             "contact_phone": contact_phone,
             "agent_id": agent.id if agent else None
         })
+
+    @staticmethod
+    async def execute_ai_node(
+        node: FlowNode,
+        tenant_id: str,
+        contact_phone: str,
+        variables: Dict[str, Any],
+        user_input: str
+    ):
+        """
+        Executa um nó de IA usando o Google Gemini.
+        O system_prompt pode ser configurado no campo 'data' do nó no FlowBuilder.
+        """
+        from src.services.gemini_service import GeminiService
+
+        system_prompt = node.data.get("system_prompt", "Você é um assistente virtual prestativo e simpático.")
+        
+        # Busca histórico recente para contexto multi-turn (últimas 10 trocas)
+        with SessionLocal() as db:
+            recent_messages = MessageHistoryService.get_recent_messages(
+                db, contact_phone=contact_phone, limit=10
+            )
+        
+        conversation_history = GeminiService.build_history_from_messages(
+            [{"side": m.side, "content": m.content} for m in recent_messages]
+        )
+
+        # Injeta variáveis da sessão no prompt do usuário se aplicável
+        processed_input = ConditionEvaluator.inject_variables(user_input, variables)
+
+        logger.info(f"🧠 Gemini: processando input de {contact_phone} (histórico: {len(conversation_history)} turns)")
+        
+        ai_reply = await GeminiService.generate_response(
+            user_message=processed_input,
+            system_prompt=system_prompt,
+            conversation_history=conversation_history
+        )
+
+        # Persiste a resposta do bot no histórico
+        with SessionLocal() as db:
+            await MessageHistoryService.record_message(
+                db=db,
+                contact_phone=contact_phone,
+                content=ai_reply,
+                side=MessageSide.BOT,
+                session_name=f"tenant_{tenant_id}"
+            )
+
+        # Publica na fila de saída para o Bridge entregar via WhatsApp
+        await rabbitmq_bus.publish(
+            exchange_name="messages_exchange",
+            routing_key="message.outgoing",
+            message={
+                "tenant_id": tenant_id,
+                "to": contact_phone,
+                "type": "text",
+                "content": ai_reply
+            }
+        )
+        logger.info(f"✅ Resposta Gemini enviada para {contact_phone}: '{ai_reply[:80]}...' ")
+
