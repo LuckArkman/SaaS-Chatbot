@@ -74,7 +74,7 @@ class ChatService:
         key = f"typing:{tenant_id}:{conversation_id}"
         if is_typing:
             # TTL de 5s para não prender o status se travar
-            await redis_client.set(key, "typing", ex=5)
+            await redis_client.set(key, "typing", expire=5)
         else:
             await redis_client.delete(key)
 

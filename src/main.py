@@ -20,7 +20,7 @@ from loguru import logger
 import asyncio
 
 # Importa todos os modelos para registro no SQLAlchemy (Metadata)
-from src.models import user, chat, whatsapp, billing, campaign, contact, department, invoice, transaction
+from src.models import user, chat, whatsapp, whatsapp_events, billing, campaign, contact, department, invoice, transaction
 
 from fastapi.staticfiles import StaticFiles
 from src.services.storage_service import StorageService
