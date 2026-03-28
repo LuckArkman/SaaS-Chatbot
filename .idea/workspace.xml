@@ -4,15 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="1b8efb0b-354b-49b8-ae39-f0bc5a1fb44e" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/api/v1/endpoints/auth.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/api/v1/endpoints/auth.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/api/v1/endpoints/flows.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/api/v1/endpoints/flows.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/api/v1/endpoints/gateway.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/api/v1/endpoints/gateway.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/common/error_handlers.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/common/error_handlers.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/core/security.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/core/security.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/schemas/user.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/schemas/user.py" afterDir="false" />
-    </list>
+    <list default="true" id="1b8efb0b-354b-49b8-ae39-f0bc5a1fb44e" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -21,23 +13,23 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 3
-}]]></component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 3
+}</component>
   <component name="ProjectId" id="3AujBFKPBDW1fpKq227vdVpHjcC" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "PythonBase",
-    "last_opened_file_path": "D:/SaaS-Chatbot"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;PythonBase&quot;,
+    &quot;last_opened_file_path&quot;: &quot;D:/SaaS-Chatbot&quot;
   }
-}]]></component>
+}</component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>

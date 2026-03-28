@@ -20,7 +20,7 @@ from loguru import logger
 import asyncio
 
 # Importa todos os modelos para registro no SQLAlchemy (Metadata)
-from src.models import user, chat, whatsapp, billing, campaign, contact, department, invoice, transaction
+from src.models import user, chat, whatsapp, whatsapp_events, billing, campaign, contact, department, invoice, transaction
 
 from fastapi.staticfiles import StaticFiles
 from src.services.storage_service import StorageService
@@ -125,10 +125,17 @@ def create_application() -> FastAPI:
         await rabbitmq_bus.connect()
         
         # 🟢 Conectar e Inicializar MongoDB (Beanie)
+        from src.models.mongo.flow import FlowDocument, SessionStateDocument
+        from src.models.mongo.chat import MessageDocument # ← Novo Modelo
+        
         client = AsyncIOMotorClient(settings.MONGODB_URL)
         await init_beanie(
             database=client.get_default_database(),
-            document_models=[FlowDocument, SessionStateDocument]
+            document_models=[
+                FlowDocument, 
+                SessionStateDocument,
+                MessageDocument # ← Adicionado aqui
+            ]
         )
         logger.info(f"💾 MongoDB Initialized via Beanie: {settings.MONGODB_URL}")
         

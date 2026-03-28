@@ -1,82 +1,192 @@
-const venom = require('venom-bot');
+const { 
+    default: makeWASocket, 
+    useMultiFileAuthState, 
+    DisconnectReason, 
+    fetchLatestBaileysVersion 
+} = require("@whiskeysockets/baileys");
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+const pino = require('pino');
+const QRCode = require('qrcode');
 
 const app = express();
 app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-let venoms = {}; // Map of sessionId -> venom client
-let latestQrs = {}; // Map of sessionId -> latest QR code
+let sockets = {};
+let latestQrs = {};
+let sessionStatuses = {};
 
-async function startBot(sessionId) {
-    if (venoms[sessionId]) return;
+const logger = pino({ level: 'info' });
 
+async function connectToWhatsApp(sessionId) {
+    if (sockets[sessionId]) return;
+
+    console.log(`[*] Iniciando Baileys para sessão: ${sessionId}`);
+    const tokenPath = path.join(__dirname, 'tokens', sessionId);
+    if (!fs.existsSync(tokenPath)) {
+        fs.mkdirSync(tokenPath, { recursive: true });
+    }
+
+    const { state, saveCreds } = await useMultiFileAuthState(tokenPath);
+    const { version } = await fetchLatestBaileysVersion();
+
+    const sock = makeWASocket({
+        version,
+        auth: state,
+        printQRInTerminal: true,
+        logger: logger.child({ session: sessionId }),
+        browser: ["SaaS-OmniChannel", `Tenant-${sessionId}`, "1.0"]
+    });
+
+    sockets[sessionId] = sock;
+    sessionStatuses[sessionId] = 'CONNECTING';
+
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
+
+        if (qr) {
+            console.log(`[${sessionId}] Novo QR Code gerado.`);
+            const base64Qr = (await QRCode.toDataURL(qr)).trim();
+            latestQrs[sessionId] = base64Qr;
+            sessionStatuses[sessionId] = 'QRCODE';
+            io.emit('qr', { sessionId, qr: base64Qr });
+
+            console.log(`[${sessionId}] Enviando QR Code para Webhook (${base64Qr.length} chars)`);
+            await notifyStatus(sessionId, 'QRCODE', base64Qr);
+        }
+
+        if (connection === 'close') {
+            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log(`[${sessionId}] Conexão fechada. Motivo: ${lastDisconnect.error}. Reconnect: ${shouldReconnect}`);
+            
+            delete sockets[sessionId];
+            delete latestQrs[sessionId];
+            sessionStatuses[sessionId] = 'DISCONNECTED';
+
+            await notifyStatus(sessionId, 'DISCONNECTED');
+
+            if (shouldReconnect) {
+                connectToWhatsApp(sessionId);
+            }
+        } else if (connection === 'open') {
+            console.log(`[${sessionId}] Conexão estabelecida com sucesso!`);
+            sessionStatuses[sessionId] = 'CONNECTED';
+            delete latestQrs[sessionId];
+            io.emit('status', { sessionId, status: 'CONNECTED' });
+            
+            await notifyStatus(sessionId, 'CONNECTED');
+        }
+    });
+
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (type === 'notify') {
+            for (const msg of messages) {
+                if (!msg.key.fromMe && msg.message) {
+                    try {
+                        const content = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
+                        const webhookUrl = process.env.WEBHOOK_URL || 'http://127.0.0.1:8001/api/v1/gateway/webhook/whatsapp';
+                        const headers = { 'x-api-key': 'SaaS_Secret_Gateway_Key_2026' };
+                        
+                        await axios.post(webhookUrl, {
+                            sessionId,
+                            messageId: msg.key.id,
+                            content: content,
+                            senderPhone: msg.key.remoteJid,
+                            senderName: msg.pushName || msg.key.remoteJid
+                        }, { headers });
+                    } catch (err) {
+                        console.error(`[${sessionId}] Erro ao encaminhar para webhook:`, err.message);
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Helper para notificação de status unificada
+async function notifyStatus(sessionId, state, qrcode = null) {
+    const webhookUrl = process.env.WEBHOOK_URL || 'http://127.0.0.1:8001/api/v1/gateway/webhook/whatsapp';
+    const headers = { 'x-api-key': 'SaaS_Secret_Gateway_Key_2026' };
+    
     try {
-        const client = await venom.create(
-            sessionId,
-            (base64Qr, asciiQR, attempts, urlCode) => {
-                latestQrs[sessionId] = base64Qr;
-                io.emit('qr', { sessionId, qr: base64Qr });
-            },
-            (statusSession, session) => {
-                console.log('Status Session:', statusSession, 'Session name:', session);
-                io.emit('status', { sessionId, status: statusSession });
-            },
-            {
-                headless: 'new',
-                sessionDataPath: './tokens',
-                browserArgs: ['--no-sandbox', '--disable-setuid-sandbox']
+        await axios.post(webhookUrl, {
+            event: 'on_state_change',
+            session: sessionId,
+            payload: {
+                state: state,
+                qrcode: qrcode
             }
-        );
-
-        venoms[sessionId] = client;
-
-        client.onMessage(async (message) => {
-            if (message.isGroupMsg) return;
-
-            console.log(`[${sessionId}] Message from ${message.from}: ${message.body}`);
-
-            try {
-                // Forward to Channel Gateway Webhook (Sprint 28 - Python Migration)
-                const webhookUrl = process.env.WEBHOOK_URL || 'http://saas_api:8000/api/v1/gateway/webhook/whatsapp';
-                await axios.post(webhookUrl, {
-                    sessionId,
-                    messageId: message.id,
-                    content: message.body,
-                    senderPhone: message.from,
-                    senderName: message.sender.name || message.from
-                });
-            } catch (err) {
-                console.error('Error forwarding message:', err.message);
-            }
-        });
-
-    } catch (err) {
-        console.error('Error starting venom:', err);
+        }, { headers });
+    } catch (e) {
+        console.error(`[${sessionId}] Erro ao notificar status (${state}) no webhook:`, e.message);
     }
 }
 
-app.get('/qr/:sessionId', (req, res) => {
-    const { sessionId } = req.params;
-    if (latestQrs[sessionId]) {
-        res.json({ qr: latestQrs[sessionId], status: 'Pending' });
+// --- Bridge Endpoints ---
+
+app.post('/instance/create', (req, res) => {
+    const { sessionId } = req.body;
+    if (!sessionId) return res.status(400).json({ error: 'sessionId missing' });
+    
+    if (sockets[sessionId]) {
+        return res.json({ success: true, state: sessionStatuses[sessionId] });
+    }
+
+    connectToWhatsApp(sessionId).catch(e => console.error(e));
+    res.status(202).json({ success: true, state: 'CONNECTING' });
+});
+
+app.post('/instance/stop', async (req, res) => {
+    const { sessionId } = req.body;
+    const sock = sockets[sessionId];
+    if (sock) {
+        sock.logout(); 
+        delete sockets[sessionId];
+        delete latestQrs[sessionId];
+        sessionStatuses[sessionId] = 'DISCONNECTED';
+        res.json({ success: true });
     } else {
-        startBot(sessionId);
-        res.json({ status: 'Initializing' });
+        res.status(404).json({ error: "Instance not found" });
     }
 });
 
-app.get('/status/:sessionId', (req, res) => {
-    const { sessionId } = req.params;
-    res.json({ status: venoms[sessionId] ? 'Connected' : 'Disconnected' });
+app.post('/instance/restart', async (req, res) => {
+    const { sessionId } = req.body;
+    if (sockets[sessionId]) {
+        try { sockets[sessionId].end(); } catch (e) {}
+        delete sockets[sessionId];
+    }
+    connectToWhatsApp(sessionId).catch(e => console.error(e));
+    res.json({ success: true, state: 'RESTARTING' });
 });
 
-const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => {
-    console.log(`Venom Logic Service running on port ${PORT}`);
+app.get('/instance/qrcode', (req, res) => {
+    const { sessionId } = req.query;
+    if (latestQrs[sessionId]) {
+        res.json({ qrcode: latestQrs[sessionId], state: 'QRCODE' });
+    } else {
+        res.status(404).json({ error: "QR not ready" });
+    }
+});
+
+app.get('/instance/connectionState', (req, res) => {
+    const { sessionId } = req.query;
+    const status = sessionStatuses[sessionId] || 'DISCONNECTED';
+    res.json({ state: status });
+});
+
+const PORT = 4000;
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`WhatsApp Bridge (Baileys) listening on port ${PORT}`);
 });

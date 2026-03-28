@@ -8,6 +8,8 @@ from src.core.tenancy import get_current_tenant_id
 from src.core.database import SessionLocal
 from loguru import logger
 import json
+from src.services.chat_service import chat_service
+from src.models.mongo.chat import MessageSource
 
 router = APIRouter()
 
@@ -51,37 +53,14 @@ async def incoming_webhook(
                 # Normalização e Filas (Sprint 13)
                 unified_msg = MessageNormalizer.from_whatsapp(tenant_id, msg_body)
                 
-                # --- 🟢 Lead Attribution & Conversion (Sprint 39) ---
-                if ws_payload.event == WhatsAppMessageEvent.ON_MESSAGE:
-                    from src.models.contact import Contact
-                    from src.models.campaign import Campaign
-                    with SessionLocal() as db:
-                        lead = db.query(Contact).filter(
-                            Contact.tenant_id == tenant_id,
-                            Contact.phone_number == unified_msg.from_id
-                        ).first()
-                        if lead and lead.last_campaign_id:
-                            campaign = db.query(Campaign).get(lead.last_campaign_id)
-                            if campaign:
-                                campaign.replied_count += 1
-                                lead.last_campaign_id = None # Marcou como respondido, limpa pra próxima
-                                db.commit()
-
-                # --- 🟢 Controle de Quotas (Sprint 33) ---
-                from src.services.quota_service import QuotaService
-                from src.core.database import SessionLocal
-                with SessionLocal() as db:
-                    if not await QuotaService.increment_message_usage(db, tenant_id):
-                        logger.warning(f"⚠️ Mensagem de {tenant_id} descartada por falta de saldo/quota.")
-                        return {"success": False, "status": "quota_exceeded"}
-
-                # Publicar para o Barramento de Eventos Unificado
+                # ✅ Publicar para o Barramento de Eventos Unificado (Sprint 13)
                 await rabbitmq_bus.publish(
                     exchange_name="messages_exchange",
                     routing_key="message.incoming",
                     message={
+                        "tenant_id": tenant_id, # Requerido pelo FlowWorker
                         "session": ws_payload.session,
-                        "data": unified_msg.model_dump(mode='json') # Pydantic v2 dump
+                        "data": unified_msg.model_dump(mode='json')
                     }
                 )
                 logger.debug(f"📤 Mensagem Unificada expedida: {unified_msg.message_id} (Tenant: {tenant_id})")
@@ -101,34 +80,91 @@ async def incoming_webhook(
                 )
                 logger.debug(f"✔️ ACK recebido para msg: {ack_body.get('id')} Status: {ack_body.get('status')}")
 
-            # --- 🟢 Tratamento de Eventos de Sistema (Sprint 28) ---
+                # --- 🟢 Tratamento de Eventos de Sistema (Sprint 28) ---
             elif ws_payload.event == WhatsAppMessageEvent.ON_STATE_CHANGE:
                 from src.models.whatsapp_events import WhatsAppSystemEvent
+                from src.models.whatsapp import WhatsAppInstance
                 from src.core.database import SessionLocal
                 from src.core.ws import ws_manager
+                from src.core.tenancy import set_current_tenant_id
                 
                 state_body = ws_payload.payload # Ex: {"state": "CONNECTED", "battery": 80}
                 state = state_body.get("state", "UNKNOWN")
                 battery = state_body.get("battery")
+                qrcode = state_body.get("qrcode")
                 
+                # Sincroniza Tenant ID a partir da sessão se estiver vazio (voto de confiança para o Bridge)
+                if not tenant_id and ws_payload.session.startswith("tenant_"):
+                    tenant_id = ws_payload.session.replace("tenant_", "")
+                    set_current_tenant_id(tenant_id)
+
                 with SessionLocal() as db:
-                    event_log = WhatsAppSystemEvent(
-                        tenant_id=tenant_id,
-                        session_name=ws_payload.session,
-                        event_type=state,
-                        details=json.dumps(state_body)
-                    )
-                    db.add(event_log)
-                    db.commit()
+                    # ✅ Bloco 1: Atualiza a instância (CRÍTICO - não pode falhar)
+                    try:
+                        instance = db.query(WhatsAppInstance).filter(
+                            WhatsAppInstance.session_name == ws_payload.session
+                        ).execution_options(ignore_tenant=True).first()
+                        
+                        if instance:
+                            instance.status = state
+                            if qrcode:
+                                instance.qrcode_base64 = qrcode
+                            db.commit()
+                            logger.info(f"✅ Instância {ws_payload.session} atualizada: status={state}, qrcode={'sim' if qrcode else 'não'}")
+                        else:
+                            logger.warning(f"⚠️ Instância não encontrada para sessão: {ws_payload.session}")
+                    except Exception as e_inst:
+                        db.rollback()
+                        logger.error(f"❌ Falha ao atualizar instância WhatsApp: {e_inst}")
+
+                    # ✅ Bloco 2: Auditoria (NÃO CRÍTICO - falha silenciosa se tabela não existir)
+                    try:
+                        log_details = state_body.copy()
+                        if qrcode and len(qrcode) > 100:
+                            log_details["qrcode"] = f"{qrcode[:50]}...[TRUNCATED]"
+
+                        event_log = WhatsAppSystemEvent(
+                            tenant_id=tenant_id,
+                            session_name=ws_payload.session,
+                            event_type=state,
+                            details=json.dumps(log_details)
+                        )
+                        db.add(event_log)
+                        db.commit()
+                    except Exception as e_log:
+                        db.rollback()
+                        logger.warning(f"⚠️ Log de auditoria falhou (tabela pode não existir ainda): {e_log}")
                 
                 # Notifica UI via WebSocket (Broadcaster Sprint 21)
-                await ws_manager.broadcast_to_tenant(tenant_id, {
+                socket_payload = {
                     "type": "bot_system_event",
                     "event": state,
                     "battery": battery,
                     "session": ws_payload.session
-                })
-                logger.info(f"🦾 Bot {ws_payload.session} reportou estado: {state} (Bateria: {battery}%)")
+                }
+                
+                if state == "QRCODE" and qrcode:
+                    logger.info(f"📤 Encaminhando QR Code para WebSocket do Tenant {tenant_id} ({len(qrcode)} chars)")
+                    socket_payload = {
+                        "type": "bot_qrcode_update",
+                        "qrcode": qrcode.strip(),
+                        "session": ws_payload.session
+                    }
+                
+                # 🟢 Restauração de Histórico (Sprint 40)
+                # Quando conectar, envia o bairo de histórico para o front "refletir"
+                history_data = []
+                if state == "CONNECTED":
+                    logger.info(f"🔄 Bot {ws_payload.session} conectado. Restaurando histórico para o Front-end...")
+                    history = await chat_service.get_session_history(tenant_id, ws_payload.session)
+                    history_data = [msg.model_dump(mode='json') for msg in history]
+                    socket_payload["history"] = history_data
+                    socket_payload["type"] = "chat_history_restored"
+
+                await ws_manager.broadcast_to_tenant(tenant_id, socket_payload)
+                
+                # Log final
+                logger.debug(f"🦾 Bot {ws_payload.session} reportou estado: {state} (Histórico Restaurado: {len(history_data)} msgs)")
 
             return {"success": True, "status": "processed"}
 

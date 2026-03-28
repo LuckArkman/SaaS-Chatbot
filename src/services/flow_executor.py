@@ -49,8 +49,9 @@ class FlowExecutor:
             )
         
         elif next_node.type == NodeType.AI:
-            # TODO: Integrar com LangChain/OpenAI na Sprint 20
-            logger.info("🧠 Cérebro IA aguardando integração...")
+            await NodeActions.execute_ai_node(
+                next_node, session.tenant_id, session.contact_phone, session.variables, user_input or ""
+            )
             
         elif next_node.type == NodeType.HANDOVER:
             await NodeActions.execute_handover_node(session.tenant_id, session.contact_phone)
