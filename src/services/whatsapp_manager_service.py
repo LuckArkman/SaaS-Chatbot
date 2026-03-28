@@ -13,13 +13,14 @@ class WhatsAppManagerService:
     """
     @staticmethod
     def get_or_create_instance(db: Session, tenant_id: str) -> WhatsAppInstance:
-        """Recupera a instância configurada para o Tenant ou cria uma inicial."""
+        """Recupera a instância configurada para o Tenant (a mais recente) ou cria uma inicial."""
         instance = db.query(WhatsAppInstance).filter(
             WhatsAppInstance.tenant_id == tenant_id
-        ).first()
+        ).order_by(WhatsAppInstance.id.desc()).first()
         
         if not instance:
-            session_key = f"tenant_{tenant_id}"
+            import uuid
+            session_key = f"tenant_{tenant_id}_{uuid.uuid4().hex[:8]}"
             instance = WhatsAppInstance(
                 tenant_id=tenant_id,
                 session_name=session_key,
@@ -29,24 +30,37 @@ class WhatsAppManagerService:
             db.add(instance)
             db.commit()
             db.refresh(instance)
-            logger.info(f"🆕 Instância WhatsApp criada para o Tenant {tenant_id}")
+            logger.info(f"🆕 Instância WhatsApp criada para o Tenant {tenant_id}: {session_key}")
             
         return instance
 
     @staticmethod
     async def initialize_bot(db: Session, tenant_id: str) -> bool:
-        """Aciona o Bridge para iniciar/reconectar bot."""
-        instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+        """Aciona o Bridge para iniciar bot. Sempre cria uma nova instância isolada garantindo re-auth limpo."""
+        import uuid
         
-        # 🟢 Solicita criação no Node.js Bridge
+        session_key = f"tenant_{tenant_id}_{uuid.uuid4().hex[:8]}"
+        instance = WhatsAppInstance(
+            tenant_id=tenant_id,
+            session_name=session_key,
+            status=WhatsAppStatus.CONNECTING,
+            is_active=True
+        )
+        db.add(instance)
+        db.commit()
+        db.refresh(instance)
+        
+        # 🟢 Solicita criação da *nova* e exclusiva sessão no Node.js Bridge
         success = await whatsapp_bridge.create_session(instance.session_name)
         
         if success:
             instance.status = WhatsAppStatus.CONNECTING
             db.commit()
             return True
-            
-        return False
+        else:
+            db.delete(instance)
+            db.commit()
+            return False
 
     @staticmethod
     async def stop_bot(db: Session, tenant_id: str) -> bool:
