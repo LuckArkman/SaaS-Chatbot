@@ -44,7 +44,7 @@ async function connectToWhatsApp(sessionId) {
         auth: state,
         printQRInTerminal: true,
         logger: logger.child({ session: sessionId }),
-        browser: ["SaaS-OmniChannel", "Chrome", "1.0"]
+        browser: ["SaaS-OmniChannel", `Tenant-${sessionId}`, "1.0"]
     });
 
     sockets[sessionId] = sock;
