@@ -1,7 +1,11 @@
 import httpx
 import time
+import base64
+from io import BytesIO
+from PIL import Image
+from pyzbar.pyzbar import decode
+import qrcode
 from loguru import logger
-
 import uuid
 
 BASE_URL = "http://76.13.168.200:8001"
@@ -48,20 +52,66 @@ def test_bot_control():
         time.sleep(5)
 
         # [Check QR]
-        print("\n[Check] Buscando QR Code (aguardando geração)...")
+        print("\n[Check] Buscando QR Code (aguardando geração via SSE/Streaming)...")
         qr_received = False
-        for i in range(10): # Tenta por 30 segundos
-            r = client.get(f"{BASE_URL}/api/v1/bot/qr", headers=headers)
-            if r.status_code == 200:
-                print(f"✅ QR Code recebido! (tamanho: {len(r.json().get('qrcode', ''))})")
-                qr_received = True
-                break
-            else:
-                print(f"⏳ QR ainda não disponível ({i+1}/10)...")
-                time.sleep(3)
+        last_qr_content = None
+        qr_start_time = None
+        
+        try:
+            with client.stream("GET", f"{BASE_URL}/api/v1/bot/qr", headers=headers, timeout=60.0) as r:
+                for line in r.iter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    
+                    import json
+                    try:
+                        data = json.loads(line[6:])
+                        b64data = data.get('qrcode')
+                        status_str = data.get('status')
+                    except Exception:
+                        continue
+                        
+                    if not b64data:
+                        if status_str in ["CONNECTED", "DISCONNECTED"]:
+                            print(f"\n✅ Fluxo finalizado. Status final: {status_str}")
+                            break
+                        continue
+                        
+                    if b64data != last_qr_content:
+                        if last_qr_content is not None and qr_start_time is not None:
+                            elapsed = time.time() - qr_start_time
+                            print(f"⏱️ O QR Code anterior demorou {elapsed:.2f} segundos para expirar/atualizar.")
+                        
+                        qr_start_time = time.time()
+                        last_qr_content = b64data
+                        
+                        print(f"\n✅ Novo QR Code recebido via Streaming! (tamanho: {len(b64data)})")
+                        
+                        # Tenta decodificar o PNG e imprimir
+                        try:
+                            pure_b64 = b64data.split(",")[-1] if "," in b64data else b64data
+                            img_data = base64.b64decode(pure_b64)
+                            img = Image.open(BytesIO(img_data))
+                            
+                            decoded_list = decode(img)
+                            if decoded_list:
+                                qr_text = decoded_list[0].data.decode('utf-8')
+                                qr = qrcode.QRCode()
+                                qr.add_data(qr_text)
+                                qr.make()
+                                print("\n📱 Leia o QR Code abaixo no WhatsApp:\n")
+                                qr.print_ascii(invert=True)
+                            else:
+                                print("⚠️ Não foi possível encontrar um QR Code válido na imagem (Base64 corrompido ou baixa resolução).")
+                        except Exception as e:
+                            print(f"⚠️ Erro ao decodificar QR Code: {e}")
+                    
+                    qr_received = True
+        except Exception as e:
+            print(f"❌ Erro durante o stream: {e}")
         
         if not qr_received:
-            print("❌ Falha ao obter QR Code após 30 segundos.")
+            print("❌ Falha ao obter QR Code após 60 segundos.")
 
         # [3/4] POST /api/v1/bot/restart (Reiniciar)
         print("\n[3/4] POST /api/v1/bot/restart (Reiniciar)")

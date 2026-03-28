@@ -26,47 +26,45 @@ async def get_bot_qr(
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """
-    Busca o QR Code para pareamento.
-    Estratégia de dupla fonte:
-    1. Primeiro tenta o banco (atualizado pelo webhook do Bridge em tempo real).
-    2. Se não houver no banco, consulta o Bridge diretamente.
-    3. Se nenhum dos dois tiver, retorna 202 (Aceito/Aguardando) com o status atual.
+    Retorna o QR Code para pareamento via SSE (Server-Sent Events).
+    Atualiza o front-end por meio de streaming sempre que o QR Code mudar.
     """
-    from src.services.whatsapp_bridge_service import whatsapp_bridge
-    from src.models.whatsapp import WhatsAppStatus
+    import asyncio
+    import json
+    from fastapi.responses import StreamingResponse
+    from src.core.database import SessionLocal
 
-    instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+    async def event_generator():
+        last_qr = None
+        while True:
+            # Obtém uma nova sessão do banco a cada iteração (impede lock em conexões)
+            with SessionLocal() as db_session:
+                instance = WhatsAppManagerService.get_or_create_instance(db_session, tenant_id)
+                current_qr = instance.qrcode_base64
+                status = instance.status
+                status_str = status.value if hasattr(status, "value") else str(status)
 
-    # 1. Tenta o DB primeiro (mais rápido, atualizado pelo webhook on_state_change)
-    if instance.qrcode_base64:
-        logger.debug(f"✅ QR Code servido do banco para {instance.session_name}")
-        return {
-            "status": instance.status,
-            "qrcode": instance.qrcode_base64
-        }
+                if current_qr != last_qr:
+                    last_qr = current_qr
+                    # Somente envia se for evento válido de qr
+                    data = {
+                        "status": status_str,
+                        "qrcode": current_qr
+                    }
+                    yield f"data: {json.dumps(data)}\n\n"
+                
+                # Se o estado não for de inicialização e não tiver QR ou já tiver pareado, finaliza.
+                if status_str in ["CONNECTED", "DISCONNECTED"]:
+                    data = {
+                        "status": status_str,
+                        "qrcode": None
+                    }
+                    yield f"data: {json.dumps(data)}\n\n"
+                    break
 
-    # 2. Fallback: consulta o Bridge diretamente
-    qr = await whatsapp_bridge.get_qrcode(instance.session_name)
-    if qr:
-        # Persiste no banco para as próximas chamadas
-        instance.qrcode_base64 = qr
-        db.commit()
-        logger.debug(f"✅ QR Code obtido do Bridge e cacheado no banco para {instance.session_name}")
-        return {
-            "status": instance.status,
-            "qrcode": qr
-        }
+            await asyncio.sleep(2)
 
-    # 3. Ainda não disponível - retorna 202 com status atual para o cliente continuar tentando
-    logger.info(f"⏳ QR Code ainda não disponível para {instance.session_name} (status: {instance.status})")
-    raise HTTPException(
-        status_code=status.HTTP_202_ACCEPTED,
-        detail={
-            "message": "QR Code ainda não gerado. O bot está inicializando.",
-            "status": str(instance.status),
-            "retry_after_seconds": 3
-        }
-    )
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @router.post("/start")
 async def start_bot(
