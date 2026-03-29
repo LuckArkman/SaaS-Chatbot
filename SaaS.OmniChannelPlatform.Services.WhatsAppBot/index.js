@@ -186,6 +186,118 @@ app.get('/instance/connectionState', (req, res) => {
     res.json({ state: status });
 });
 
+// --- Contacts Endpoints ---
+
+/**
+ * POST /contacts/add
+ * Body: { sessionId, phone, name? }
+ * Verifica se o número existe no WhatsApp e retorna seus dados.
+ * No WhatsApp, "adicionar" um contato é validar sua existência via onWhatsApp().
+ * O nome/apelido é gerenciado pelo cliente (front-end / banco Python).
+ */
+app.post('/contacts/add', async (req, res) => {
+    const { sessionId, phone, name } = req.body;
+
+    if (!sessionId || !phone) {
+        return res.status(400).json({ error: 'sessionId e phone são obrigatórios' });
+    }
+
+    const sock = sockets[sessionId];
+    if (!sock) {
+        return res.status(404).json({ error: `Instância '${sessionId}' não encontrada ou desconectada.` });
+    }
+
+    if (sessionStatuses[sessionId] !== 'CONNECTED') {
+        return res.status(409).json({
+            error: 'Instância não está conectada.',
+            state: sessionStatuses[sessionId]
+        });
+    }
+
+    try {
+        // Normaliza o número: remove espaços, traços e parênteses
+        const normalizedPhone = phone.replace(/[^0-9+]/g, '');
+        const jid = normalizedPhone.includes('@') ? normalizedPhone : `${normalizedPhone}@s.whatsapp.net`;
+
+        // Verifica existência real do número no WhatsApp
+        const [result] = await sock.onWhatsApp(jid.replace('@s.whatsapp.net', ''));
+
+        if (!result || !result.exists) {
+            return res.status(422).json({
+                success: false,
+                error: `O número ${phone} não possui uma conta WhatsApp ativa.`
+            });
+        }
+
+        console.log(`[${sessionId}] Contato verificado/adicionado: ${result.jid} (Nome fornecido: ${name || 'N/A'})`);
+
+        return res.json({
+            success: true,
+            contact: {
+                jid: result.jid,
+                phone: normalizedPhone,
+                name: name || null,
+                verified: true
+            }
+        });
+    } catch (err) {
+        console.error(`[${sessionId}] Erro ao verificar contato ${phone}:`, err.message);
+        return res.status(500).json({ error: 'Erro interno ao verificar o contato no WhatsApp.', detail: err.message });
+    }
+});
+
+/**
+ * GET /contacts/list
+ * Query: { sessionId }
+ * Retorna a lista completa de contatos do WhatsApp carregada pela sessão Baileys.
+ * A lista inclui todos os participantes de conversas já abertas pelo usuário.
+ */
+app.get('/contacts/list', async (req, res) => {
+    const { sessionId } = req.query;
+
+    if (!sessionId) {
+        return res.status(400).json({ error: 'sessionId é obrigatório' });
+    }
+
+    const sock = sockets[sessionId];
+    if (!sock) {
+        return res.status(404).json({ error: `Instância '${sessionId}' não encontrada ou desconectada.` });
+    }
+
+    if (sessionStatuses[sessionId] !== 'CONNECTED') {
+        return res.status(409).json({
+            error: 'Instância não está conectada.',
+            state: sessionStatuses[sessionId]
+        });
+    }
+
+    try {
+        // Baileys armazena contatos no store interno da sessão
+        // sock.store?.contacts retorna o cache de contatos conhecidos
+        const rawContacts = sock.store?.contacts || {};
+
+        const contacts = Object.entries(rawContacts)
+            .filter(([jid]) => jid.endsWith('@s.whatsapp.net')) // exclui grupos
+            .map(([jid, contact]) => ({
+                jid,
+                phone: jid.replace('@s.whatsapp.net', ''),
+                name: contact.name || contact.notify || null,
+                short_name: contact.short || null
+            }));
+
+        console.log(`[${sessionId}] Lista de contatos solicitada: ${contacts.length} contato(s) encontrado(s).`);
+
+        return res.json({
+            success: true,
+            total: contacts.length,
+            contacts
+        });
+    } catch (err) {
+        console.error(`[${sessionId}] Erro ao listar contatos:`, err.message);
+        return res.status(500).json({ error: 'Erro interno ao listar contatos.', detail: err.message });
+    }
+});
+
 const PORT = 4000;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`WhatsApp Bridge (Baileys) listening on port ${PORT}`);

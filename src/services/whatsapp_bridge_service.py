@@ -130,9 +130,76 @@ class WhatsAppBridgeService:
 
     async def send_file(self, session_id: str, to: str, file_url: str, caption: str = "") -> bool:
         """Envia um arquivo via Bridge."""
-        # TODO: Implementar rota de envio no Bridge Node.js se necessário
         logger.warning("Envio de arquivo via Bridge Node.js ainda não implementado no Bridge.")
         return False
+
+    async def add_contact(self, session_id: str, phone: str, name: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Verifica se um número tem conta WhatsApp ativa e o valida como contato.
+        Utiliza o endpoint /contacts/add do Bridge Node.js (Baileys onWhatsApp).
+
+        Retorna dict com: success, contact (jid, phone, name, verified) ou error.
+        """
+        try:
+            payload = {"sessionId": session_id, "phone": phone}
+            if name:
+                payload["name"] = name
+
+            logger.info(f"[Bridge] Verificando/adicionando contato {phone} na sessão {session_id}")
+            response = await self.client.post(
+                f"{self.base_url}/contacts/add",
+                json=payload,
+                headers=self.headers
+            )
+
+            data = response.json()
+
+            if response.status_code == 200:
+                logger.info(f"✅ Contato {phone} verificado com sucesso: {data.get('contact', {}).get('jid')}")
+                return {"success": True, "contact": data.get("contact", {})}
+
+            if response.status_code == 422:
+                # Número não tem conta WhatsApp – não é erro de rede
+                return {"success": False, "error": data.get("error", "Número sem conta WhatsApp.")}
+
+            logger.error(f"❌ Bridge retornou {response.status_code} ao adicionar contato {phone}: {data}")
+            return {"success": False, "error": data.get("error", "Erro inesperado no Bridge.")}
+
+        except Exception as e:
+            logger.error(f"❌ Falha de rede ao adicionar contato {phone}: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def list_contacts(self, session_id: str) -> Dict[str, Any]:
+        """
+        Solicita ao Bridge a lista completa de contatos WhatsApp conhecidos pela sessão.
+        Utiliza o endpoint GET /contacts/list do Bridge Node.js.
+
+        Retorna dict com: success, total, contacts (lista de {jid, phone, name, short_name}).
+        """
+        try:
+            logger.info(f"[Bridge] Solicitando lista de contatos da sessão {session_id}")
+            response = await self.client.get(
+                f"{self.base_url}/contacts/list",
+                params={"sessionId": session_id},
+                headers=self.headers
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                total = data.get("total", 0)
+                logger.info(f"✅ Lista de contatos recebida: {total} contato(s) para sessão {session_id}")
+                return {"success": True, "total": total, "contacts": data.get("contacts", [])}
+
+            if response.status_code in [404, 409]:
+                data = response.json()
+                return {"success": False, "error": data.get("error", "Sessão indisponível.")}
+
+            logger.error(f"❌ Bridge retornou {response.status_code} ao listar contatos: {response.text}")
+            return {"success": False, "error": "Erro inesperado no Bridge ao listar contatos."}
+
+        except Exception as e:
+            logger.error(f"❌ Falha de rede ao listar contatos da sessão {session_id}: {e}")
+            return {"success": False, "error": str(e)}
 
 # Instância Global
 whatsapp_bridge = WhatsAppBridgeService()
