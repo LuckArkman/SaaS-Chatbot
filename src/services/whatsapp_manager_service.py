@@ -83,6 +83,38 @@ class WhatsAppManagerService:
         return success
 
     @staticmethod
+    async def sync_instance_status(db: Session, inst: WhatsAppInstance) -> WhatsAppInstance:
+        """Sincroniza o estado de uma instância específica com o Bridge."""
+        new_status = await whatsapp_bridge.fetch_status(inst.session_name)
+        
+        # Mudança de Status -> Notifica UI via WebSocket (Sprint 27)
+        if inst.status != new_status:
+            logger.debug(f"🔄 Instância {inst.session_name} alterada para {new_status}")
+            inst.status = new_status
+            inst.last_health_check = datetime.utcnow()
+            
+            from src.core.ws import ws_manager
+            await ws_manager.broadcast_to_tenant(inst.tenant_id, {
+                "type": "bot_status_update",
+                "status": new_status,
+                "session": inst.session_name
+            })
+
+        # Se for QRCODE, busca o novo e envia (Streaming de QR Code)
+        if new_status == WhatsAppStatus.QRCODE:
+            qr = await whatsapp_bridge.get_qrcode(inst.session_name)
+            if qr and qr != inst.qrcode_base64:
+                inst.qrcode_base64 = qr
+                from src.core.ws import ws_manager
+                await ws_manager.broadcast_to_tenant(inst.tenant_id, {
+                    "type": "bot_qrcode_update",
+                    "qrcode": qr
+                })
+        
+        db.commit()
+        return inst
+
+    @staticmethod
     async def health_check_all(db: Session):
         """
         Tarefa periódica que sincroniza o estado global das instâncias.
@@ -93,35 +125,4 @@ class WhatsAppManagerService:
         ).all()
         
         for inst in instances:
-            new_status = await whatsapp_bridge.fetch_status(inst.session_name)
-            
-            # Mudança de Status -> Notifica UI via WebSocket (Sprint 27)
-            if inst.status != new_status:
-                logger.debug(f"🔄 Instância {inst.session_name} alterada para {new_status}")
-                inst.status = new_status
-                inst.last_health_check = datetime.utcnow()
-                
-                from src.core.ws import ws_manager
-                await ws_manager.broadcast_to_tenant(inst.tenant_id, {
-                    "type": "bot_status_update",
-                    "status": new_status,
-                    "session": inst.session_name
-                })
-
-            # --- 🟢 Lógica de Resiliência (Desativada temporariamente para debug) ---
-            # if new_status == WhatsAppStatus.DISCONNECTED and inst.is_active:
-            #     logger.warning(f"🧟 Instância {inst.session_name} caiu. Tentando reanimação automática...")
-            #     await whatsapp_bridge.create_session(inst.session_name)
-                
-            # Se for QRCODE, busca o novo e envia (Streaming de QR Code)
-            if new_status == WhatsAppStatus.QRCODE:
-                qr = await whatsapp_bridge.get_qrcode(inst.session_name)
-                if qr and qr != inst.qrcode_base64:
-                    inst.qrcode_base64 = qr
-                    from src.core.ws import ws_manager
-                    await ws_manager.broadcast_to_tenant(inst.tenant_id, {
-                        "type": "bot_qrcode_update",
-                        "qrcode": qr
-                    })
-                    
-        db.commit()
+            await WhatsAppManagerService.sync_instance_status(db, inst)

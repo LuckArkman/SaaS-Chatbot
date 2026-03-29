@@ -1,5 +1,5 @@
 from typing import Any, List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
 from src import schemas
 from src.api import deps
@@ -23,21 +23,35 @@ async def get_bot_status(
 async def get_bot_qr(
     db: Session = Depends(get_db),
     tenant_id: str = Depends(get_current_tenant_id),
-    current_user: Any = Depends(deps.get_current_active_user)
+    current_user: Any = Depends(deps.get_current_active_user),
+    accept: str = Header(None)
 ) -> Any:
     """
-    Retorna o QR Code para pareamento via SSE (Server-Sent Events).
-    Atualiza o front-end por meio de streaming sempre que o QR Code mudar.
+    Retorna o QR Code para pareamento. 
+    Se o header 'Accept' contiver 'text/event-stream', retorna um StreamingResponse (SSE).
+    Caso contrário, retorna apenas o estado atual em JSON (ideal para chamadas legadas/PHP).
     """
     import asyncio
     import json
-    from fastapi.responses import StreamingResponse
+    from fastapi.responses import StreamingResponse, JSONResponse
     from src.core.database import SessionLocal
 
+    # Lógica de Resposta Única (Fallback para PHP/Clientes Legados)
+    if not accept or "text/event-stream" not in accept:
+        instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+        # Sincroniza estado agora para garantir QR fresco (Sprint 27)
+        await WhatsAppManagerService.sync_instance_status(db, instance)
+        
+        status_str = instance.status.value if hasattr(instance.status, "value") else str(instance.status)
+        return {
+            "status": status_str,
+            "qrcode": instance.qrcode_base64
+        }
+
+    # Lógica de Streaming (SSE - para a nova UI Vue 3)
     async def event_generator():
         last_qr = None
         while True:
-            # Obtém uma nova sessão do banco a cada iteração (impede lock em conexões)
             with SessionLocal() as db_session:
                 instance = WhatsAppManagerService.get_or_create_instance(db_session, tenant_id)
                 current_qr = instance.qrcode_base64
@@ -46,19 +60,14 @@ async def get_bot_qr(
 
                 if current_qr != last_qr:
                     last_qr = current_qr
-                    # Somente envia se for evento válido de qr
                     data = {
                         "status": status_str,
                         "qrcode": current_qr
                     }
                     yield f"data: {json.dumps(data)}\n\n"
                 
-                # Se o estado não for de inicialização e não tiver QR ou já tiver pareado, finaliza.
                 if status_str in ["CONNECTED", "DISCONNECTED"]:
-                    data = {
-                        "status": status_str,
-                        "qrcode": None
-                    }
+                    data = {"status": status_str, "qrcode": None}
                     yield f"data: {json.dumps(data)}\n\n"
                     break
 
