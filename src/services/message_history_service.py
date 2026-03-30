@@ -133,3 +133,122 @@ class MessageHistoryService:
         return db.query(Message).filter(
             Message.conversation_id == conversation.id
         ).order_by(Message.created_at.desc()).offset(offset).limit(limit).all()
+
+    @staticmethod
+    def list_conversations(
+        db: Session,
+        tenant_id: str,
+        only_active: bool = False,
+        limit: int = 50,
+        offset: int = 0
+    ) -> tuple[int, List]:
+        """
+        Retorna a lista paginada de todas as conversas do Tenant,
+        com contagens de mensagens não lidas e totais calculadas.
+        """
+        from sqlalchemy import func
+        from src.models.chat import MessageStatus
+        
+        query = db.query(Conversation).filter(
+            Conversation.tenant_id == tenant_id
+        )
+        
+        if only_active:
+            query = query.filter(Conversation.is_active == True)
+        
+        query = query.order_by(Conversation.last_interaction.desc())
+        
+        total = query.count()
+        conversations = query.offset(offset).limit(limit).all()
+        
+        # Enriquecer cada conversa com contagens calculadas
+        result = []
+        for conv in conversations:
+            total_msgs = db.query(func.count(Message.id)).filter(
+                Message.conversation_id == conv.id
+            ).scalar() or 0
+            
+            unread_count = db.query(func.count(Message.id)).filter(
+                Message.conversation_id == conv.id,
+                Message.is_read == False,
+                Message.side == 'client'
+            ).scalar() or 0
+            
+            conv_dict = {
+                "id": conv.id,
+                "contact_phone": conv.contact_phone,
+                "last_message_content": conv.last_message_content,
+                "last_interaction": conv.last_interaction,
+                "is_active": conv.is_active,
+                "agent_id": conv.agent_id,
+                "agent": conv.agent,
+                "unread_count": unread_count,
+                "total_messages": total_msgs,
+            }
+            result.append(conv_dict)
+        
+        logger.debug(f"📋 Listando {len(result)} conversas para Tenant {tenant_id} (total={total})")
+        return total, result
+
+    @staticmethod
+    def get_conversation_detail(
+        db: Session,
+        tenant_id: str,
+        conversation_id: int,
+        limit: int = 50,
+        offset: int = 0
+    ) -> Optional[dict]:
+        """
+        Retorna a conversa com um contato específico, incluindo o histórico
+        de mensagens paginado e metadados da conversa.
+        """
+        from sqlalchemy import func
+        
+        conversation = db.query(Conversation).filter(
+            Conversation.id == conversation_id,
+            Conversation.tenant_id == tenant_id
+        ).first()
+        
+        if not conversation:
+            return None
+        
+        total_msgs = db.query(func.count(Message.id)).filter(
+            Message.conversation_id == conversation.id
+        ).scalar() or 0
+        
+        unread_count = db.query(func.count(Message.id)).filter(
+            Message.conversation_id == conversation.id,
+            Message.is_read == False,
+            Message.side == 'client'
+        ).scalar() or 0
+        
+        messages = db.query(Message).filter(
+            Message.conversation_id == conversation.id
+        ).order_by(Message.created_at.asc()).offset(offset).limit(limit).all()
+        
+        # Marca mensagens do cliente como lidas
+        db.query(Message).filter(
+            Message.conversation_id == conversation.id,
+            Message.is_read == False,
+            Message.side == 'client'
+        ).update({Message.is_read: True})
+        db.commit()
+        
+        logger.info(f"📖 Histórico carregado: Conversa #{conversation_id} ({len(messages)} msgs) para Tenant {tenant_id}")
+        
+        return {
+            "conversation": {
+                "id": conversation.id,
+                "contact_phone": conversation.contact_phone,
+                "last_message_content": conversation.last_message_content,
+                "last_interaction": conversation.last_interaction,
+                "is_active": conversation.is_active,
+                "agent_id": conversation.agent_id,
+                "agent": conversation.agent,
+                "unread_count": unread_count,
+                "total_messages": total_msgs,
+            },
+            "messages": messages,
+            "total_messages": total_msgs,
+            "has_more": (offset + limit) < total_msgs
+        }
