@@ -89,80 +89,131 @@ async def get_agent_presence(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 📋 ROTAS DE CONVERSAS: Lista e Histórico por ID
+# 📱 ROTAS DE CONVERSAS: Diretamente do Agente WhatsApp (Baileys Bridge)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.get("/conversations", response_model=ConversationListResponse)
+@router.get("/conversations")
 async def list_conversations(
-    only_active: bool = Query(False, description="Se verdadeiro, retorna apenas conversas ativas."),
-    limit: int = Query(50, ge=1, le=200, description="Número máximo de conversas por página."),
-    offset: int = Query(0, ge=0, description="Posição de início para paginação."),
+    limit: int = Query(50, ge=1, le=200, description="Número máximo de conversas."),
     db: Session = Depends(get_db),
     tenant_id: str = Depends(get_current_tenant_id),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """
-    🗂️ **Lista todas as conversas do WhatsApp do Tenant.**
+    📱 **Lista todas as conversas abertas diretamente do WhatsApp conectado.**
 
-    Retorna conversas ordenadas pela última interação (mais recentes primeiro),
-    enriquecidas com:
-    - Número de mensagens não lidas do cliente
-    - Total de mensagens na conversa
-    - Dados do agente responsável (se atribuído)
-    - Preview da última mensagem
+    Esta rota consulta o agente Baileys em tempo real, retornando os chats
+    presentes no WhatsApp do número sincronizado com o Tenant, ordenados
+    da interação mais recente para a mais antiga.
 
-    Parâmetros:
-    - **only_active**: Filtra apenas conversas ativas (padrão: false = todas)
-    - **limit**: Resultados por página (máx: 200)
-    - **offset**: Início da paginação
+    Cada item retornado contém:
+    - `id`: JID completo do WhatsApp (ex: `5511999999999@s.whatsapp.net`)
+    - `phone`: Número limpo
+    - `name`: Nome exibido no WhatsApp (se disponível)
+    - `unread_count`: Mensagens não lidas
+    - `last_message_timestamp`: Timestamp UNIX da última mensagem
+    - `is_group`: Se é uma conversa de grupo
+    - `pinned`: Se está fixada
+
+    **Requer bot conectado** (status CONNECTED).
     """
-    total, conversations = MessageHistoryService.list_conversations(
-        db=db,
-        tenant_id=tenant_id,
-        only_active=only_active,
-        limit=limit,
-        offset=offset
-    )
-    return ConversationListResponse(total=total, conversations=conversations)
+    from src.services.whatsapp_manager_service import WhatsAppManagerService
+    from src.services.whatsapp_bridge_service import whatsapp_bridge
 
+    # 1. Resolve a instância ativa do Tenant
+    instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+    status_str = instance.status.value if hasattr(instance.status, "value") else str(instance.status)
 
-@router.get("/conversations/{conversation_id}", response_model=ConversationDetailResponse)
-async def get_conversation_history(
-    conversation_id: int,
-    limit: int = Query(50, ge=1, le=200, description="Mensagens por página."),
-    offset: int = Query(0, ge=0, description="Posição de início para paginação de mensagens."),
-    db: Session = Depends(get_db),
-    tenant_id: str = Depends(get_current_tenant_id),
-    current_user: Any = Depends(deps.get_current_active_user)
-) -> Any:
-    """
-    📖 **Retorna o histórico completo de uma conversa específica.**
-
-    A partir do `conversation_id`, busca:
-    - Metadados da conversa (telefone, agente, status, última interação)
-    - Histórico de mensagens ordenadas cronologicamente (mais antigas primeiro)
-    - Indicador `has_more` para paginação infinita no front-end
-    - Total de mensagens na conversa
-
-    Efeito colateral: **Marca automaticamente as mensagens do cliente como lidas.**
-
-    Parâmetros:
-    - **conversation_id**: ID da conversa (retornado na rota /conversations)
-    - **limit**: Mensagens por página (máx: 200)
-    - **offset**: Início da paginação de mensagens
-    """
-    detail = MessageHistoryService.get_conversation_detail(
-        db=db,
-        tenant_id=tenant_id,
-        conversation_id=conversation_id,
-        limit=limit,
-        offset=offset
-    )
-
-    if not detail:
+    if status_str != "CONNECTED":
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Conversa #{conversation_id} não encontrada ou não pertence a este Tenant."
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"O agente WhatsApp não está conectado. Status atual: {status_str}. Conecte o bot antes de listar conversas."
         )
 
-    return ConversationDetailResponse(**detail)
+    # 2. Consulta o Bridge diretamente
+    result = await whatsapp_bridge.list_chats(session_id=instance.session_name)
+
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Falha ao obter conversas do agente: {result.get('error', 'Erro desconhecido')}"
+        )
+
+    chats = result.get("chats", [])
+    # Aplica limite no lado Python
+    chats = chats[:limit]
+
+    return {
+        "total": result.get("total", len(chats)),
+        "session_id": instance.session_name,
+        "conversations": chats
+    }
+
+
+@router.get("/conversations/{jid:path}")
+async def get_conversation_history(
+    jid: str,
+    limit: int = Query(50, ge=1, le=200, description="Mensagens por página."),
+    db: Session = Depends(get_db),
+    tenant_id: str = Depends(get_current_tenant_id),
+    current_user: Any = Depends(deps.get_current_active_user)
+) -> Any:
+    """
+    📖 **Retorna o histórico de mensagens de uma conversa específica diretamente do WhatsApp.**
+
+    Consulta o agente Baileys em tempo real e retorna as mensagens trocadas
+    com o contato identificado pelo `jid` (ID da conversa no WhatsApp).
+
+    - O `jid` pode ser:
+      - Número individual: `5511999999999@s.whatsapp.net`
+      - ID de grupo: `120363xxxxxxx@g.us`
+      - Apenas o número: `5511999999999` (será normalizado automaticamente)
+
+    Cada mensagem retornada contém:
+    - `message_id`: ID único da mensagem no WhatsApp
+    - `from_me`: Se foi enviada pelo bot/agente
+    - `sender`: JID do remetente
+    - `content`: Texto da mensagem
+    - `type`: Tipo (textMessage, imageMessage, audioMessage, etc.)
+    - `timestamp`: Timestamp UNIX
+    - `status`: Status de entrega
+
+    **Requer bot conectado** (status CONNECTED).
+    """
+    from src.services.whatsapp_manager_service import WhatsAppManagerService
+    from src.services.whatsapp_bridge_service import whatsapp_bridge
+
+    # 1. Resolve a instância ativa
+    instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+    status_str = instance.status.value if hasattr(instance.status, "value") else str(instance.status)
+
+    if status_str != "CONNECTED":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"O agente WhatsApp não está conectado. Status atual: {status_str}."
+        )
+
+    # 2. Normaliza o JID se passou apenas o número
+    normalized_jid = jid if "@" in jid else f"{jid}@s.whatsapp.net"
+
+    # 3. Consulta o Bridge diretamente
+    result = await whatsapp_bridge.get_chat_history(
+        session_id=instance.session_name,
+        jid=normalized_jid,
+        limit=limit
+    )
+
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Falha ao obter histórico do agente: {result.get('error', 'Erro desconhecido')}"
+        )
+
+    return {
+        "jid": result.get("jid"),
+        "phone": result.get("phone"),
+        "total_messages": result.get("total"),
+        "has_more": result.get("has_more", False),
+        "messages": result.get("messages", [])
+    }
+

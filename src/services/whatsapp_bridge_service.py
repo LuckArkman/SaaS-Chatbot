@@ -201,5 +201,70 @@ class WhatsAppBridgeService:
             logger.error(f"❌ Falha de rede ao listar contatos da sessão {session_id}: {e}")
             return {"success": False, "error": str(e)}
 
+    async def list_chats(self, session_id: str) -> Dict[str, Any]:
+        """
+        Solicita ao Bridge a lista completa de conversas (chats) do WhatsApp conectado.
+        Retorna diretamente os dados do cache do Baileys: JID, nome, não lidos e timestamp.
+        """
+        try:
+            logger.info(f"[Bridge] Solicitando lista de chats da sessão {session_id}")
+            response = await self.client.get(
+                f"{self.base_url}/instance/chats",
+                params={"sessionId": session_id},
+                headers=self.headers,
+                timeout=30.0
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                total = data.get("total", 0)
+                logger.info(f"✅ {total} chat(s) recebidos do Bridge para sessão {session_id}")
+                return {"success": True, "total": total, "chats": data.get("chats", [])}
+
+            data = response.json()
+            error_msg = data.get("error", "Erro ao listar chats.")
+            logger.warning(f"⚠️ Bridge retornou {response.status_code} para /chats de {session_id}: {error_msg}")
+            return {"success": False, "error": error_msg}
+
+        except Exception as e:
+            logger.error(f"❌ Falha de rede ao listar chats da sessão {session_id}: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def get_chat_history(self, session_id: str, jid: str, limit: int = 50) -> Dict[str, Any]:
+        """
+        Solicita ao Bridge o histórico de mensagens de uma conversa específica.
+        O JID deve estar no formato WhatsApp: ex. '5511999999999@s.whatsapp.net'
+        """
+        try:
+            logger.info(f"[Bridge] Buscando histórico de {jid} na sessão {session_id} (limit={limit})")
+            response = await self.client.get(
+                f"{self.base_url}/instance/chat-history",
+                params={"sessionId": session_id, "jid": jid, "limit": limit},
+                headers=self.headers,
+                timeout=30.0
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                total = data.get("total", 0)
+                logger.info(f"✅ {total} mensagem(s) recebidas do Bridge para {jid}")
+                return {
+                    "success": True,
+                    "jid": data.get("jid"),
+                    "phone": data.get("phone"),
+                    "total": total,
+                    "has_more": data.get("has_more", False),
+                    "messages": data.get("messages", [])
+                }
+
+            data = response.json()
+            error_msg = data.get("error", "Erro ao buscar histórico.")
+            logger.warning(f"⚠️ Bridge retornou {response.status_code} para /chat-history de {jid}: {error_msg}")
+            return {"success": False, "error": error_msg}
+
+        except Exception as e:
+            logger.error(f"❌ Falha de rede ao buscar histórico de {jid}: {e}")
+            return {"success": False, "error": str(e)}
+
 # Instância Global
 whatsapp_bridge = WhatsAppBridgeService()

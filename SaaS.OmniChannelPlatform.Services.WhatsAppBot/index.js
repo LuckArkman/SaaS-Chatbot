@@ -186,6 +186,142 @@ app.get('/instance/connectionState', (req, res) => {
     res.json({ state: status });
 });
 
+/**
+ * GET /instance/chats
+ * Query: { sessionId }
+ * Retorna a lista completa de conversas abertas no WhatsApp da sessão,
+ * ordenadas pela mensagem mais recente.
+ */
+app.get('/instance/chats', async (req, res) => {
+    const { sessionId } = req.query;
+
+    if (!sessionId) {
+        return res.status(400).json({ error: 'sessionId é obrigatório' });
+    }
+
+    const sock = sockets[sessionId];
+    if (!sock) {
+        return res.status(404).json({ error: `Instância '${sessionId}' não encontrada ou desconectada.` });
+    }
+
+    if (sessionStatuses[sessionId] !== 'CONNECTED') {
+        return res.status(409).json({
+            error: 'Instância não está conectada.',
+            state: sessionStatuses[sessionId]
+        });
+    }
+
+    try {
+        // O store interno do Baileys mantém o cache de chats da sessão
+        const rawChats = sock.store?.chats?.all() || [];
+
+        const chats = rawChats
+            .filter(chat => chat.id && !chat.id.includes('@broadcast'))
+            .sort((a, b) => {
+                const tsA = a.conversationTimestamp || a.lastMsgTimestamp || 0;
+                const tsB = b.conversationTimestamp || b.lastMsgTimestamp || 0;
+                return tsB - tsA; // Mais recentes primeiro
+            })
+            .map(chat => ({
+                id: chat.id,                  // JID completo ex: 5511999999999@s.whatsapp.net
+                phone: chat.id.split('@')[0],  // Número limpo
+                name: chat.name || null,
+                unread_count: chat.unreadCount || 0,
+                last_message_timestamp: chat.conversationTimestamp || chat.lastMsgTimestamp || null,
+                is_group: chat.id.endsWith('@g.us'),
+                pinned: chat.pinned || false
+            }));
+
+        console.log(`[${sessionId}] Lista de chats solicitada: ${chats.length} conversa(s).`);
+
+        return res.json({
+            success: true,
+            total: chats.length,
+            session_id: sessionId,
+            chats
+        });
+    } catch (err) {
+        console.error(`[${sessionId}] Erro ao listar chats:`, err.message);
+        return res.status(500).json({ error: 'Erro interno ao listar conversas.', detail: err.message });
+    }
+});
+
+/**
+ * GET /instance/chat-history
+ * Query: { sessionId, jid, limit? }
+ * Retorna o histórico de mensagens de uma conversa específica via JID.
+ * O JID pode ser o número (5511...@s.whatsapp.net) ou ID de grupo (@g.us).
+ */
+app.get('/instance/chat-history', async (req, res) => {
+    const { sessionId, jid, limit = 50 } = req.query;
+
+    if (!sessionId || !jid) {
+        return res.status(400).json({ error: 'sessionId e jid são obrigatórios' });
+    }
+
+    const sock = sockets[sessionId];
+    if (!sock) {
+        return res.status(404).json({ error: `Instância '${sessionId}' não encontrada.` });
+    }
+
+    if (sessionStatuses[sessionId] !== 'CONNECTED') {
+        return res.status(409).json({
+            error: 'Instância não está conectada.',
+            state: sessionStatuses[sessionId]
+        });
+    }
+
+    try {
+        const parsedLimit = Math.min(parseInt(limit, 10) || 50, 200);
+
+        // Tenta buscar do store em cache primeiro (mais rápido)
+        let messages = [];
+        const cachedMsgs = sock.store?.messages?.[jid];
+        if (cachedMsgs) {
+            const all = cachedMsgs.array || [];
+            messages = all.slice(-parsedLimit);
+        } else {
+            // Fallback: carrega do armazenamento local do Baileys
+            messages = await sock.loadMessages(jid, parsedLimit);
+        }
+
+        const formatted = messages
+            .filter(msg => msg && msg.message)  // Filtra mensagens vazias/de sistema
+            .map(msg => {
+                const textContent =
+                    msg.message?.conversation ||
+                    msg.message?.extendedTextMessage?.text ||
+                    msg.message?.imageMessage?.caption ||
+                    msg.message?.videoMessage?.caption ||
+                    '[mídia]';
+
+                return {
+                    message_id: msg.key.id,
+                    from_me: msg.key.fromMe,
+                    sender: msg.key.fromMe ? sessionId : (msg.key.participant || jid),
+                    content: textContent,
+                    type: Object.keys(msg.message || {})[0] || 'unknown',
+                    timestamp: msg.messageTimestamp || null,
+                    status: msg.status || null
+                };
+            });
+
+        console.log(`[${sessionId}] Histórico de ${jid}: ${formatted.length} msg(s) carregada(s).`);
+
+        return res.json({
+            success: true,
+            jid,
+            phone: jid.split('@')[0],
+            total: formatted.length,
+            has_more: formatted.length >= parsedLimit,
+            messages: formatted
+        });
+    } catch (err) {
+        console.error(`[${sessionId}] Erro ao buscar histórico de ${jid}:`, err.message);
+        return res.status(500).json({ error: 'Erro interno ao buscar histórico.', detail: err.message });
+    }
+});
+
 // --- Contacts Endpoints ---
 
 /**
