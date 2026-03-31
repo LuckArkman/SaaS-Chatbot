@@ -15,7 +15,8 @@ class MessageHistoryService:
         tenant_id = get_current_tenant_id()
         
         conversation = db.query(Conversation).filter(
-            Conversation.contact_phone == contact_phone
+            Conversation.contact_phone == contact_phone,
+            Conversation.tenant_id == tenant_id
         ).first()
 
         if not conversation:
@@ -123,8 +124,10 @@ class MessageHistoryService:
         limit: int = 50, 
         offset: int = 0
     ) -> List[Message]:
+        tenant_id = get_current_tenant_id()
         conversation = db.query(Conversation).filter(
-            Conversation.contact_phone == contact_phone
+            Conversation.contact_phone == contact_phone,
+            Conversation.tenant_id == tenant_id
         ).first()
         
         if not conversation:

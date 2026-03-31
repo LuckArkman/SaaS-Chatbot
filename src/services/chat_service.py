@@ -70,7 +70,7 @@ class ChatService:
         )
         
         # 3. Sync com as outras telas do mesmo Tenant (Broadcast WebSocket)
-        await ws_manager.send_to_conversation(tenant_id, str(conversation.id), {
+        await ws_manager.send_to_conversation(tenant_id, raw_conversation_id, {
             "agent_id": agent_id,
             "content": content,
             "side": "agent",
