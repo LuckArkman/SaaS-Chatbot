@@ -3,6 +3,19 @@ import time
 import sys
 import json
 
+# ==============================================================================
+# SCRIPT DE REFERÊNCIA - INTEGRAÇÃO FRONT-END COM O CHAT UNIFICADO
+# ==============================================================================
+# Use este script como base para implementar o disparo de mensagens no Front-end.
+# A API agora suporta dois formatos no campo "conversation_id":
+#
+# 1. ID INTERNO DO BANCO (INT/STR Curta): Ex: "1", "45"
+#    (O Back-end buscará a tabela conversations e extrairá o contact_phone correto).
+# 
+# 2. NUMERO DE TELEFONE (JID): Ex: "5511999999999@s.whatsapp.net" ou "5511999999999"
+#    (O Back-end utilizará o telefone e formatará para envio direto à sessão do bot).
+# ==============================================================================
+
 # Forçar output em UTF-8 para evitar erros de encode no console do Windows
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -11,10 +24,7 @@ EMAIL = "user@example.com"
 PASSWORD = "Qwert@3702959"
 
 def test_send_message():
-    login_data = {
-        "username": EMAIL,
-        "password": PASSWORD
-    }
+    login_data = {"username": EMAIL, "password": PASSWORD}
     
     with httpx.Client() as client:
         print(f"[*] Autenticando na API com: {EMAIL}")
@@ -25,60 +35,50 @@ def test_send_message():
             return
             
         token = r.json().get("access_token")
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         
-        print("\n🚀 Iniciando Teste de Envio de Mensagem WhatsApp (Outgoing Worker) ...\n")
+        print("\n🚀 Iniciando Teste de Referência para Integração com Front-end...\n")
         
-        # 1. Obter uma conversa válida
-        print("[1/2] Obtendo uma conversa válida ou contato base da API...")
-        r = client.get(f"{BASE_URL}/api/v1/chat/conversations?limit=1", headers=headers)
+        # 1. Demonstarção da Escolha do Formato do ID
+        print("💡 DICA DE INTEGRAÇÃO FRONT-END:")
+        print("Se o seu front-end exibir a URL /chat/1, você pode enviar o ID '1'.")
+        print("Se ele exibir a URL /chat/5511999999999, você envia '5511999999999'.")
         
-        target_jid = ""
+        user_input = input(f"\nDigite o ID Interno do Banco OU o Número do WhatsApp (JID) para disparar:\nEx: '1' ou '5511999999999': ").strip()
         
-        if r.status_code == 200:
-            data = r.json()
-            conversations = data.get("conversations", [])
-            if conversations:
-                target_jid = conversations[0].get("id")
-                name = conversations[0].get("name") or "Sem nome"
-                print(f"✅ Encontrado no histórico recente: {name} ({target_jid})")
-            else:
-                print("⚠️ Histórico de conversas vazio. Será necessário digitar um número.")
-        else:
-            print(f"⚠️ Não foi possível obter conversas (Status: {r.status_code}). Será necessário digitar um número.")
-
-        # Pede confirmação ou input manual
-        user_input = input(f"\nDigite o Número do destinatário (apenas números) ou JID para testar o envio\n[Ou aperte ENTER para usar o sugerido: {target_jid}]: ").strip()
-        
-        if user_input:
-            # Se for apenas número e não conter @, adiciona o sufixo padrão do WhatsApp
-            if "@" not in user_input:
-                target_jid = f"{user_input}@s.whatsapp.net"
-            else:
-                target_jid = user_input
-                
-        if not target_jid:
-            print("❌ Nenhum destinatário informado. Encerrando teste.")
+        if not user_input:
+            print("❌ Teste abortado: Nenhum ID informado.")
             return
 
-        print(f"✅ Destinatário definido: {target_jid}")
+        print(f"\n✅ Preparando para chamar a API /api/v1/chat/send com conversation_id = '{user_input}'")
         
-        # 2. Enviar a mensagem
-        print(f"\n[2/2] Disparando POST /api/v1/chat/send ...")
+        # 2. Construindo o Payload (Este é o body do seu axios.post/fetch no Frontend)
         payload = {
-            "conversation_id": target_jid,
-            "content": "🦾 Olá! Esta é uma mensagem de teste automatizada disparada pelo script via FastAPI -> RabbitMQ -> Node.js Baileys Bridge."
+            "conversation_id": user_input,
+            "content": f"🦾 Olá! Esta é uma mensagem disparada pela API.\n\n[Referência: O Front-end enviou o ID '{user_input}' e o Back-end tratou do roteamento automaticamente!]"
         }
         
+        # Exemplo em Axios Equivalente:
+        # axios.post('http://76.13.168.200:8001/api/v1/chat/send', {
+        #    conversation_id: "1", // ou "5511999999999"
+        #    content: "Oi!"
+        # }, { headers: { Authorization: "Bearer TOKEN" } })
+
         start_time = time.time()
+        
+        print(f"[⌛] Disparando HTTP POST -> /api/v1/chat/send ...")
         r = client.post(f"{BASE_URL}/api/v1/chat/send", json=payload, headers=headers)
+        
         elapsed = time.time() - start_time
         
         if r.status_code in [200, 202]:
-            print(f"✅ Sucesso! A mensagem foi postada na fila em {elapsed:.2f}s!")
+            print(f"\n✅ Sucesso HTTP {r.status_code}! Retornou em {elapsed:.2f}s")
             print(f"Detalhes da Resposta: {json.dumps(r.json(), indent=2)}")
-            print("\n🚨 IMPORTANTE: Verifique no aplicativo do WhatsApp e na UI se a mensagem realmente chegou ao destinatário.")
-            print("Se não chegar, cheque os logs do `outgoing_worker` via terminal (docker compose logs -f saas_api).")
+            print("\n🚨 O Back-end executou os seguintes passos:")
+            print("1. Salvou a mensagem no histórico do Postgres e no MongoDB de forma unificada.")
+            print(f"2. Converteu '{user_input}' pro telefone real (caso seja um ID do Banco) graças a nossa última melhoria.")
+            print("3. Instanciou o 'message.outgoing' na fila do RabbitMQ.")
+            print("4. O novo 'OutgoingWorker' do back-end consumiu a fila e conectou na Bridge do Baileys para o celular final.")
         else:
             print(f"❌ Falha ao tentar postar a mensagem. Status HTTP: {r.status_code}")
             print(f"Detalhes: {r.text}")
