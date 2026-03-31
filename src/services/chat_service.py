@@ -22,17 +22,28 @@ class ChatService:
         """
         Envia uma mensagem do agente para o cliente final e persiste no histórico (Dual Write).
         """
-        conversation_id = payload.get("conversation_id")
+        raw_conversation_id = str(payload.get("conversation_id"))
         content = payload.get("content")
         
-        if not conversation_id or not content:
+        if not raw_conversation_id or not content:
             return
+
+        # Trata cenário em que o front-end envia o ID da tabela Postgres em vez do telefone:
+        contact_phone = raw_conversation_id
+        if raw_conversation_id.isdigit() and len(raw_conversation_id) < 10:
+            from src.models.chat import Conversation
+            conv = db.query(Conversation).filter(
+                Conversation.id == int(raw_conversation_id),
+                Conversation.tenant_id == tenant_id
+            ).first()
+            if conv:
+                contact_phone = conv.contact_phone
 
         # 1. Persistência Dual (Postgres + MongoDB via MessageHistoryService)
         # ✅ Note: Agora record_message é assíncrono
         await MessageHistoryService.record_message(
             db=db,
-            contact_phone=conversation_id,
+            contact_phone=contact_phone,
             content=content,
             side=MessageSide.AGENT,
             agent_id=int(agent_id),
@@ -40,7 +51,7 @@ class ChatService:
         )
         
         # 🟢 Atualiza SLA de Primeira Resposta (Sprint 25)
-        conversation = MessageHistoryService.get_or_create_conversation(db, conversation_id)
+        conversation = MessageHistoryService.get_or_create_conversation(db, contact_phone)
         if not conversation.first_response_at:
             conversation.first_response_at = datetime.utcnow()
             db.commit()
@@ -52,21 +63,21 @@ class ChatService:
             message={
                 "tenant_id": tenant_id,
                 "agent_id": agent_id,
-                "to": conversation_id,
+                "to": contact_phone,
                 "content": content,
                 "type": "text"
             }
         )
         
         # 3. Sync com as outras telas do mesmo Tenant (Broadcast WebSocket)
-        await ws_manager.send_to_conversation(tenant_id, conversation_id, {
+        await ws_manager.send_to_conversation(tenant_id, str(conversation.id), {
             "agent_id": agent_id,
             "content": content,
             "side": "agent",
             "timestamp": str(datetime.utcnow())
         })
         
-        logger.info(f"👨‍💻 Agente {agent_id} enviou msg para {conversation_id}")
+        logger.info(f"👨‍💻 Agente {agent_id} enviou msg para {contact_phone}")
 
     @staticmethod
     async def set_typing_status(tenant_id: str, conversation_id: str, is_typing: bool):
