@@ -187,6 +187,49 @@ app.get('/instance/connectionState', (req, res) => {
 });
 
 /**
+ * POST /instance/sendMessage
+ * Body: { sessionId, to, content }
+ * Envia uma mensagem de texto simples pelo WhatsApp usando a sessão ativa.
+ */
+app.post('/instance/sendMessage', async (req, res) => {
+    const { sessionId, to, content } = req.body;
+
+    if (!sessionId || !to || !content) {
+        return res.status(400).json({ error: 'sessionId, to e content são obrigatórios' });
+    }
+
+    const sock = sockets[sessionId];
+    if (!sock) {
+        return res.status(404).json({ error: `Instância '${sessionId}' não encontrada ou desconectada.` });
+    }
+
+    if (sessionStatuses[sessionId] !== 'CONNECTED') {
+        return res.status(409).json({
+            error: 'Instância não está conectada.',
+            state: sessionStatuses[sessionId]
+        });
+    }
+
+    try {
+        // Normaliza o número destino (Adiciona o sufixo @s.whatsapp.net se necessário)
+        const normalizedPhone = to.replace(/[^0-9]/g, '');
+        const jid = `${normalizedPhone}@s.whatsapp.net`;
+
+        const sentMsg = await sock.sendMessage(jid, { text: content });
+        console.log(`[${sessionId}] Mensagem enviada para ${jid}: ${sentMsg.key.id}`);
+
+        return res.json({
+            success: true,
+            status: "sent",
+            messageId: sentMsg.key.id
+        });
+    } catch (err) {
+        console.error(`[${sessionId}] Erro ao enviar mensagem para ${to}:`, err.message);
+        return res.status(500).json({ error: 'Erro ao enviar mensagem.', detail: err.message });
+    }
+});
+
+/**
  * GET /instance/chats
  * Query: { sessionId }
  * Retorna a lista completa de conversas abertas no WhatsApp da sessão,

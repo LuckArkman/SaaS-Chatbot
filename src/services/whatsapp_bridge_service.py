@@ -133,6 +133,33 @@ class WhatsAppBridgeService:
         logger.warning("Envio de arquivo via Bridge Node.js ainda não implementado no Bridge.")
         return False
 
+    async def send_message(self, session_key: str, to: str, content: str) -> bool:
+        """Envia uma mensagem de texto via Bridge."""
+        try:
+            logger.info(f"[*] Enviando mensagem via Bridge: '{content}' para {to} [Sessão: {session_key}]")
+            response = await self.client.post(
+                f"{self.base_url}/instance/sendMessage",
+                json={
+                    "sessionId": session_key,
+                    "to": to,
+                    "content": content
+                },
+                headers=self.headers,
+                timeout=15.0
+            )
+
+            if response.status_code == 200:
+                logger.info(f"✅ Mensagem enviada para {to} com sucesso")
+                return True
+
+            data = response.json()
+            logger.error(f"❌ Erro ao enviar mensagem para {to}. Status: {response.status_code}, Resposta: {data}")
+            return False
+            
+        except Exception as e:
+            logger.error(f"❌ Falha de rede ao enviar mensagem para {to}: {str(e)}")
+            return False
+
     async def add_contact(self, session_id: str, phone: str, name: Optional[str] = None) -> Dict[str, Any]:
         """
         Verifica se um número tem conta WhatsApp ativa e o valida como contato.

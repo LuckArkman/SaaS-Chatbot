@@ -14,6 +14,7 @@ from beanie import init_beanie
 from src.models.mongo.flow import FlowDocument, SessionStateDocument
 from src.workers.flow_worker import flow_worker
 from src.workers.ack_worker import ack_worker
+from src.workers.outgoing_worker import outgoing_worker
 from src.services.whatsapp_manager_service import WhatsAppManagerService
 from src.core.database import SessionLocal, engine, Base
 from loguru import logger
@@ -147,6 +148,9 @@ def create_application() -> FastAPI:
         
         # 🟢 Inicia Rastreamento de Status (AckTracker Equivalent)
         asyncio.create_task(ack_worker.start())
+        
+        # 🟢 Inicia Roteador de Envio (Sending dispatcher)
+        asyncio.create_task(outgoing_worker.start())
         
         from src.workers.campaign_worker import campaign_worker
         # 🟢 Inicia Monitoramento de Bots (BotMonitor Equivalent)
