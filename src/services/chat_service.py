@@ -15,32 +15,144 @@ class ChatService:
     Controla interações em tempo real (Sprint 21) e Persistência de Histórico (Sprint 40).
     """
     
-    # --- 🟢 Lógica Original de Agente Humano (.NET Migration) ---
-    
+    # ─────────────────────────────────────────────────────────────────────────
+    # 🔍 RESOLVER MULTI-FONTE DE DESTINATÁRIO
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    async def _resolve_recipient_phone(
+        db: Session,
+        tenant_id: str,
+        conversation_id: str
+    ) -> str:
+        """
+        Resolve o número de telefone do destinatário a partir de múltiplas fontes,
+        em ordem de prioridade — garante que qualquer formato enviado pelo front-end
+        seja traduzido para um número real antes de publicar no RabbitMQ.
+
+        Estratégias (em cascata):
+          1️⃣  JID WhatsApp  (ex: '5511999999999@s.whatsapp.net') → extrai phone
+          2️⃣  Número longo  (10+ dígitos)                        → usa diretamente
+          3️⃣  ID Postgres   (< 10 dígitos numérico)              → busca conversations.contact_phone
+          4️⃣  Fallback Bridge: varre chats abertos + contatos do WhatsApp ativo do Tenant
+        """
+        from src.models.chat import Conversation
+        from src.models.whatsapp import WhatsAppStatus
+        from src.services.whatsapp_manager_service import WhatsAppManagerService
+        from src.services.whatsapp_bridge_service import whatsapp_bridge
+
+        # ── Estratégia 1: JID WhatsApp completo ──────────────────────────────
+        if "@" in conversation_id:
+            phone = conversation_id.split("@")[0]
+            logger.debug(f"📱 [Resolver] Destinatário via JID: {phone}")
+            return phone
+
+        # ── Estratégia 2: Número de telefone longo (10+ dígitos) ─────────────
+        digits = "".join(filter(str.isdigit, conversation_id))
+        if len(digits) >= 10:
+            logger.debug(f"📱 [Resolver] Destinatário via número direto: {digits}")
+            return digits
+
+        # ── Estratégia 3: ID numérico curto do Postgres ──────────────────────
+        if conversation_id.isdigit():
+            conv = db.query(Conversation).filter(
+                Conversation.id == int(conversation_id),
+                Conversation.tenant_id == tenant_id
+            ).first()
+            if conv and conv.contact_phone:
+                logger.debug(
+                    f"📱 [Resolver] Destinatário via Postgres "
+                    f"(conversa #{conversation_id}): {conv.contact_phone}"
+                )
+                return conv.contact_phone
+
+            logger.warning(
+                f"⚠️ [Resolver] Conversa #{conversation_id} não encontrada no Postgres. "
+                f"Consultando o agente WhatsApp do Tenant '{tenant_id}'..."
+            )
+
+        # ── Estratégia 4: Fallback — Bridge WhatsApp (chats + contatos) ──────
+        try:
+            instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+            status_str = (
+                instance.status.value
+                if hasattr(instance.status, "value")
+                else str(instance.status)
+            )
+
+            if status_str != WhatsAppStatus.CONNECTED.value:
+                raise ValueError(
+                    f"O bot WhatsApp não está conectado (Status: '{status_str}'). "
+                    f"Conecte o agente antes de enviar mensagens."
+                )
+
+            # 4a. Lista de conversas abertas no WhatsApp (mais confiável — dados em cache)
+            chats_result = await whatsapp_bridge.list_chats(session_id=instance.session_name)
+            if chats_result.get("success"):
+                for chat in chats_result.get("chats", []):
+                    jid   = chat.get("id", "")       # ex: "5511999999999@s.whatsapp.net"
+                    phone = chat.get("phone", "")    # ex: "5511999999999"
+                    # Matching: por JID exato, phone exato, ou por prefixo numérico
+                    if (
+                        jid == conversation_id
+                        or phone == conversation_id
+                        or jid.startswith(f"{conversation_id}@")
+                        or phone.endswith(digits) and len(digits) >= 6
+                    ):
+                        logger.info(
+                            f"✅ [Resolver] Destinatário encontrado via lista de chats "
+                            f"do Bridge: {phone} (JID: {jid})"
+                        )
+                        return phone
+
+            # 4b. Lista de contatos conhecidos pelo agente WhatsApp
+            contacts_result = await whatsapp_bridge.list_contacts(session_id=instance.session_name)
+            if contacts_result.get("success"):
+                for contact in contacts_result.get("contacts", []):
+                    jid   = contact.get("jid", "")
+                    phone = contact.get("phone", "")
+                    if (
+                        jid == conversation_id
+                        or phone == conversation_id
+                        or jid.startswith(f"{conversation_id}@")
+                    ):
+                        logger.info(
+                            f"✅ [Resolver] Destinatário encontrado via lista de contatos "
+                            f"do Bridge: {phone} (JID: {jid})"
+                        )
+                        return phone
+
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"❌ [Resolver] Falha ao consultar Bridge WhatsApp: {e}")
+
+        raise ValueError(
+            f"Destinatário não encontrado para conversation_id='{conversation_id}'. "
+            f"Formatos aceitos: JID WhatsApp (ex: 5511999@s.whatsapp.net), "
+            f"número de telefone (10+ dígitos) ou ID de conversa Postgres existente."
+        )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 📤 ENVIO DE MENSAGEM PELO AGENTE
+    # ─────────────────────────────────────────────────────────────────────────
+
     @staticmethod
     async def send_agent_message(db: Session, tenant_id: str, agent_id: str, payload: Dict[str, Any]):
         """
         Envia uma mensagem do agente para o cliente final e persiste no histórico (Dual Write).
+        O campo 'conversation_id' aceita: ID Postgres, JID WhatsApp ou número de telefone.
         """
-        raw_conversation_id = str(payload.get("conversation_id"))
-        content = payload.get("content")
-        
-        if not raw_conversation_id or not content:
-            return
+        raw_conversation_id = str(payload.get("conversation_id") or "").strip()
+        content = (payload.get("content") or "").strip()
 
-        # Trata cenário em que o front-end envia o ID da tabela Postgres em vez do telefone:
-        contact_phone = raw_conversation_id
-        if raw_conversation_id.isdigit() and len(raw_conversation_id) < 10:
-            from src.models.chat import Conversation
-            conv = db.query(Conversation).filter(
-                Conversation.id == int(raw_conversation_id),
-                Conversation.tenant_id == tenant_id
-            ).first()
-            if conv:
-                contact_phone = conv.contact_phone
+        if not raw_conversation_id or not content:
+            raise ValueError("Os campos 'conversation_id' e 'content' são obrigatórios.")
+
+        # 🔍 Resolve o número de telefone do destinatário via cascata multi-fonte
+        contact_phone = await ChatService._resolve_recipient_phone(db, tenant_id, raw_conversation_id)
 
         # 1. Persistência Dual (Postgres + MongoDB via MessageHistoryService)
-        # ✅ Note: Agora record_message é assíncrono
         await MessageHistoryService.record_message(
             db=db,
             contact_phone=contact_phone,
@@ -49,14 +161,14 @@ class ChatService:
             agent_id=int(agent_id),
             session_name=f"tenant_{tenant_id}"
         )
-        
+
         # 🟢 Atualiza SLA de Primeira Resposta (Sprint 25)
         conversation = MessageHistoryService.get_or_create_conversation(db, contact_phone)
         if not conversation.first_response_at:
             conversation.first_response_at = datetime.utcnow()
             db.commit()
 
-        # 2. Dispatch para o Canal (via RabbitMQ)
+        # 2. Dispatch para o Canal (via RabbitMQ → OutgoingMessageWorker → Bridge)
         await rabbitmq_bus.publish(
             exchange_name="messages_exchange",
             routing_key="message.outgoing",
@@ -68,16 +180,18 @@ class ChatService:
                 "type": "text"
             }
         )
-        
-        # 3. Sync com as outras telas do mesmo Tenant (Broadcast WebSocket)
+
+        # 3. Sync em tempo real para outras abas/agentes do mesmo Tenant (WebSocket)
         await ws_manager.send_to_conversation(tenant_id, raw_conversation_id, {
             "agent_id": agent_id,
             "content": content,
             "side": "agent",
             "timestamp": str(datetime.utcnow())
         })
-        
-        logger.info(f"👨‍💻 Agente {agent_id} enviou msg para {contact_phone}")
+
+        logger.info(f"✅ Agente {agent_id} → '{contact_phone}' (origem: '{raw_conversation_id}'): '{content[:60]}'")
+
+
 
     @staticmethod
     async def set_typing_status(tenant_id: str, conversation_id: str, is_typing: bool):

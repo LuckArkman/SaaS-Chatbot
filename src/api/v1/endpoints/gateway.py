@@ -83,13 +83,13 @@ async def incoming_webhook(
                 # --- 🟢 Tratamento de Eventos de Sistema (Sprint 28) ---
             elif ws_payload.event == WhatsAppMessageEvent.ON_STATE_CHANGE:
                 from src.models.whatsapp_events import WhatsAppSystemEvent
-                from src.models.whatsapp import WhatsAppInstance
+                from src.models.whatsapp import WhatsAppInstance, WhatsAppStatus
                 from src.core.database import SessionLocal
                 from src.core.ws import ws_manager
                 from src.core.tenancy import set_current_tenant_id
                 
                 state_body = ws_payload.payload # Ex: {"state": "CONNECTED", "battery": 80}
-                state = state_body.get("state", "UNKNOWN")
+                state = state_body.get("state", "UNKNOWN")  # O Bridge envia em UPPERCASE
                 battery = state_body.get("battery")
                 qrcode = state_body.get("qrcode")
                 
@@ -97,6 +97,15 @@ async def incoming_webhook(
                 if not tenant_id and ws_payload.session.startswith("tenant_"):
                     tenant_id = ws_payload.session.replace("tenant_", "")
                     set_current_tenant_id(tenant_id)
+
+                # 🔧 FIX: O Bridge envia "CONNECTED" (uppercase) mas o enum define
+                # WhatsAppStatus.CONNECTED = "connected" (lowercase). Convertemos aqui
+                # para evitar LookupError ou armazenamento inválido no SQLEnum.
+                try:
+                    new_status = WhatsAppStatus(state.lower())
+                except ValueError:
+                    logger.warning(f"⚠️ Estado desconhecido recebido do Bridge: '{state}'. Usando DISCONNECTED como fallback.")
+                    new_status = WhatsAppStatus.DISCONNECTED
 
                 with SessionLocal() as db:
                     # ✅ Bloco 1: Atualiza a instância (CRÍTICO - não pode falhar)
@@ -106,16 +115,17 @@ async def incoming_webhook(
                         ).execution_options(ignore_tenant=True).first()
                         
                         if instance:
-                            instance.status = state
+                            instance.status = new_status  # Agora é o enum correto
                             if qrcode:
                                 instance.qrcode_base64 = qrcode
                             db.commit()
-                            logger.info(f"✅ Instância {ws_payload.session} atualizada: status={state}, qrcode={'sim' if qrcode else 'não'}")
+                            logger.info(f"✅ Instância {ws_payload.session} atualizada: status={new_status.value}, qrcode={'sim' if qrcode else 'não'}")
                         else:
                             logger.warning(f"⚠️ Instância não encontrada para sessão: {ws_payload.session}")
                     except Exception as e_inst:
                         db.rollback()
                         logger.error(f"❌ Falha ao atualizar instância WhatsApp: {e_inst}")
+
 
                     # ✅ Bloco 2: Auditoria (NÃO CRÍTICO - falha silenciosa se tabela não existir)
                     try:

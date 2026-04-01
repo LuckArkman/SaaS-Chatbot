@@ -26,8 +26,14 @@ async def send_message(
     Agente envia uma mensagem para o cliente (WhatsApp).
     O payload deve conter 'conversation_id' e 'content'.
     """
-    await ChatService.send_agent_message(db, tenant_id, str(current_user.id), payload)
-    return {"success": True, "status": "sent"}
+    try:
+        await ChatService.send_agent_message(db, tenant_id, str(current_user.id), payload)
+        return {"success": True, "status": "sent"}
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
 
 @router.post("/typing", status_code=status.HTTP_200_OK)
 async def update_typing(
