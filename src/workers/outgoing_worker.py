@@ -41,12 +41,13 @@ class OutgoingMessageWorker:
         set_current_tenant_id(tenant_id)
             
         with SessionLocal() as db:
-            # 🔧 FIX CRÍTICO #2: ignore_tenant=True para garantir que a busca
-            # pela instância não seja bloqueada pelo filtro global de multi-tenancy
-            # em caso de race condition de contexto.
+            # 🔧 FIX CRÍTICO #2: Usa order_by(desc) para garantir que sempre
+            # pegamos a sessão mais recente. Se o usuário recriou a sessão,
+            # .first() pegaria a antiga e morta, bloqueando o envio eternamente.
             instance = db.query(WhatsAppInstance).filter(
-                WhatsAppInstance.tenant_id == tenant_id
-            ).execution_options(ignore_tenant=True).first()
+                WhatsAppInstance.tenant_id == tenant_id,
+                WhatsAppInstance.is_active == True
+            ).order_by(WhatsAppInstance.id.desc()).execution_options(ignore_tenant=True).first()
             
             if not instance:
                 logger.error(f"❌ Nenhuma instância configurada para o tenant '{tenant_id}'. Mensagem para '{to}' descartada.")
