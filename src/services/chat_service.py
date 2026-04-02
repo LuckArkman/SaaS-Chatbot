@@ -14,6 +14,46 @@ class ChatService:
     Serviço Unificado de Chat (Postgres + MongoDB).
     Controla interações em tempo real (Sprint 21) e Persistência de Histórico (Sprint 40).
     """
+
+    # ────────────────────────────────────────────────────────────────────────────
+    # 📏 NORMALIZAÇÃO DE NÚM ERO DE TELEFONE
+    # ────────────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def normalize_phone(phone: str, country_code: str = "55") -> str:
+        """
+        Normaliza um número de telefone garantindo que o código de país (DDI) está presente.
+
+        Lógica de decisão:
+          ✅ Número com 12+ dígitos  → já contém DDI → usa diretamente (ex: '5511999882626')
+          ➕ Número com 10-11 dígitos → sem DDI   → adiciona o country_code (padrão: '55' = Brasil)
+          ⚠️  Número com < 10 dígitos   → formato inválido → retorna como está (o Bridge reportará o erro)
+
+        Args:
+            phone:        Número em qualquer formato (com/sem DDI, com/sem máscara)
+            country_code: DDI a adicionar quando ausente (padrão '55' = Brasil)
+
+        Returns:
+            Número normalizado contendo obrigatoriamente o DDI, apenas dígitos.
+        """
+        digits = "".join(filter(str.isdigit, phone))
+
+        # Já possui DDI: 12 dígitos (DDI2 + DDD2 + tel8) ou 13 (DDI2 + DDD2 + tel9)
+        if len(digits) >= 12:
+            logger.debug(f"[normalize_phone] '{phone}' já contém DDI → usando diretamente: {digits}")
+            return digits
+
+        # Sem DDI: 10 (DDD2+tel8) ou 11 (DDD2+tel9) → adiciona country_code
+        if 10 <= len(digits) <= 11:
+            normalized = f"{country_code}{digits}"
+            logger.debug(f"[normalize_phone] '{phone}' sem DDI → adicionando +{country_code} → {normalized}")
+            return normalized
+
+        # Formato inesperado: retorna como está e deixa o Bridge reportar o problema
+        logger.warning(f"[normalize_phone] '{phone}' com {len(digits)} dígitos — formato inesperado, usando sem alteração.")
+        return digits
+
+
     
     # ─────────────────────────────────────────────────────────────────────────
     # 🔍 RESOLVER MULTI-FONTE DE DESTINATÁRIO
@@ -179,16 +219,24 @@ class ChatService:
             db.commit()
 
         # 2. Dispatch para o Canal (via RabbitMQ → OutgoingMessageWorker → Bridge)
+        # Normaliza o número garantindo que o DDI está presente antes de publicar
+        phone_to_send = ChatService.normalize_phone(contact_phone)
+
         await rabbitmq_bus.publish(
             exchange_name="messages_exchange",
             routing_key="message.outgoing",
             message={
                 "tenant_id": tenant_id,
                 "agent_id": agent_id,
-                "to": contact_phone,
+                "to": phone_to_send,
                 "content": content,
                 "type": "text"
             }
+        )
+
+        logger.info(
+            f"✅ Agente {agent_id} → '{phone_to_send}' "
+            f"(resolvido de '{raw_conversation_id}', original: '{contact_phone}'): '{content[:60]}'"
         )
 
         # 3. Sync em tempo real para outras abas/agentes do mesmo Tenant (WebSocket)

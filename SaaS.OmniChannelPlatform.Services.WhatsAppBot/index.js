@@ -2,7 +2,8 @@ const {
     default: makeWASocket, 
     useMultiFileAuthState, 
     DisconnectReason, 
-    fetchLatestBaileysVersion 
+    fetchLatestBaileysVersion,
+    makeInMemoryStore
 } = require("@whiskeysockets/baileys");
 const express = require('express');
 const http = require('http');
@@ -27,6 +28,43 @@ let sessionStatuses = {};
 
 const logger = pino({ level: 'info' });
 
+/**
+ * Normaliza um número de telefone para o formato JID do WhatsApp.
+ *
+ * Regras de detecção de código de país (DDI):
+ *  - Se o número já tiver 12+ dígitos e começar com um DDI conhecido (55 para Brasil),
+ *    é considerado que o DDI já está presente → usa o número diretamente.
+ *  - Se o número tiver 10-11 dígitos (formato brasileiro sem DDI),
+ *    adiciona automaticamente o prefixo 55 (Brasil).
+ *  - Qualquer outro caso: usa os dígitos como estão.
+ *
+ * @param {string} phone - Número em qualquer formato (com ou sem DDI, com ou sem máscara)
+ * @returns {string} JID completo no formato 'DDDDDDDDDDDD@s.whatsapp.net'
+ */
+function normalizeToJid(phone) {
+    // Remove tudo que não é dígito
+    const digits = phone.replace(/[^0-9]/g, '');
+
+    // ✅ Número já possui código de país (12 ou 13 dígitos): usa diretamente
+    // Ex: '5511999882626' (13) ou '551199882626' (12)
+    if (digits.length >= 12) {
+        console.log(`[normalize] Número '${phone}' já contém DDI → JID: ${digits}@s.whatsapp.net`);
+        return `${digits}@s.whatsapp.net`;
+    }
+
+    // ➕ Número sem código de país (10-11 dígitos): adiciona DDI 55 (Brasil)
+    // Ex: '11999882626' (11) ou '1199882626' (10)
+    if (digits.length >= 10 && digits.length <= 11) {
+        const jid = `55${digits}@s.whatsapp.net`;
+        console.log(`[normalize] Número '${phone}' sem DDI → adicionando +55 → JID: ${jid}`);
+        return jid;
+    }
+
+    // Fallback: número muito curto ou inválido, usa como está (Bridge retornará erro se inválido)
+    console.warn(`[normalize] Número '${phone}' com formato inesperado (${digits.length} dígitos). Usando sem normalização.`);
+    return `${digits}@s.whatsapp.net`;
+}
+
 async function connectToWhatsApp(sessionId) {
     if (sockets[sessionId]) return;
 
@@ -39,6 +77,9 @@ async function connectToWhatsApp(sessionId) {
     const { state, saveCreds } = await useMultiFileAuthState(tokenPath);
     const { version } = await fetchLatestBaileysVersion();
 
+    // Store em memória para cache de chats e contatos (necessário para /chats e /chat-history)
+    const store = makeInMemoryStore({ logger: logger.child({ session: sessionId }) });
+
     const sock = makeWASocket({
         version,
         auth: state,
@@ -46,6 +87,9 @@ async function connectToWhatsApp(sessionId) {
         logger: logger.child({ session: sessionId }),
         browser: ["SaaS-OmniChannel", `Tenant-${sessionId}`, "1.0"]
     });
+
+    store.bind(sock.ev);
+    sock.store = store;
 
     sockets[sessionId] = sock;
     sessionStatuses[sessionId] = 'CONNECTING';
@@ -94,17 +138,33 @@ async function connectToWhatsApp(sessionId) {
             for (const msg of messages) {
                 if (!msg.key.fromMe && msg.message) {
                     try {
-                        const content = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
+                        const content =
+                            msg.message.conversation ||
+                            msg.message.extendedTextMessage?.text ||
+                            msg.message.imageMessage?.caption ||
+                            msg.message.videoMessage?.caption ||
+                            "";
+
                         const webhookUrl = process.env.WEBHOOK_URL || 'http://127.0.0.1:8001/api/v1/gateway/webhook/whatsapp';
                         const headers = { 'x-api-key': 'SaaS_Secret_Gateway_Key_2026' };
-                        
-                        await axios.post(webhookUrl, {
-                            sessionId,
-                            messageId: msg.key.id,
-                            content: content,
-                            senderPhone: msg.key.remoteJid,
-                            senderName: msg.pushName || msg.key.remoteJid
-                        }, { headers });
+
+                        // ✅ Envelope correto esperado pelo gateway.py (WhatsAppPayload schema)
+                        const envelope = {
+                            event: 'on_message',
+                            session: sessionId,
+                            payload: {
+                                id:         msg.key.id,
+                                from:       msg.key.remoteJid,
+                                body:       content,
+                                type:       'chat',
+                                isGroupMsg: msg.key.remoteJid?.endsWith('@g.us') || false,
+                                pushName:   msg.pushName || null,
+                                timestamp:  msg.messageTimestamp || Math.floor(Date.now() / 1000)
+                            }
+                        };
+
+                        console.log(`[${sessionId}] 📥 Mensagem recebida de ${msg.key.remoteJid}: "${content.substring(0, 60)}"`);
+                        await axios.post(webhookUrl, envelope, { headers });
                     } catch (err) {
                         console.error(`[${sessionId}] Erro ao encaminhar para webhook:`, err.message);
                     }
@@ -211,20 +271,23 @@ app.post('/instance/sendMessage', async (req, res) => {
     }
 
     try {
-        // Normaliza o número destino (Adiciona o sufixo @s.whatsapp.net se necessário)
-        const normalizedPhone = to.replace(/[^0-9]/g, '');
-        const jid = `${normalizedPhone}@s.whatsapp.net`;
+        // Normaliza o número destino garantindo DDI correto + sufixo @s.whatsapp.net
+        const jid = normalizeToJid(to);
+
+        console.log(`[${sessionId}] 📤 Enviando para JID: ${jid} | Conteúdo: "${content.substring(0, 60)}"`);
 
         const sentMsg = await sock.sendMessage(jid, { text: content });
-        console.log(`[${sessionId}] Mensagem enviada para ${jid}: ${sentMsg.key.id}`);
+        const msgId = sentMsg?.key?.id || 'unknown';
+        console.log(`[${sessionId}] ✅ Mensagem enviada com sucesso para ${jid} | ID: ${msgId}`);
 
         return res.json({
             success: true,
             status: "sent",
-            messageId: sentMsg.key.id
+            messageId: msgId,
+            to: jid
         });
     } catch (err) {
-        console.error(`[${sessionId}] Erro ao enviar mensagem para ${to}:`, err.message);
+        console.error(`[${sessionId}] ❌ Erro ao enviar mensagem para ${to} (JID: ${normalizeToJid(to)}):`, err.message);
         return res.status(500).json({ error: 'Erro ao enviar mensagem.', detail: err.message });
     }
 });
