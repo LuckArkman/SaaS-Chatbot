@@ -80,12 +80,29 @@ async function connectToWhatsApp(sessionId) {
     // Store em memória para cache de chats e contatos (necessário para /chats e /chat-history)
     const store = makeInMemoryStore({ logger: logger.child({ session: sessionId }) });
 
+    // Cache local de mensagens por sessão — necessário para getMessage (reenvio de mensagens)
+    if (!global.messageCache) global.messageCache = {};
+    if (!global.messageCache[sessionId]) global.messageCache[sessionId] = new Map();
+    const msgCache = global.messageCache[sessionId];
+
     const sock = makeWASocket({
         version,
         auth: state,
         printQRInTerminal: true,
         logger: logger.child({ session: sessionId }),
-        browser: ["SaaS-OmniChannel", `Tenant-${sessionId}`, "1.0"]
+        browser: ["SaaS-OmniChannel", `Tenant-${sessionId}`, "1.0"],
+
+        // ✅ CRÍTICO: getMessage é OBRIGATÓRIO no Baileys v6.x+
+        // Sem esta função, o WhatsApp não consegue fazer retry de mensagens
+        // e elas são descartadas silenciosamente no servidor.
+        // Ref: https://baileys.wiki / whiskeysockets/baileys GitHub README
+        getMessage: async (key) => {
+            const cached = msgCache.get(key.id);
+            if (cached) return cached;
+            // Tenta via store em memória como fallback
+            const stored = await store.loadMessage(key.remoteJid, key.id);
+            return stored?.message || { conversation: '' };
+        }
     });
 
     store.bind(sock.ev);
@@ -93,6 +110,7 @@ async function connectToWhatsApp(sessionId) {
 
     sockets[sessionId] = sock;
     sessionStatuses[sessionId] = 'CONNECTING';
+
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
@@ -169,10 +187,35 @@ async function connectToWhatsApp(sessionId) {
                         console.error(`[${sessionId}] Erro ao encaminhar para webhook:`, err.message);
                     }
                 }
+
+                // ✅ Salva TODAS as mensagens no cache (incluindo fromMe=true)
+                // Necessário para getMessage funcionar corretamente em retries do WhatsApp
+                if (msg.message && msg.key?.id) {
+                    msgCache.set(msg.key.id, msg.message);
+                    // Limita cache a 500 mensagens por sessão para evitar vazamento de memória
+                    if (msgCache.size > 500) {
+                        const firstKey = msgCache.keys().next().value;
+                        msgCache.delete(firstKey);
+                    }
+                }
+            }
+        }
+    });
+
+    // ✅ Monitora ACKs de entrega — essencial para diagnóstico de falhas silenciosas
+    // ack: 1 = enviado ao servidor | ack: 2 = recebido pelo servidor | ack: 3 = entregue ao dispositivo
+    sock.ev.on('messages.update', (updates) => {
+        for (const update of updates) {
+            if (update.update?.status !== undefined) {
+                const ack = update.update.status;
+                const ackLabels = { 1: 'SERVIDOR', 2: 'RECEBIDO', 3: 'ENTREGUE', 4: 'LIDO' };
+                const label = ackLabels[ack] || `ACK_${ack}`;
+                console.log(`[${sessionId}] 📬 ACK [${label}] para msg ${update.key?.id} → ${update.key?.remoteJid}`);
             }
         }
     });
 }
+
 
 // Helper para notificação de status unificada
 async function notifyStatus(sessionId, state, qrcode = null) {
