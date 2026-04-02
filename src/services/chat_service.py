@@ -53,17 +53,53 @@ class ChatService:
             logger.debug(f"📱 [Resolver] Destinatário via número direto: {digits}")
             return digits
 
-        # ── Estratégia 3: ID numérico curto → busca PRIMEIRO nos chats abertos do Bridge ──
+        # ── Estratégia 3: ID numérico curto ──────────────────────────────────
         #
-        # COMPORTAMENTO CORRETO: O front-end envia o índice posicional 1-based da
-        # lista de diálogos abertos do WhatsApp (ex: "1" = primeira conversa aberta).
-        # O backend deve buscar a lista de chats em tempo real via Bridge e retornar
-        # o phone/JID que está naquela posição.
-        # Somente se o Bridge estiver offline, tenta o ID interno do Postgres como fallback.
+        # O front-end envia o ID de um contato ou conversa registrado no Postgres.
+        # A ordem correta de busca é:
+        #   3a. Tabela `contacts`      (Contact.id)      — CRM local, fonte usada pela tela de Contatos
+        #   3b. Tabela `conversations` (Conversation.id) — histórico de diálogos já persistidos
+        #   3c. Lista de chats ao vivo do Bridge         — fallback se o registro ainda não existe localmente
         #
         if conversation_id.isdigit():
-            chat_index = int(conversation_id)  # índice 1-based
+            numeric_id = int(conversation_id)
 
+            # 3a. Tabela contacts (CRM local do Tenant) — fonte primária do front-end
+            from src.models.contact import Contact
+            contact = db.query(Contact).filter(
+                Contact.id == numeric_id,
+                Contact.tenant_id == tenant_id
+            ).first()
+            if contact and contact.phone_number:
+                logger.info(
+                    f"✅ [Resolver] Destinatário via tabela contacts "
+                    f"(ID={numeric_id}): {contact.phone_number} — {contact.full_name or 'sem nome'}"
+                )
+                return contact.phone_number
+
+            logger.debug(
+                f"🔍 [Resolver] Contact ID={numeric_id} não encontrado. "
+                f"Tentando tabela conversations..."
+            )
+
+            # 3b. Tabela conversations (diálogos já persistidos no histórico)
+            conv = db.query(Conversation).filter(
+                Conversation.id == numeric_id,
+                Conversation.tenant_id == tenant_id
+            ).first()
+            if conv and conv.contact_phone:
+                logger.info(
+                    f"✅ [Resolver] Destinatário via tabela conversations "
+                    f"(ID={numeric_id}): {conv.contact_phone}"
+                )
+                return conv.contact_phone
+
+            logger.warning(
+                f"⚠️ [Resolver] ID={numeric_id} não encontrado nas tabelas locais. "
+                f"Consultando lista de chats ao vivo no Bridge WhatsApp..."
+            )
+
+            # 3c. Fallback: lista de chats ao vivo do Bridge (último recurso)
             try:
                 instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
                 status_str = (
@@ -73,57 +109,36 @@ class ChatService:
                 )
 
                 if status_str == WhatsAppStatus.CONNECTED.value:
-                    # 3a. Fonte primária: lista de chats abertos do WhatsApp (Bridge)
                     chats_result = await whatsapp_bridge.list_chats(session_id=instance.session_name)
                     if chats_result.get("success"):
                         chats = chats_result.get("chats", [])
-
-                        # Usa como índice posicional 1-based na lista de conversas ativas
-                        if 1 <= chat_index <= len(chats):
-                            chat  = chats[chat_index - 1]
+                        # Usa o numeric_id como índice posicional 1-based na lista ao vivo
+                        if 1 <= numeric_id <= len(chats):
+                            chat  = chats[numeric_id - 1]
                             phone = chat.get("phone") or chat.get("id", "").split("@")[0]
                             if phone:
                                 logger.info(
                                     f"✅ [Resolver] Destinatário via lista de chats do Bridge "
-                                    f"(posição {chat_index}/{len(chats)}): {phone} "
+                                    f"(posição {numeric_id}/{len(chats)}): {phone} "
                                     f"— Nome: {chat.get('name', 'N/A')}"
                                 )
                                 return phone
-
                         logger.warning(
-                            f"⚠️ [Resolver] Índice {chat_index} fora do range da lista de chats "
-                            f"({len(chats)} chats disponíveis). Tentando Postgres como fallback..."
+                            f"⚠️ [Resolver] Índice {numeric_id} fora do range "
+                            f"({len(chats)} chats disponíveis no Bridge)."
                         )
                     else:
-                        logger.warning(
-                            f"⚠️ [Resolver] Bridge retornou erro ao listar chats: "
-                            f"{chats_result.get('error')}. Tentando Postgres..."
-                        )
+                        logger.warning(f"⚠️ [Resolver] Bridge retornou erro: {chats_result.get('error')}")
                 else:
-                    logger.warning(
-                        f"⚠️ [Resolver] Bot não conectado ('{status_str}'). "
-                        f"Tentando lookup no Postgres pelo ID da conversa..."
-                    )
+                    logger.warning(f"⚠️ [Resolver] Bot não conectado ('{status_str}'). Bridge indisponível.")
 
             except Exception as e:
-                logger.error(f"❌ [Resolver] Falha ao consultar chats do Bridge: {e}. Tentando Postgres...")
-
-            # 3b. Fallback: ID interno do Postgres (conversa previamente persistida)
-            conv = db.query(Conversation).filter(
-                Conversation.id == chat_index,
-                Conversation.tenant_id == tenant_id
-            ).first()
-            if conv and conv.contact_phone:
-                logger.debug(
-                    f"📱 [Resolver] Destinatário via Postgres "
-                    f"(conversa #{chat_index}): {conv.contact_phone}"
-                )
-                return conv.contact_phone
+                logger.error(f"❌ [Resolver] Falha ao consultar Bridge: {e}")
 
         raise ValueError(
             f"Destinatário não encontrado para conversation_id='{conversation_id}'. "
             f"Formatos aceitos: "
-            f"(1) índice da conversa na lista de chats abertos (ex: '1', '2', '3'), "
+            f"(1) ID de contato ou conversa do banco de dados (ex: '1', '2', '3'), "
             f"(2) JID WhatsApp (ex: '5511999999999@s.whatsapp.net'), "
             f"(3) número de telefone com 10+ dígitos."
         )
