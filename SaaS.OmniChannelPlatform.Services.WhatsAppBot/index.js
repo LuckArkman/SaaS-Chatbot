@@ -2,8 +2,7 @@ const {
     default: makeWASocket, 
     useMultiFileAuthState, 
     DisconnectReason, 
-    fetchLatestBaileysVersion,
-    makeInMemoryStore
+    fetchLatestBaileysVersion
 } = require("@whiskeysockets/baileys");
 const express = require('express');
 const http = require('http');
@@ -77,14 +76,67 @@ async function connectToWhatsApp(sessionId) {
     const { state, saveCreds } = await useMultiFileAuthState(tokenPath);
     const { version } = await fetchLatestBaileysVersion();
 
-    // Store em memória para cache de chats e contatos (necessário para /chats e /chat-history)
-    const store = makeInMemoryStore({ logger: logger.child({ session: sessionId }) });
-
-    // Cache local de mensagens por sessão — necessário para getMessage (reenvio de mensagens)
+    // Cache de mensagens por sessão (necessário para getMessage e chat-history)
     if (!global.messageCache) global.messageCache = {};
     if (!global.messageCache[sessionId]) global.messageCache[sessionId] = new Map();
     const msgCache = global.messageCache[sessionId];
 
+    // Store manual leve compatível com Baileys 6.7.x
+    // Substitui makeInMemoryStore (que não existe como named export nesta versão)
+    const manualStore = {
+        messages: {},  // jid -> Map(id -> msg)
+        chats:    {},  // jid -> chatObj
+        contacts: {},  // jid -> contactObj
+
+        bind(ev) {
+            // Persiste mensagens recebidas/enviadas
+            ev.on('messages.upsert', ({ messages }) => {
+                for (const msg of messages) {
+                    if (!msg.key?.remoteJid || !msg.key?.id) continue;
+                    const jid = msg.key.remoteJid;
+                    if (!this.messages[jid]) this.messages[jid] = new Map();
+                    this.messages[jid].set(msg.key.id, msg);
+                    msgCache.set(msg.key.id, msg.message);
+                    // Limita 500 msg/sessão
+                    if (msgCache.size > 500) {
+                        msgCache.delete(msgCache.keys().next().value);
+                    }
+                }
+            });
+            // Persiste chats
+            ev.on('chats.set', ({ chats }) => {
+                for (const chat of chats) {
+                    this.chats[chat.id] = chat;
+                }
+            });
+            ev.on('chats.upsert', (chats) => {
+                for (const chat of chats) {
+                    this.chats[chat.id] = { ...(this.chats[chat.id] || {}), ...chat };
+                }
+            });
+            // Persiste contatos
+            ev.on('contacts.set', ({ contacts }) => {
+                for (const c of contacts) {
+                    if (c.id) this.contacts[c.id] = c;
+                }
+            });
+            ev.on('contacts.upsert', (contacts) => {
+                for (const c of contacts) {
+                    if (c.id) this.contacts[c.id] = { ...(this.contacts[c.id] || {}), ...c };
+                }
+            });
+        },
+
+        // Compatível com a propriedade .chats.all() usada em /instance/chats
+        getChatsList() {
+            return Object.values(this.chats);
+        },
+
+        // Compatível com store.loadMessage(jid, id)
+        async loadMessage(jid, id) {
+            return this.messages[jid]?.get(id) || null;
+        }
+    };
     const sock = makeWASocket({
         version,
         auth: state,
@@ -100,13 +152,13 @@ async function connectToWhatsApp(sessionId) {
             const cached = msgCache.get(key.id);
             if (cached) return cached;
             // Tenta via store em memória como fallback
-            const stored = await store.loadMessage(key.remoteJid, key.id);
+            const stored = await manualStore.loadMessage(key.remoteJid, key.id);
             return stored?.message || { conversation: '' };
         }
     });
 
-    store.bind(sock.ev);
-    sock.store = store;
+    manualStore.bind(sock.ev);
+    sock.store = manualStore;
 
     sockets[sessionId] = sock;
     sessionStatuses[sessionId] = 'CONNECTING';
@@ -361,8 +413,8 @@ app.get('/instance/chats', async (req, res) => {
     }
 
     try {
-        // O store interno do Baileys mantém o cache de chats da sessão
-        const rawChats = sock.store?.chats?.all() || [];
+        // Usa o manualStore compatível com Baileys 6.7.x
+        const rawChats = (sock.store?.getChatsList ? sock.store.getChatsList() : []);
 
         const chats = rawChats
             .filter(chat => chat.id && !chat.id.includes('@broadcast'))
