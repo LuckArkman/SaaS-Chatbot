@@ -254,15 +254,38 @@ async function connectToWhatsApp(sessionId) {
         }
     });
 
-    // ✅ Monitora ACKs de entrega — essencial para diagnóstico de falhas silenciosas
-    // ack: 1 = enviado ao servidor | ack: 2 = recebido pelo servidor | ack: 3 = entregue ao dispositivo
-    sock.ev.on('messages.update', (updates) => {
+    // ✅ Monitora ACKs de entrega E repassa ao Python (AckWorker)
+    // ack: 1 = Servidor | 2 = Recebido | 3 = Entregue ao dispositivo | 4 = Lido
+    sock.ev.on('messages.update', async (updates) => {
+        const webhookUrl = process.env.WEBHOOK_URL || 'http://127.0.0.1:8001/api/v1/gateway/webhook/whatsapp';
+        const headers = { 'x-api-key': 'SaaS_Secret_Gateway_Key_2026' };
+
         for (const update of updates) {
-            if (update.update?.status !== undefined) {
-                const ack = update.update.status;
-                const ackLabels = { 1: 'SERVIDOR', 2: 'RECEBIDO', 3: 'ENTREGUE', 4: 'LIDO' };
-                const label = ackLabels[ack] || `ACK_${ack}`;
-                console.log(`[${sessionId}] 📬 ACK [${label}] para msg ${update.key?.id} → ${update.key?.remoteJid}`);
+            if (update.update?.status === undefined) continue;
+
+            const ack   = update.update.status;
+            const msgId = update.key?.id || 'unknown';
+            const jid   = update.key?.remoteJid || 'unknown';
+            const ackLabels = { 1: 'SERVIDOR', 2: 'RECEBIDO', 3: 'ENTREGUE', 4: 'LIDO' };
+            const label = ackLabels[ack] || `ACK_${ack}`;
+
+            console.log(`[${sessionId}] 📬 ACK [${label}] msg='${msgId}' → jid='${jid}'`);
+
+            // ─── Forward do ACK para o Python (AckWorker) ──────────────────
+            try {
+                await axios.post(webhookUrl, {
+                    event: 'on_ack',
+                    session: sessionId,
+                    payload: {
+                        id:     msgId,
+                        to:     jid,
+                        status: ack,
+                        ack:    ack
+                    }
+                }, { headers, timeout: 5000 });
+                console.log(`[${sessionId}] ✅ ACK [${label}] encaminhado ao webhook Python | msg='${msgId}'`);
+            } catch (ackErr) {
+                console.warn(`[${sessionId}] ⚠️ Falha ao encaminhar ACK ao webhook: ${ackErr.message}`);
             }
         }
     });
@@ -344,46 +367,109 @@ app.get('/instance/connectionState', (req, res) => {
 /**
  * POST /instance/sendMessage
  * Body: { sessionId, to, content }
- * Envia uma mensagem de texto simples pelo WhatsApp usando a sessão ativa.
+ *
+ * Envia uma mensagem de texto simples pelo WhatsApp.
+ * Inclui instrumentação completa de cada etapa do ciclo de vida:
+ *   [1] Validação de parâmetros
+ *   [2] Resolução do socket + verificação de estado
+ *   [3] Normalização do número → JID
+ *   [4] Chamada sock.sendMessage()
+ *   [5] Extração e log do msgId retornado
+ *   [6] Resposta de sucesso/falha com contexto completo
  */
 app.post('/instance/sendMessage', async (req, res) => {
+    const reqId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`; // trace ID por requisição
     const { sessionId, to, content } = req.body;
 
+    console.log(`\n[${sessionId}][REQ:${reqId}] ━━━━━━━━━━━━━━ SEND MESSAGE ━━━━━━━━━━━━━━`);
+    console.log(`[${sessionId}][REQ:${reqId}] [1/6] Parâmetros recebidos | to='${to}' | content_len=${content?.length ?? 0}`);
+
+    // [1] Validação de parâmetros obrigatórios
     if (!sessionId || !to || !content) {
-        return res.status(400).json({ error: 'sessionId, to e content são obrigatórios' });
+        const missing = ['sessionId', 'to', 'content'].filter(f => !req.body[f]).join(', ');
+        console.error(`[${sessionId}][REQ:${reqId}] ❌ [1/6] FALHA — Parâmetros ausentes: ${missing}`);
+        return res.status(400).json({ error: `Campos obrigatórios ausentes: ${missing}` });
     }
 
+    // [2] Resolução do socket e verificação de estado
     const sock = sockets[sessionId];
-    if (!sock) {
-        return res.status(404).json({ error: `Instância '${sessionId}' não encontrada ou desconectada.` });
-    }
+    const currentState = sessionStatuses[sessionId] || 'DESCONHECIDO';
 
-    if (sessionStatuses[sessionId] !== 'CONNECTED') {
-        return res.status(409).json({
-            error: 'Instância não está conectada.',
-            state: sessionStatuses[sessionId]
+    console.log(`[${sessionId}][REQ:${reqId}] [2/6] Socket encontrado: ${!!sock} | Estado atual: '${currentState}'`);
+
+    if (!sock) {
+        console.error(`[${sessionId}][REQ:${reqId}] ❌ [2/6] FALHA — Nenhum socket ativo para esta sessão.`);
+        console.error(`[${sessionId}][REQ:${reqId}]         Sessions ativas: [${Object.keys(sockets).join(', ')}]`);
+        return res.status(404).json({
+            error: `Instância '${sessionId}' não encontrada ou desconectada.`,
+            active_sessions: Object.keys(sockets)
         });
     }
+
+    if (currentState !== 'CONNECTED') {
+        console.error(`[${sessionId}][REQ:${reqId}] ❌ [2/6] FALHA — Instância não está CONNECTED (estado='${currentState}').`);
+        return res.status(409).json({
+            error: `Instância '${sessionId}' não está conectada.`,
+            state: currentState
+        });
+    }
+
+    // [3] Normalização do número → JID
+    const jid = normalizeToJid(to);
+    console.log(`[${sessionId}][REQ:${reqId}] [3/6] JID normalizado | '${to}' → '${jid}'`);
+
+    // [4] Chamada sock.sendMessage()
+    console.log(`[${sessionId}][REQ:${reqId}] [4/6] Chamando sock.sendMessage() | jid='${jid}' | content='${content.substring(0, 80)}'`);
 
     try {
-        // Normaliza o número destino garantindo DDI correto + sufixo @s.whatsapp.net
-        const jid = normalizeToJid(to);
-
-        console.log(`[${sessionId}] 📤 Enviando para JID: ${jid} | Conteúdo: "${content.substring(0, 60)}"`);
-
+        const sendStart = Date.now();
         const sentMsg = await sock.sendMessage(jid, { text: content });
-        const msgId = sentMsg?.key?.id || 'unknown';
-        console.log(`[${sessionId}] ✅ Mensagem enviada com sucesso para ${jid} | ID: ${msgId}`);
+        const elapsed = Date.now() - sendStart;
 
-        return res.json({
-            success: true,
-            status: "sent",
-            messageId: msgId,
-            to: jid
-        });
+        // [5] Extração e validação do resultado
+        const msgId   = sentMsg?.key?.id;
+        const fromMe  = sentMsg?.key?.fromMe;
+        const status  = sentMsg?.status;
+
+        console.log(`[${sessionId}][REQ:${reqId}] [5/6] sendMessage() retornou em ${elapsed}ms`);
+        console.log(`[${sessionId}][REQ:${reqId}]       → msgId:  '${msgId}'`);
+        console.log(`[${sessionId}][REQ:${reqId}]       → fromMe: ${fromMe}`);
+        console.log(`[${sessionId}][REQ:${reqId}]       → status: ${status}`);
+        console.log(`[${sessionId}][REQ:${reqId}]       → sentMsg completo: ${JSON.stringify(sentMsg?.key || {})}`);
+
+        if (!msgId) {
+            console.warn(`[${sessionId}][REQ:${reqId}] ⚠️ [5/6] msgId não presente na resposta — WhatsApp pode não ter confirmado o enfileiramento.`);
+        }
+
+        // [6] Resposta de sucesso
+        const responsePayload = {
+            success:   true,
+            status:    'sent',
+            messageId: msgId || null,
+            to:        jid,
+            elapsed_ms: elapsed
+        };
+
+        console.log(`[${sessionId}][REQ:${reqId}] [6/6] ✅ SUCESSO — Resposta: ${JSON.stringify(responsePayload)}`);
+        console.log(`[${sessionId}][REQ:${reqId}] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+
+        return res.json(responsePayload);
+
     } catch (err) {
-        console.error(`[${sessionId}] ❌ Erro ao enviar mensagem para ${to} (JID: ${normalizeToJid(to)}):`, err.message);
-        return res.status(500).json({ error: 'Erro ao enviar mensagem.', detail: err.message });
+        // [6] Log de falha completo
+        console.error(`[${sessionId}][REQ:${reqId}] [6/6] ❌ FALHA — Exceção em sock.sendMessage()`);
+        console.error(`[${sessionId}][REQ:${reqId}]         jid:     '${jid}'`);
+        console.error(`[${sessionId}][REQ:${reqId}]         message: ${err.message}`);
+        console.error(`[${sessionId}][REQ:${reqId}]         stack:   ${err.stack?.split('\n').slice(0, 3).join(' | ')}`);
+        console.error(`[${sessionId}][REQ:${reqId}] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+
+        return res.status(500).json({
+            error:      'Erro ao enviar mensagem via Baileys.',
+            detail:     err.message,
+            session:    sessionId,
+            jid,
+            req_id:     reqId
+        });
     }
 });
 
