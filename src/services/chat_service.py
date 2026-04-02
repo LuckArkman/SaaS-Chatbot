@@ -33,8 +33,8 @@ class ChatService:
         Estratégias (em cascata):
           1️⃣  JID WhatsApp  (ex: '5511999999999@s.whatsapp.net') → extrai phone
           2️⃣  Número longo  (10+ dígitos)                        → usa diretamente
-          3️⃣  ID Postgres   (< 10 dígitos numérico)              → busca conversations.contact_phone
-          4️⃣  Fallback Bridge: varre chats abertos + contatos do WhatsApp ativo do Tenant
+          3️⃣  ID numérico curto → busca PRIMEIRO nos chats abertos do Bridge (índice 1-based)
+               depois na tabela conversations do Postgres como fallback
         """
         from src.models.chat import Conversation
         from src.models.whatsapp import WhatsAppStatus
@@ -53,84 +53,79 @@ class ChatService:
             logger.debug(f"📱 [Resolver] Destinatário via número direto: {digits}")
             return digits
 
-        # ── Estratégia 3: ID numérico curto do Postgres ──────────────────────
+        # ── Estratégia 3: ID numérico curto → busca PRIMEIRO nos chats abertos do Bridge ──
+        #
+        # COMPORTAMENTO CORRETO: O front-end envia o índice posicional 1-based da
+        # lista de diálogos abertos do WhatsApp (ex: "1" = primeira conversa aberta).
+        # O backend deve buscar a lista de chats em tempo real via Bridge e retornar
+        # o phone/JID que está naquela posição.
+        # Somente se o Bridge estiver offline, tenta o ID interno do Postgres como fallback.
+        #
         if conversation_id.isdigit():
+            chat_index = int(conversation_id)  # índice 1-based
+
+            try:
+                instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+                status_str = (
+                    instance.status.value
+                    if hasattr(instance.status, "value")
+                    else str(instance.status)
+                )
+
+                if status_str == WhatsAppStatus.CONNECTED.value:
+                    # 3a. Fonte primária: lista de chats abertos do WhatsApp (Bridge)
+                    chats_result = await whatsapp_bridge.list_chats(session_id=instance.session_name)
+                    if chats_result.get("success"):
+                        chats = chats_result.get("chats", [])
+
+                        # Usa como índice posicional 1-based na lista de conversas ativas
+                        if 1 <= chat_index <= len(chats):
+                            chat  = chats[chat_index - 1]
+                            phone = chat.get("phone") or chat.get("id", "").split("@")[0]
+                            if phone:
+                                logger.info(
+                                    f"✅ [Resolver] Destinatário via lista de chats do Bridge "
+                                    f"(posição {chat_index}/{len(chats)}): {phone} "
+                                    f"— Nome: {chat.get('name', 'N/A')}"
+                                )
+                                return phone
+
+                        logger.warning(
+                            f"⚠️ [Resolver] Índice {chat_index} fora do range da lista de chats "
+                            f"({len(chats)} chats disponíveis). Tentando Postgres como fallback..."
+                        )
+                    else:
+                        logger.warning(
+                            f"⚠️ [Resolver] Bridge retornou erro ao listar chats: "
+                            f"{chats_result.get('error')}. Tentando Postgres..."
+                        )
+                else:
+                    logger.warning(
+                        f"⚠️ [Resolver] Bot não conectado ('{status_str}'). "
+                        f"Tentando lookup no Postgres pelo ID da conversa..."
+                    )
+
+            except Exception as e:
+                logger.error(f"❌ [Resolver] Falha ao consultar chats do Bridge: {e}. Tentando Postgres...")
+
+            # 3b. Fallback: ID interno do Postgres (conversa previamente persistida)
             conv = db.query(Conversation).filter(
-                Conversation.id == int(conversation_id),
+                Conversation.id == chat_index,
                 Conversation.tenant_id == tenant_id
             ).first()
             if conv and conv.contact_phone:
                 logger.debug(
                     f"📱 [Resolver] Destinatário via Postgres "
-                    f"(conversa #{conversation_id}): {conv.contact_phone}"
+                    f"(conversa #{chat_index}): {conv.contact_phone}"
                 )
                 return conv.contact_phone
 
-            logger.warning(
-                f"⚠️ [Resolver] Conversa #{conversation_id} não encontrada no Postgres. "
-                f"Consultando o agente WhatsApp do Tenant '{tenant_id}'..."
-            )
-
-        # ── Estratégia 4: Fallback — Bridge WhatsApp (chats + contatos) ──────
-        try:
-            instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
-            status_str = (
-                instance.status.value
-                if hasattr(instance.status, "value")
-                else str(instance.status)
-            )
-
-            if status_str != WhatsAppStatus.CONNECTED.value:
-                raise ValueError(
-                    f"O bot WhatsApp não está conectado (Status: '{status_str}'). "
-                    f"Conecte o agente antes de enviar mensagens."
-                )
-
-            # 4a. Lista de conversas abertas no WhatsApp (mais confiável — dados em cache)
-            chats_result = await whatsapp_bridge.list_chats(session_id=instance.session_name)
-            if chats_result.get("success"):
-                for chat in chats_result.get("chats", []):
-                    jid   = chat.get("id", "")       # ex: "5511999999999@s.whatsapp.net"
-                    phone = chat.get("phone", "")    # ex: "5511999999999"
-                    # Matching: por JID exato, phone exato, ou por prefixo numérico
-                    if (
-                        jid == conversation_id
-                        or phone == conversation_id
-                        or jid.startswith(f"{conversation_id}@")
-                        or phone.endswith(digits) and len(digits) >= 6
-                    ):
-                        logger.info(
-                            f"✅ [Resolver] Destinatário encontrado via lista de chats "
-                            f"do Bridge: {phone} (JID: {jid})"
-                        )
-                        return phone
-
-            # 4b. Lista de contatos conhecidos pelo agente WhatsApp
-            contacts_result = await whatsapp_bridge.list_contacts(session_id=instance.session_name)
-            if contacts_result.get("success"):
-                for contact in contacts_result.get("contacts", []):
-                    jid   = contact.get("jid", "")
-                    phone = contact.get("phone", "")
-                    if (
-                        jid == conversation_id
-                        or phone == conversation_id
-                        or jid.startswith(f"{conversation_id}@")
-                    ):
-                        logger.info(
-                            f"✅ [Resolver] Destinatário encontrado via lista de contatos "
-                            f"do Bridge: {phone} (JID: {jid})"
-                        )
-                        return phone
-
-        except ValueError:
-            raise
-        except Exception as e:
-            logger.error(f"❌ [Resolver] Falha ao consultar Bridge WhatsApp: {e}")
-
         raise ValueError(
             f"Destinatário não encontrado para conversation_id='{conversation_id}'. "
-            f"Formatos aceitos: JID WhatsApp (ex: 5511999@s.whatsapp.net), "
-            f"número de telefone (10+ dígitos) ou ID de conversa Postgres existente."
+            f"Formatos aceitos: "
+            f"(1) índice da conversa na lista de chats abertos (ex: '1', '2', '3'), "
+            f"(2) JID WhatsApp (ex: '5511999999999@s.whatsapp.net'), "
+            f"(3) número de telefone com 10+ dígitos."
         )
 
     # ─────────────────────────────────────────────────────────────────────────
