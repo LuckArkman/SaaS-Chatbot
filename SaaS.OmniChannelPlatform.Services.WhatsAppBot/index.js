@@ -179,9 +179,45 @@ async function connectToWhatsApp(sessionId) {
         }
 
         if (connection === 'close') {
-            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log(`[${sessionId}] Conexão fechada. Motivo: ${lastDisconnect.error}. Reconnect: ${shouldReconnect}`);
-            
+            const statusCode = lastDisconnect?.error?.output?.statusCode;
+            const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+
+            // ✅ CORREÇÃO CRÍTICA: Sessões não autenticadas NÃO devem reconectar quando o QR expira.
+            // "QR refs attempts ended" tem statusCode 515 — não é loggedOut (401),
+            // mas também NÃO deve gerar reconexão automática.
+            // Somente sessões que já estiveram autenticadas (state.creds.me definido)
+            // devem reconectar ao serem desconectadas inesperadamente.
+            const wasAuthenticated = !!state?.creds?.me;
+            const isQrExpired = statusCode === 515; // Stream.Failure / QR refs attempts ended
+
+            let shouldReconnect = false;
+            if (isLoggedOut) {
+                // Logout explícito: nunca reconecta (apaga creds)
+                shouldReconnect = false;
+                console.log(`[${sessionId}] ❌ Logout remoto — removendo sessão.`);
+                try {
+                    const tokenPath = path.join(__dirname, 'tokens', sessionId);
+                    if (fs.existsSync(tokenPath)) {
+                        fs.rmSync(tokenPath, { recursive: true, force: true });
+                        console.log(`[${sessionId}] 🗑️ Tokens removidos por logout.`);
+                    }
+                } catch (e) { console.error(`[${sessionId}] Erro ao remover tokens:`, e.message); }
+            } else if (isQrExpired) {
+                // QR expirou sem autenticação: não reconecta — evita zombie session storm
+                shouldReconnect = false;
+                console.log(`[${sessionId}] ⏰ QR expirado sem autenticação — sessão encerrada sem reconexão.`);
+            } else if (wasAuthenticated) {
+                // Sessão autenticada perdeu conexão (queda de rede, etc): reconecta
+                shouldReconnect = true;
+                console.log(`[${sessionId}] 🔄 Sessão autenticada desconectada — reagendando reconexão.`);
+            } else {
+                // Sessão nunca autenticada, erro genérico: não reconecta
+                shouldReconnect = false;
+                console.log(`[${sessionId}] ⚠️ Sessão não autenticada encerrada (código ${statusCode}) — sem reconexão.`);
+            }
+
+            console.log(`[${sessionId}] Conexão fechada | código=${statusCode} | autenticada=${wasAuthenticated} | Reconnect=${shouldReconnect}`);
+
             delete sockets[sessionId];
             delete latestQrs[sessionId];
             sessionStatuses[sessionId] = 'DISCONNECTED';
@@ -189,7 +225,7 @@ async function connectToWhatsApp(sessionId) {
             await notifyStatus(sessionId, 'DISCONNECTED');
 
             if (shouldReconnect) {
-                connectToWhatsApp(sessionId);
+                setTimeout(() => connectToWhatsApp(sessionId), 3000);
             }
         } else if (connection === 'open') {
             console.log(`[${sessionId}] Conexão estabelecida com sucesso!`);
