@@ -119,6 +119,8 @@ class WhatsAppManagerService:
         """
         Tarefa periódica que sincroniza o estado global das instâncias.
         Detecta sessões desconectadas e atualiza status para UI.
+        Se a instância estiver DISCONNECTED, tenta reconectar automaticamente
+        via Bridge (o Baileys irá reutilizar os tokens salvos em disco).
         """
         instances = db.query(WhatsAppInstance).filter(
             WhatsAppInstance.is_active == True
@@ -126,3 +128,20 @@ class WhatsAppManagerService:
         
         for inst in instances:
             await WhatsAppManagerService.sync_instance_status(db, inst)
+
+            # 🔁 Auto-reconnect: se ainda DISCONNECTED após sync, tenta recriar sessão no Bridge
+            # O Baileys vai reutilizar os tokens persistidos em /tokens/<session_name>/
+            current_status = inst.status.value if hasattr(inst.status, "value") else str(inst.status)
+            if current_status == WhatsAppStatus.DISCONNECTED.value:
+                logger.info(
+                    f"🔁 [AutoReconnect] Instância '{inst.session_name}' está DISCONNECTED. "
+                    f"Tentando reconectar via Bridge..."
+                )
+                reconnected = await whatsapp_bridge.create_session(inst.session_name)
+                if reconnected:
+                    inst.status = WhatsAppStatus.CONNECTING
+                    db.commit()
+                    logger.info(f"✅ [AutoReconnect] Sessão '{inst.session_name}' está reconectando.")
+                else:
+                    logger.warning(f"⚠️ [AutoReconnect] Falha ao reconectar '{inst.session_name}'.")
+
