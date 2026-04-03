@@ -601,7 +601,10 @@ app.get('/instance/chat-history', async (req, res) => {
         let messages = [];
         const cachedMsgs = sock.store?.messages?.[jid];
         if (cachedMsgs) {
-            const all = cachedMsgs.array || [];
+            // Compatibilidade com manualStore (Map) e makeInMemoryStore (Array)
+            const all = typeof cachedMsgs.values === 'function' 
+                ? Array.from(cachedMsgs.values()) 
+                : (cachedMsgs.array || []);
             messages = all.slice(-parsedLimit);
         } else {
             // Fallback: carrega do armazenamento local do Baileys
