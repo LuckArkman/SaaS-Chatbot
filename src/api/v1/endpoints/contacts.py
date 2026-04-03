@@ -25,12 +25,52 @@ router = APIRouter()
 # ─────────────────────────────────────────────
 
 @router.get("/", response_model=List[ContactOut])
-def list_contacts(
+async def list_contacts(
     db: Session = Depends(get_db),
     tenant_id: str = Depends(get_current_tenant_id),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
-    """Busca os contatos registrados do Tenant no banco de dados interno."""
+    """Busca os contatos registrados do Tenant no banco de dados interno com Sincronização em Lote do WhatsApp."""
+    try:
+        from src.services.whatsapp_manager_service import WhatsAppManagerService
+        from src.services.whatsapp_bridge_service import whatsapp_bridge
+        
+        instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+        status_val = instance.status.value if hasattr(instance.status, "value") else str(instance.status)
+        
+        if status_val == "CONNECTED":
+            bridge_result = await whatsapp_bridge.list_contacts(session_id=instance.session_name)
+            if bridge_result and bridge_result.get("success"):
+                raw_contacts = bridge_result.get("contacts", [])
+                
+                # Otimiza verificação com um Set de telefones já conhecidos
+                existing_phones = {
+                    c.phone_number for c in 
+                    db.query(Contact.phone_number).filter(Contact.tenant_id == tenant_id).all()
+                }
+                
+                new_db_contacts = []
+                for c in raw_contacts:
+                    phone = c.get("phone")
+                    if phone and phone not in existing_phones:
+                        # Fallback seguro para o nome
+                        final_name = c.get("name") or c.get("short_name") or f"WhatsApp {phone[-4:]}"
+                        new_db_contacts.append(Contact(
+                            tenant_id=tenant_id,
+                            phone_number=phone,
+                            full_name=final_name,
+                            is_blacklisted=False
+                        ))
+                    if phone:
+                        existing_phones.add(phone)
+                        
+                if new_db_contacts:
+                    db.bulk_save_objects(new_db_contacts)
+                    db.commit()
+                    logger.info(f"🔄 Sincronizados {len(new_db_contacts)} novos contatos do WhatsApp para o Banco Local.")
+    except Exception as e:
+        logger.error(f"Erro ao auto-sincronizar contatos do WhatsApp: {e}")
+
     return db.query(Contact).filter(Contact.tenant_id == tenant_id).all()
 
 
