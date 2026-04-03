@@ -74,7 +74,7 @@ async def list_chat_history(
     # Restauração automática de histórico do WhatsApp Web
     try:
         instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
-        status_val = str(getattr(instance.status, "value", instance.status))
+        status_val = str(getattr(instance.status, "value", instance.status)).upper()
         if status_val == "CONNECTED":
             normalized_jid = target_phone if "@" in target_phone else f"{target_phone}@s.whatsapp.net"
             history_response = await whatsapp_bridge.get_chat_history(
@@ -188,12 +188,12 @@ async def list_conversations(
 
     # 1. Resolve a instância ativa do Tenant
     instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
-    status_str = instance.status.value if hasattr(instance.status, "value") else str(instance.status)
+    status_str = str(getattr(instance.status, "value", instance.status)).upper()
 
     if status_str != "CONNECTED":
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"O agente WhatsApp não está conectado. Status atual: {status_str}. Conecte o bot antes de listar conversas."
+            detail=f"O agente WhatsApp não está conectado. Status atual: {status_str.lower()}. Conecte o bot antes de listar conversas."
         )
 
     # 2. Consulta o Bridge diretamente
@@ -251,12 +251,12 @@ async def get_conversation_history(
 
     # 1. Resolve a instância ativa
     instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
-    status_str = instance.status.value if hasattr(instance.status, "value") else str(instance.status)
+    status_str = str(getattr(instance.status, "value", instance.status)).upper()
 
     if status_str != "CONNECTED":
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"O agente WhatsApp não está conectado. Status atual: {status_str}."
+            detail=f"O agente WhatsApp não está conectado. Status atual: {status_str.lower()}."
         )
 
     # 2. Normaliza o JID se passou apenas o número

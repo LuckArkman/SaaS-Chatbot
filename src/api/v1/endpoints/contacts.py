@@ -36,7 +36,7 @@ async def list_contacts(
         from src.services.whatsapp_bridge_service import whatsapp_bridge
         
         instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
-        status_val = instance.status.value if hasattr(instance.status, "value") else str(instance.status)
+        status_val = str(getattr(instance.status, "value", instance.status)).upper()
         
         if status_val == "CONNECTED":
             bridge_result = await whatsapp_bridge.list_contacts(session_id=instance.session_name)
@@ -145,12 +145,12 @@ async def add_whatsapp_contact(
     # 1. Recupera a instância ativa do Tenant
     instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
 
-    status_val = instance.status.value if hasattr(instance.status, "value") else str(instance.status)
-    if status_val != WhatsAppStatus.CONNECTED.value:
+    status_val = str(getattr(instance.status, "value", instance.status)).upper()
+    if status_val != "CONNECTED":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"O agente não está conectado ao WhatsApp (estado atual: {status_val}). "
+                f"O agente não está conectado ao WhatsApp (estado atual: {status_val.lower()}). "
                 "Inicie o bot e conecte-o antes de adicionar contatos."
             ),
         )
@@ -239,12 +239,12 @@ async def list_whatsapp_contacts(
     # 1. Recupera a instância ativa
     instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
 
-    status_val = instance.status.value if hasattr(instance.status, "value") else str(instance.status)
-    if status_val != WhatsAppStatus.CONNECTED.value:
+    status_val = str(getattr(instance.status, "value", instance.status)).upper()
+    if status_val != "CONNECTED":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"O agente não está conectado ao WhatsApp (estado atual: {status_val}). "
+                f"O agente não está conectado ao WhatsApp (estado atual: {status_val.lower()}). "
                 "Inicie e conecte o bot antes de listar contatos."
             ),
         )
