@@ -59,6 +59,7 @@ class FlowWorker:
 
             # 🟢 Notificação Real-time imediata para todos os Agentes (Front-End via Broadcast UI)
             await ws_manager.send_to_conversation(tenant_id, contact_phone, {
+                "type": "new_message",
                 "content": user_input,
                 "side": "client",
                 "timestamp": data.get("timestamp")

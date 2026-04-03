@@ -48,8 +48,9 @@ class ConnectionManager:
         Envia mensagem para todos os agentes que estão 'ouvindo' uma conversa específica.
         Estratégia de Broadcast por Tenant para manter a UI sincronizada.
         """
+        event_type = message.get("type", "conversation_update")
         await self.broadcast_to_tenant(tenant_id, {
-            "type": "conversation_update",
+            "type": event_type,
             "conversation_id": conversation_id,
             "data": message
         })
