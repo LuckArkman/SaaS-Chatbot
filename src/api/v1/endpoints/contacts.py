@@ -7,7 +7,7 @@ from src.services.whatsapp_bridge_service import whatsapp_bridge
 from src.services.whatsapp_manager_service import WhatsAppManagerService
 from src.schemas.contact import (
     ContactCreate, ContactOut, TagOut,
-    WhatsAppContactAdd, WhatsAppContactAddOut, WhatsAppContactListOut,
+    WhatsAppContactAdd, WhatsAppContactUpdate, WhatsAppContactAddOut, WhatsAppContactListOut,
     WhatsAppContactVerified,
 )
 from src.api import deps
@@ -235,18 +235,20 @@ async def list_whatsapp_contacts(
     )
 
 
+import re
+
 @router.put(
     "/whatsapp/{phone}",
     response_model=ContactOut,
     summary="Editar contato no WhatsApp e no Banco",
     description=(
-        "Edita o nome do contato diretamente no agente WhatsApp conectado, "
-        "modificando a visualização em cache/nativo do bot, e sincroniza isso no Postgres local."
+        "Edita o nome do contato localmente no banco garantindo a higienização da string, "
+        "e sincroniza as modificações visuais no cache em tempo real para o Baileys."
     ),
 )
 async def edit_whatsapp_contact(
     phone: str,
-    payload: WhatsAppContactAdd,
+    payload: WhatsAppContactUpdate,
     db: Session = Depends(get_db),
     tenant_id: str = Depends(get_current_tenant_id),
     current_user: Any = Depends(deps.get_current_active_user),
@@ -278,8 +280,8 @@ async def edit_whatsapp_contact(
         )
 
     # 3. Atualiza Postgres local
-    # Remove símbolos pra alinhar com banco (se necessitar)
-    normalized_phone = phone.replace("+", "").replace("-", "").replace(" ", "")
+    # Remove qualquer coisa que não seja dígito
+    normalized_phone = re.sub(r'\D', '', phone)
     existing = db.query(Contact).filter(
         Contact.tenant_id == tenant_id,
         Contact.phone_number == normalized_phone,
@@ -342,7 +344,7 @@ async def delete_whatsapp_contact(
         )
 
     # 3. Deleta no Postgres
-    normalized_phone = phone.replace("+", "").replace("-", "").replace(" ", "")
+    normalized_phone = re.sub(r'\D', '', phone)
     existing = db.query(Contact).filter(
         Contact.tenant_id == tenant_id,
         Contact.phone_number == normalized_phone,

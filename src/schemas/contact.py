@@ -49,6 +49,11 @@ class WhatsAppContactAdd(BaseModel):
         return v
 
 
+class WhatsAppContactUpdate(BaseModel):
+    """Payload para atualizar contato sem obrigatoriedade do telefone no body."""
+    name: str
+
+
 class WhatsAppContactVerified(BaseModel):
     """Contato verificado/retornado pelo Bridge."""
     jid: str
