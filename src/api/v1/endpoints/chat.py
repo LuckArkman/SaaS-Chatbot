@@ -58,13 +58,25 @@ async def list_chat_history(
     """Busca o histórico de mensagens de uma conversa específica."""
     from src.services.whatsapp_bridge_service import whatsapp_bridge
     from src.services.whatsapp_manager_service import WhatsAppManagerService
+    from src.models.chat import Conversation
+    
+    # 0. O frontend muitas vezes passa o ID físico da conversa ('id': 1) em vez do telefone. Resolvemos aqui.
+    target_phone = conversation_id
+    if conversation_id.isdigit() and len(conversation_id) < 10:
+        conv = db.query(Conversation).filter(
+            Conversation.id == int(conversation_id), 
+            Conversation.tenant_id == tenant_id
+        ).first()
+        if not conv:
+            return []
+        target_phone = conv.contact_phone
     
     # Restauração automática de histórico do WhatsApp Web
     try:
         instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
         status_val = str(getattr(instance.status, "value", instance.status))
         if status_val == "CONNECTED":
-            normalized_jid = conversation_id if "@" in conversation_id else f"{conversation_id}@s.whatsapp.net"
+            normalized_jid = target_phone if "@" in target_phone else f"{target_phone}@s.whatsapp.net"
             history_response = await whatsapp_bridge.get_chat_history(
                 session_id=instance.session_name, 
                 jid=normalized_jid, 
@@ -74,11 +86,11 @@ async def list_chat_history(
                 msgs = history_response.get("messages", [])
                 if msgs:
                     # Injeta silenciosamente no banco
-                    await MessageHistoryService.sync_bridge_history(db, conversation_id, msgs)
+                    await MessageHistoryService.sync_bridge_history(db, target_phone, msgs)
     except Exception as e:
         logger.warning(f"Não foi possível sincronizar o histórico pré-cadastro com o WhatsApp: {e}")
 
-    return MessageHistoryService.list_history(db, conversation_id, limit, offset)
+    return MessageHistoryService.list_history(db, target_phone, limit, offset)
 
 @router.post("/transfer/{conversation_id}", status_code=status.HTTP_200_OK)
 async def transfer_chat_endpoint(
