@@ -138,6 +138,61 @@ class MessageHistoryService:
         ).order_by(Message.created_at.desc()).offset(offset).limit(limit).all()
 
     @staticmethod
+    async def sync_bridge_history(db: Session, contact_phone: str, bridge_messages: List[dict]):
+        """
+        Injeta o histórico bruto vindo da Bridge no banco de dados local.
+        Usado para restaurar histórico retroativo de quando a plataforma não estava conectada.
+        """
+        from datetime import datetime
+        conversation = MessageHistoryService.get_or_create_conversation(db, contact_phone)
+        
+        # Pega IDs externos existentes para evitar dublagem
+        existing_ids = {
+            m.external_id for m in db.query(Message.external_id).filter(
+                Message.conversation_id == conversation.id,
+                Message.external_id.isnot(None)
+            ).all()
+        }
+        
+        new_msgs = []
+        for b_msg in bridge_messages:
+            msg_id = b_msg.get("message_id")
+            if msg_id in existing_ids:
+                continue
+                
+            from_me = b_msg.get("from_me", False)
+            side = MessageSide.BOT if from_me else MessageSide.CLIENT
+            content = b_msg.get("content", "")
+            msg_type = b_msg.get("type", "text")
+            
+            # Timestamp (se houver e for válido)
+            ts = b_msg.get("timestamp")
+            created_dt = datetime.utcnow()
+            if ts:
+                try:
+                    created_dt = datetime.fromtimestamp(int(ts))
+                except Exception:
+                    pass
+
+            message = Message(
+                conversation_id=conversation.id,
+                side=side,
+                content=content,
+                type=msg_type,
+                external_id=msg_id,
+                status=MessageStatus.DELIVERED if from_me else MessageStatus.READ,
+                created_at=created_dt
+            )
+            new_msgs.append(message)
+            
+        if new_msgs:
+            # Reverte a lista, pois o frontend as vezes exibe ao contrario ou as msgs vem fora de ordem 
+            # A inserção em massa garante agilidade
+            db.bulk_save_objects(new_msgs)
+            db.commit()
+            logger.info(f"🔄 Restauradas {len(new_msgs)} mensagens antigas do WhatsApp para a conversa de {contact_phone}")
+
+    @staticmethod
     def list_conversations(
         db: Session,
         tenant_id: str,

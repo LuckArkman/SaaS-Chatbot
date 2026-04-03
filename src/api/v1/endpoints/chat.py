@@ -56,6 +56,28 @@ async def list_chat_history(
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """Busca o histórico de mensagens de uma conversa específica."""
+    from src.services.whatsapp_bridge_service import whatsapp_bridge
+    from src.services.whatsapp_manager_service import WhatsAppManagerService
+    
+    # Restauração automática de histórico do WhatsApp Web
+    try:
+        instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+        status_val = str(getattr(instance.status, "value", instance.status))
+        if status_val == "CONNECTED":
+            normalized_jid = conversation_id if "@" in conversation_id else f"{conversation_id}@s.whatsapp.net"
+            history_response = await whatsapp_bridge.get_chat_history(
+                session_id=instance.session_name, 
+                jid=normalized_jid, 
+                limit=limit
+            )
+            if history_response.get("success"):
+                msgs = history_response.get("messages", [])
+                if msgs:
+                    # Injeta silenciosamente no banco
+                    await MessageHistoryService.sync_bridge_history(db, conversation_id, msgs)
+    except Exception as e:
+        logger.warning(f"Não foi possível sincronizar o histórico pré-cadastro com o WhatsApp: {e}")
+
     return MessageHistoryService.list_history(db, conversation_id, limit, offset)
 
 @router.post("/transfer/{conversation_id}", status_code=status.HTTP_200_OK)

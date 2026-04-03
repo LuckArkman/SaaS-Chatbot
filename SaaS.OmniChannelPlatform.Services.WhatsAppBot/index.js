@@ -125,6 +125,27 @@ async function connectToWhatsApp(sessionId) {
                     if (c.id) this.contacts[c.id] = { ...(this.contacts[c.id] || {}), ...c };
                 }
             });
+            // ✅ CRÍTICO: Persiste o histórico maciço recebido durante a conexão (QR Code Linking)
+            ev.on('messaging-history.set', ({ chats, contacts, messages }) => {
+                if (chats) {
+                    for (const chat of chats) {
+                        this.chats[chat.id] = chat;
+                    }
+                }
+                if (contacts) {
+                    for (const contact of contacts) {
+                        if (contact.id) this.contacts[contact.id] = contact;
+                    }
+                }
+                if (messages) {
+                    for (const msg of messages) {
+                        if (!msg.key?.remoteJid || !msg.key?.id) continue;
+                        const jid = msg.key.remoteJid;
+                        if (!this.messages[jid]) this.messages[jid] = new Map();
+                        this.messages[jid].set(msg.key.id, msg);
+                    }
+                }
+            });
         },
 
         // Compatível com a propriedade .chats.all() usada em /instance/chats
@@ -605,10 +626,14 @@ app.get('/instance/chat-history', async (req, res) => {
             const all = typeof cachedMsgs.values === 'function' 
                 ? Array.from(cachedMsgs.values()) 
                 : (cachedMsgs.array || []);
+            
+            // Ordena cronologicamente antes de fatiar para garantir o fluxo de tempo correto na UI
+            all.sort((a, b) => (a.messageTimestamp || 0) - (b.messageTimestamp || 0));
             messages = all.slice(-parsedLimit);
         } else {
-            // Fallback: carrega do armazenamento local do Baileys
-            messages = await sock.loadMessages(jid, parsedLimit);
+            // Fallback: Se não tem no cache do manualStore, não temos o histórico imediatamente carregado.
+            // Para não quebrar (sock.loadMessages não é padrão default Baileys em manualStore), retornamos array vazio.
+            messages = [];
         }
 
         const formatted = messages
