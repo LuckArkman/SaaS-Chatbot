@@ -233,3 +233,123 @@ async def list_whatsapp_contacts(
         total=total,
         contacts=contacts_out,
     )
+
+
+@router.put(
+    "/whatsapp/{phone}",
+    response_model=ContactOut,
+    summary="Editar contato no WhatsApp e no Banco",
+    description=(
+        "Edita o nome do contato diretamente no agente WhatsApp conectado, "
+        "modificando a visualização em cache/nativo do bot, e sincroniza isso no Postgres local."
+    ),
+)
+async def edit_whatsapp_contact(
+    phone: str,
+    payload: WhatsAppContactAdd,
+    db: Session = Depends(get_db),
+    tenant_id: str = Depends(get_current_tenant_id),
+    current_user: Any = Depends(deps.get_current_active_user),
+) -> Any:
+    # 1. Recupera a instância ativa
+    instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+
+    status_val = instance.status.value if hasattr(instance.status, "value") else str(instance.status)
+    if status_val != WhatsAppStatus.CONNECTED.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Agente não está conectado ao WhatsApp. Conecte o bot antes de editar contatos."
+        )
+
+    # 2. Chama Bridge (Node)
+    if not payload.name:
+         raise HTTPException(status_code=400, detail="O nome é obrigatório para edição.")
+
+    bridge_result = await whatsapp_bridge.edit_contact(
+        session_id=instance.session_name,
+        phone=phone,
+        name=payload.name
+    )
+
+    if not bridge_result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Falha ao editar contato via Bridge: {bridge_result.get('error')}"
+        )
+
+    # 3. Atualiza Postgres local
+    # Remove símbolos pra alinhar com banco (se necessitar)
+    normalized_phone = phone.replace("+", "").replace("-", "").replace(" ", "")
+    existing = db.query(Contact).filter(
+        Contact.tenant_id == tenant_id,
+        Contact.phone_number == normalized_phone,
+    ).first()
+
+    if existing:
+        existing.full_name = payload.name
+        db.commit()
+        db.refresh(existing)
+    else:
+        # Cria se não existir e o cara tentou editar a partir da Bridge
+        existing = Contact(
+            tenant_id=tenant_id,
+            phone_number=normalized_phone,
+            full_name=payload.name,
+            is_blacklisted=False,
+        )
+        db.add(existing)
+        db.commit()
+        db.refresh(existing)
+
+    return existing
+
+
+@router.delete(
+    "/whatsapp/{phone}",
+    status_code=status.HTTP_200_OK,
+    summary="Deletar contato do WhatsApp e do Banco",
+    description=(
+        "Deleta o contato localmente na VPS do agente (Baileys) removendo o cache para que pare de listar no WhatsApp, "
+        "e tenta forçar limpar o Chat fisicamente. Também remove do PostgreSQL interno."
+    ),
+)
+async def delete_whatsapp_contact(
+    phone: str,
+    db: Session = Depends(get_db),
+    tenant_id: str = Depends(get_current_tenant_id),
+    current_user: Any = Depends(deps.get_current_active_user),
+) -> Any:
+    # 1. Recupera a instância ativa
+    instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+
+    status_val = instance.status.value if hasattr(instance.status, "value") else str(instance.status)
+    if status_val != WhatsAppStatus.CONNECTED.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Agente não está conectado ao WhatsApp."
+        )
+
+    # 2. Chama Bridge
+    bridge_result = await whatsapp_bridge.delete_contact(
+        session_id=instance.session_name,
+        phone=phone
+    )
+
+    if not bridge_result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Falha ao deletar contato via Bridge: {bridge_result.get('error')}"
+        )
+
+    # 3. Deleta no Postgres
+    normalized_phone = phone.replace("+", "").replace("-", "").replace(" ", "")
+    existing = db.query(Contact).filter(
+        Contact.tenant_id == tenant_id,
+        Contact.phone_number == normalized_phone,
+    ).first()
+
+    if existing:
+        db.delete(existing)
+        db.commit()
+
+    return {"success": True, "message": f"Contato {normalized_phone} excuído com sucesso."}

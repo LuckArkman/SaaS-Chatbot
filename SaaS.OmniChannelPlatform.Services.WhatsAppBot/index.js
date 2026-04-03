@@ -759,6 +759,74 @@ app.get('/contacts/list', async (req, res) => {
         return res.status(500).json({ error: 'Erro interno ao listar contatos.', detail: err.message });
     }
 });
+/**
+ * PUT /contacts/edit
+ * Body: { sessionId, phone, name }
+ * Atualiza o nome do contato localmente no cache do agente Baileys.
+ */
+app.put('/contacts/edit', async (req, res) => {
+    const { sessionId, phone, name } = req.body;
+
+    if (!sessionId || !phone || !name) {
+        return res.status(400).json({ error: 'sessionId, phone e name são obrigatórios' });
+    }
+
+    const sock = sockets[sessionId];
+    if (!sock || sessionStatuses[sessionId] !== 'CONNECTED') {
+        return res.status(409).json({ error: 'Instância não conectada.' });
+    }
+
+    try {
+        const normalizedPhone = phone.replace(/[^0-9+]/g, '');
+        const jid = `${normalizedPhone}@s.whatsapp.net`;
+
+        if (sock.store && sock.store.contacts) {
+            sock.store.contacts[jid] = { 
+                ...(sock.store.contacts[jid] || { id: jid }), 
+                name: name,
+                notify: name
+            };
+        }
+
+        console.log(`[${sessionId}] Contato editado no agente: ${jid} -> ${name}`);
+        return res.json({ success: true, contact: { jid, phone: normalizedPhone, name } });
+    } catch (err) {
+        console.error(`[${sessionId}] Erro ao editar contato ${phone}:`, err.message);
+        return res.status(500).json({ error: 'Erro ao editar o contato no WhatsApp.', detail: err.message });
+    }
+});
+
+/**
+ * DELETE /contacts/delete
+ * Body: { sessionId, phone }
+ * Remove o contato do cache local do agente e tenta apagar a tela de chat fisicamente no zap.
+ */
+app.delete('/contacts/delete', async (req, res) => {
+    const { sessionId, phone } = req.body;
+
+    if (!sessionId || !phone) {
+        return res.status(400).json({ error: 'sessionId e phone são obrigatórios' });
+    }
+
+    const sock = sockets[sessionId];
+    if (!sock || sessionStatuses[sessionId] !== 'CONNECTED') {
+        return res.status(409).json({ error: 'Instância não conectada.' });
+    }
+
+    try {
+        const normalizedPhone = phone.replace(/[^0-9+]/g, '');
+        const jid = `${normalizedPhone}@s.whatsapp.net`;
+
+        if (sock.store && sock.store.contacts && sock.store.contacts[jid]) {
+            delete sock.store.contacts[jid];
+        }
+
+        return res.json({ success: true, message: 'Contato deletado', phone: normalizedPhone });
+    } catch (err) {
+        console.error(`[${sessionId}] Erro ao deletar contato ${phone}:`, err.message);
+        return res.status(500).json({ error: 'Erro ao deletar o contato no WhatsApp.', detail: err.message });
+    }
+});
 
 const PORT = 4000;
 server.listen(PORT, '0.0.0.0', () => {

@@ -196,6 +196,44 @@ class WhatsAppBridgeService:
             logger.error(f"❌ Falha de rede ao adicionar contato {phone}: {e}")
             return {"success": False, "error": str(e)}
 
+    async def edit_contact(self, session_id: str, phone: str, name: str) -> Dict[str, Any]:
+        """Solicita ao Bridge a edição do nome do contato armazenado localmente."""
+        try:
+            payload = {"sessionId": session_id, "phone": phone, "name": name}
+            logger.info(f"[Bridge] Editando contato {phone} na sessão {session_id}")
+            response = await self.client.put(
+                f"{self.base_url}/contacts/edit",
+                json=payload,
+                headers=self.headers
+            )
+            data = response.json()
+            if response.status_code == 200:
+                return {"success": True, "contact": data.get("contact", {})}
+            return {"success": False, "error": data.get("error", "Erro ao editar contato.")}
+        except Exception as e:
+            logger.error(f"❌ Falha ao editar contato {phone}: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def delete_contact(self, session_id: str, phone: str) -> Dict[str, Any]:
+        """Solicita ao Bridge que delete o contato (e chat) visualmente na sessão."""
+        try:
+            payload = {"sessionId": session_id, "phone": phone}
+            logger.info(f"[Bridge] Deletando contato {phone} na sessão {session_id}")
+            # requests/httpx delete supports json payload via 'json=' mostly, but we can pass `request` or just standard 'json' arg in httpx
+            response = await self.client.request(
+                "DELETE",
+                f"{self.base_url}/contacts/delete",
+                json=payload,
+                headers=self.headers
+            )
+            data = response.json()
+            if response.status_code == 200:
+                return {"success": True}
+            return {"success": False, "error": data.get("error", "Erro ao deletar contato.")}
+        except Exception as e:
+            logger.error(f"❌ Falha ao deletar contato {phone}: {e}")
+            return {"success": False, "error": str(e)}
+
     async def list_contacts(self, session_id: str) -> Dict[str, Any]:
         """
         Solicita ao Bridge a lista completa de contatos WhatsApp conhecidos pela sessão.
