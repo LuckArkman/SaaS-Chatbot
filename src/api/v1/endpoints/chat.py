@@ -90,6 +90,32 @@ async def list_chat_history(
     except Exception as e:
         logger.warning(f"Não foi possível sincronizar o histórico pré-cadastro com o WhatsApp: {e}")
 
+    # 1.5. Sincronização do Histórico do MongoDB (Fallback do Sprint 40 Restore)
+    try:
+        from src.services.chat_service import ChatService
+        from src.models.mongo.chat import MessageSource
+        
+        mongo_history = await ChatService.get_history(tenant_id, target_phone, limit=500)
+        # Resgata também as mensagens que acabaram salvas erroneamente com ID ao invés de telefone
+        if conversation_id != target_phone:
+            mongo_history.extend(await ChatService.get_history(tenant_id, conversation_id, limit=500))
+        
+        mongo_msgs = []
+        for doc in mongo_history:
+            src_val = doc.source.value if hasattr(doc.source, "value") else str(doc.source)
+            mongo_msgs.append({
+                "message_id": doc.external_id or str(doc.id),
+                "from_me": (src_val == "agent" or src_val == "bot"),
+                "content": doc.content,
+                "type": getattr(doc, "message_type", "text"),
+                "timestamp": doc.timestamp.timestamp() if doc.timestamp else None
+            })
+            
+        if mongo_msgs:
+            await MessageHistoryService.sync_bridge_history(db, target_phone, mongo_msgs)
+    except Exception as e:
+        logger.error(f"Erro ao sincronizar Mongo DB para Postgres: {e}")
+
     return MessageHistoryService.list_history(db, target_phone, limit, offset)
 
 @router.post("/transfer/{conversation_id}", status_code=status.HTTP_200_OK)
