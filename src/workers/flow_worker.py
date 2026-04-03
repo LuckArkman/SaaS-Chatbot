@@ -57,6 +57,13 @@ class FlowWorker:
                     session_name=f"tenant_{tenant_id}" # Tagged for restoration
                 )
 
+            # 🟢 Notificação Real-time imediata para todos os Agentes (Front-End via Broadcast UI)
+            await ws_manager.send_to_conversation(tenant_id, contact_phone, {
+                "content": user_input,
+                "side": "client",
+                "timestamp": data.get("timestamp")
+            })
+
             # 2. Busca Fluxo Ativo para o Tenant (Regras de Prioridade .NET)
             flow = await FlowDocument.find_one(
                 FlowDocument.tenant_id == tenant_id,
@@ -76,12 +83,7 @@ class FlowWorker:
 
             # --- 🟢 Lógica de Handover (Sprint 21) ---
             if session.is_human_support:
-                logger.debug(f"👥 Handover ativo para {contact_phone}. Repassando para Agentes...")
-                await ws_manager.send_to_conversation(tenant_id, contact_phone, {
-                    "content": user_input,
-                    "side": "client",
-                    "timestamp": data.get("timestamp")
-                })
+                logger.debug(f"👥 Handover ativo para {contact_phone}. O Agente Humano assumiu o chat.")
                 await SessionService.update_session(session)
                 return
 
