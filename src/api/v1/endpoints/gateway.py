@@ -96,19 +96,25 @@ def normalize_webhook_payload(raw: dict) -> dict:
     return normalized
 
 
+from fastapi import Request
+
 @router.post("/webhook/{channel_type}", status_code=status.HTTP_202_ACCEPTED)
 async def incoming_webhook(
     channel_type: str,
-    payload: dict,  # Recebemos como dict para parsing flexível de diferentes canais
+    request: Request,
     api_key: str = Depends(verify_gateway_key)
 ) -> Any:
     """
     Endpoint de Webhook especializado para WhatsApp (Venom/Evolution) e outros canais.
 
     Aceita tanto o formato canônico do Bridge Baileys quanto o formato do painel
-    UTalk/simulador (que envia 'event: messages.upsert' e 'data: {...}').
-    O tenant_id é extraído do JWT/Header pelo middleware, ou do body como fallback.
+    UTalk/simulador.
     """
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
     # ─── Resolução de Tenant ID ───────────────────────────────────────────────
     # Prioridade: 1) Middleware (JWT/Header) → 2) Campo 'tenant_id' no body
     tenant_id = get_current_tenant_id()
