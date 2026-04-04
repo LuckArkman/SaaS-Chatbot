@@ -60,9 +60,11 @@ async def list_chat_history(
     from src.services.whatsapp_manager_service import WhatsAppManagerService
     from src.models.chat import Conversation
     
-    # 0. O frontend muitas vezes passa o ID físico da conversa ('id': 1) em vez do telefone. Resolvemos aqui.
+    # 0. O frontend muitas vezes passa o ID físico da conversa ('id': 1) ou um JID ('xxx@s.whatsapp.net') em vez do telefone limpo.
     target_phone = conversation_id
-    if conversation_id.isdigit() and len(conversation_id) < 10:
+    if "@" in conversation_id:
+        target_phone = conversation_id.split("@")[0]
+    elif conversation_id.isdigit() and len(conversation_id) < 10:
         conv = db.query(Conversation).filter(
             Conversation.id == int(conversation_id), 
             Conversation.tenant_id == tenant_id
