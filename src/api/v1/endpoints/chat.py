@@ -289,10 +289,12 @@ async def get_conversation_history(
         serialized: List[Dict[str, Any]] = []
         for doc in messages:
             src_val = doc.source.value if hasattr(doc.source, "value") else str(doc.source)
+            is_from_me = src_val in ("agent", "bot", "human", "system")
             serialized.append({
                 "message_id": doc.external_id or str(doc.id),
-                "from_me": src_val in ("agent", "bot", "human"),
-                "sender": instance.session_name if src_val in ("agent", "bot", "human") else target_phone,
+                "from_me": is_from_me,
+                "side": "bot" if is_from_me else "client",
+                "sender": instance.session_name if is_from_me else target_phone,
                 "content": doc.content,
                 "type": getattr(doc, "message_type", "text"),
                 "timestamp": doc.timestamp.timestamp() if doc.timestamp else None,

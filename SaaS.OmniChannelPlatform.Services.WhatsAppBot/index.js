@@ -263,7 +263,7 @@ async function connectToWhatsApp(sessionId) {
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type === 'notify') {
             for (const msg of messages) {
-                if (!msg.key.fromMe && msg.message) {
+                if (msg.message) {
                     try {
                         const content =
                             msg.message.conversation ||
@@ -275,7 +275,6 @@ async function connectToWhatsApp(sessionId) {
                         const webhookUrl = process.env.WEBHOOK_URL || 'http://127.0.0.1:8001/api/v1/gateway/webhook/whatsapp';
                         const headers = { 'x-api-key': 'SaaS_Secret_Gateway_Key_2026' };
 
-                        // ✅ Envelope correto esperado pelo gateway.py (WhatsAppPayload schema)
                         const envelope = {
                             event: 'on_message',
                             session: sessionId,
@@ -286,6 +285,7 @@ async function connectToWhatsApp(sessionId) {
                                 type:       'chat',
                                 isGroupMsg: msg.key.remoteJid?.endsWith('@g.us') || false,
                                 pushName:   msg.pushName || null,
+                                fromMe:     msg.key.fromMe || false,
                                 timestamp:  msg.messageTimestamp || Math.floor(Date.now() / 1000)
                             }
                         };
@@ -566,15 +566,19 @@ app.get('/instance/chats', async (req, res) => {
                 const tsB = b.conversationTimestamp || b.lastMsgTimestamp || 0;
                 return tsB - tsA; // Mais recentes primeiro
             })
-            .map(chat => ({
-                id: chat.id,                  // JID completo ex: 5511999999999@s.whatsapp.net
-                phone: chat.id.split('@')[0],  // Número limpo
-                name: chat.name || null,
-                unread_count: chat.unreadCount || 0,
-                last_message_timestamp: chat.conversationTimestamp || chat.lastMsgTimestamp || null,
-                is_group: chat.id.endsWith('@g.us'),
-                pinned: chat.pinned || false
-            }));
+            .map(chat => {
+                const contactFallback = sock.store?.contacts?.[chat.id];
+                const realName = chat.name || contactFallback?.name || contactFallback?.notify || null;
+                return {
+                    id: chat.id,                  // JID completo ex: 5511999999999@s.whatsapp.net
+                    phone: chat.id.split('@')[0],  // Número limpo
+                    name: realName,
+                    unread_count: chat.unreadCount || 0,
+                    last_message_timestamp: chat.conversationTimestamp || chat.lastMsgTimestamp || null,
+                    is_group: chat.id.endsWith('@g.us'),
+                    pinned: chat.pinned || false
+                };
+            });
 
         console.log(`[${sessionId}] Lista de chats solicitada: ${chats.length} conversa(s).`);
 
