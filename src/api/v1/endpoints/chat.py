@@ -255,33 +255,95 @@ async def get_conversation_history(
     instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
     status_str = str(getattr(instance.status, "value", instance.status)).upper()
 
-    if status_str != "CONNECTED":
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"O agente WhatsApp não está conectado. Status atual: {status_str.lower()}."
-        )
-
     # 2. Normaliza o JID se passou apenas o número
     normalized_jid = jid if "@" in jid else f"{jid}@s.whatsapp.net"
+    target_phone = normalized_jid.split("@")[0]
 
-    # 3. Consulta o Bridge diretamente
-    result = await whatsapp_bridge.get_chat_history(
-        session_id=instance.session_name,
-        jid=normalized_jid,
-        limit=limit
-    )
-
-    if not result.get("success"):
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Falha ao obter histórico do agente: {result.get('error', 'Erro desconhecido')}"
+    # 3. Tenta restaurar a conversa pelo Bridge quando o bot estiver conectado.
+    #    Se o Bridge não devolver histórico, o fallback local continua atendendo
+    #    a rota com o que já estiver persistido em Postgres/Mongo.
+    bridge_messages: List[Dict[str, Any]] = []
+    if status_str == "CONNECTED":
+        result = await whatsapp_bridge.get_chat_history(
+            session_id=instance.session_name,
+            jid=normalized_jid,
+            limit=limit
         )
 
+        if result.get("success"):
+            bridge_messages = result.get("messages", [])
+            if bridge_messages:
+                await MessageHistoryService.sync_bridge_history(db, target_phone, bridge_messages)
+        else:
+            logger.warning(
+                f"Falha ao obter histórico do Bridge para {normalized_jid}: "
+                f"{result.get('error', 'erro desconhecido')}"
+            )
+    else:
+        logger.info(
+            f"Bridge indisponível para restauração de histórico de {normalized_jid} "
+            f"(status atual: {status_str.lower()}). Usando persistência local."
+        )
+
+    # 4. Fallback de restauração a partir do Mongo, caso a conversa ainda
+    #    não esteja completa no Postgres ou o Bridge não tenha histórico útil.
+    try:
+        mongo_history = await ChatService.get_history(tenant_id, target_phone, limit=500)
+        if mongo_history:
+            mongo_msgs = []
+            for doc in mongo_history:
+                src_val = doc.source.value if hasattr(doc.source, "value") else str(doc.source)
+                mongo_msgs.append({
+                    "message_id": doc.external_id or str(doc.id),
+                    "from_me": (src_val in ("agent", "bot", "human")),
+                    "content": doc.content,
+                    "type": getattr(doc, "message_type", "text"),
+                    "timestamp": doc.timestamp.timestamp() if doc.timestamp else None
+                })
+
+            if mongo_msgs:
+                await MessageHistoryService.sync_bridge_history(db, target_phone, mongo_msgs)
+    except Exception as e:
+        logger.error(f"Falha ao restaurar histórico a partir do Mongo para {normalized_jid}: {e}")
+
+    # 5. Retorna o histórico consolidado já persistido no banco.
+    conversation = MessageHistoryService.get_or_create_conversation(db, target_phone)
+    detail = MessageHistoryService.get_conversation_detail(
+        db,
+        tenant_id,
+        conversation.id,
+        limit=limit,
+        offset=0
+    )
+
+    if not detail:
+        return {
+            "jid": normalized_jid,
+            "phone": target_phone,
+            "total_messages": 0,
+            "has_more": False,
+            "messages": []
+        }
+
     return {
-        "jid": result.get("jid"),
-        "phone": result.get("phone"),
-        "total_messages": result.get("total"),
-        "has_more": result.get("has_more", False),
-        "messages": result.get("messages", [])
+        "jid": normalized_jid,
+        "phone": target_phone,
+        "total_messages": detail["total_messages"],
+        "has_more": detail["has_more"],
+        "messages": [
+            {
+                "id": msg.id,
+                "conversation_id": msg.conversation_id,
+                "content": msg.content,
+                "side": msg.side,
+                "type": msg.type,
+                "external_id": msg.external_id,
+                "created_at": msg.created_at,
+                "is_read": msg.is_read,
+                "agent_id": msg.agent_id,
+                "status": msg.status
+            }
+            for msg in detail["messages"]
+        ]
     }
 
