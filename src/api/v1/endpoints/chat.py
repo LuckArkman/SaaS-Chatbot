@@ -59,19 +59,13 @@ async def list_chat_history(
     from src.services.whatsapp_bridge_service import whatsapp_bridge
     from src.services.whatsapp_manager_service import WhatsAppManagerService
     from src.models.chat import Conversation
+    from src.services.chat_service import ChatService
     
-    # 0. O frontend muitas vezes passa o ID físico da conversa ('id': 1) ou um JID ('xxx@s.whatsapp.net') em vez do telefone limpo.
-    target_phone = conversation_id
-    if "@" in conversation_id:
-        target_phone = conversation_id.split("@")[0]
-    elif conversation_id.isdigit() and len(conversation_id) < 10:
-        conv = db.query(Conversation).filter(
-            Conversation.id == int(conversation_id), 
-            Conversation.tenant_id == tenant_id
-        ).first()
-        if not conv:
-            return []
-        target_phone = conv.contact_phone
+    # 0. O frontend muitas vezes passa o ID físico de Contato, Conversa ou JID WhatsApp.
+    try:
+        target_phone = await ChatService._resolve_recipient_phone(db, tenant_id, conversation_id)
+    except ValueError:
+        return []
     
     # Restauração automática de histórico do WhatsApp Web
     try:
@@ -241,9 +235,15 @@ async def get_conversation_history(
     instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
     status_str = str(getattr(instance.status, "value", instance.status)).upper()
 
-    # 2. Normaliza o JID se passou apenas o número
-    normalized_jid = jid if "@" in jid else f"{jid}@s.whatsapp.net"
-    target_phone = normalized_jid.split("@")[0]
+    from src.services.chat_service import ChatService
+    
+    # 2. Resolve o contato/conversa dinâmico do frontend
+    try:
+        target_phone = await ChatService._resolve_recipient_phone(db, tenant_id, jid)
+    except ValueError:
+        return {"messages": []}
+    
+    normalized_jid = target_phone if "@" in target_phone else f"{target_phone}@s.whatsapp.net"
 
     async def load_mongo_history(phone: str) -> List[MessageDocument]:
         return await MessageDocument.find(

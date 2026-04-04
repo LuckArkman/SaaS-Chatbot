@@ -5,13 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="1b8efb0b-354b-49b8-ae39-f0bc5a1fb44e" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/brute_test.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/generate_backend_analysis.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/logs/app.log" beforeDir="false" afterPath="$PROJECT_DIR$/logs/app.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/simulate_message.bat" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/api/v1/endpoints/chat.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/api/v1/endpoints/chat.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/services/message_history_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/services/message_history_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_baileys.py" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -41,7 +36,7 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-python-sdk-7bb8055f9097-cbfc7b97e6b2-com.jetbrains.pycharm.community.sharedIndexes.bundled-PC-252.28238.29" />
+        <option value="bundled-python-sdk-ca5e2b39c7df-6e1f45a539f7-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-253.29346.308" />
       </set>
     </attachedChunks>
   </component>
