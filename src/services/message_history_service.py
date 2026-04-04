@@ -154,15 +154,31 @@ class MessageHistoryService:
             ).all()
         }
         
+        # Pega conteúdos existentes localmente onde external_id é null para evitar
+        # duplicação de envios feitos pelo próprio sistema antes de termos o ID oficial
+        existing_local = {
+            (m.content, "local_out" if m.side in [MessageSide.AGENT, MessageSide.BOT, MessageSide.SYSTEM] else "local_in")
+            for m in db.query(Message.content, Message.side).filter(
+                Message.conversation_id == conversation.id,
+                Message.external_id.is_(None)
+            ).all()
+        }
+        
         new_msgs = []
         for b_msg in bridge_messages:
             msg_id = b_msg.get("message_id")
+            from_me = b_msg.get("from_me", False)
+            content = b_msg.get("content", "")
+            
             if msg_id in existing_ids:
                 continue
                 
-            from_me = b_msg.get("from_me", False)
+            outbound_key = "local_out" if from_me else "local_in"
+            if content and (content, outbound_key) in existing_local:
+                # Já temos uma versão enviada gerada por nós sem external_id, evita duplicar
+                continue
+                
             side = MessageSide.BOT if from_me else MessageSide.CLIENT
-            content = b_msg.get("content", "")
             msg_type = b_msg.get("type", "text")
             
             # Timestamp (se houver e for válido)
