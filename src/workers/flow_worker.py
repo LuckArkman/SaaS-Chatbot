@@ -45,6 +45,8 @@ class FlowWorker:
             contact_phone = data.get("from_id")
             user_input = data.get("content", "")
             external_id = data.get("message_id")
+            is_from_me = data.get("from_me", False)
+            computed_side = MessageSide.AGENT if is_from_me else MessageSide.CLIENT
 
             # 🟢 Persistência Postgres + MongoDB (Histórico) antes de qualquer lógica
             with SessionLocal() as db:
@@ -52,16 +54,21 @@ class FlowWorker:
                     db=db,
                     contact_phone=contact_phone,
                     content=user_input,
-                    side=MessageSide.CLIENT,
+                    side=computed_side,
                     external_id=external_id,
                     session_name=f"tenant_{tenant_id}" # Tagged for restoration
                 )
+                # Resolve o ID relacional da Conversa para o Frontend ancorar a UI
+                postgre_conv = MessageHistoryService.get_or_create_conversation(db, contact_phone)
+                conversation_numeric_id = postgre_conv.id if postgre_conv else contact_phone
 
             # 🟢 Notificação Real-time imediata para todos os Agentes (Front-End via Broadcast UI)
-            await ws_manager.send_to_conversation(tenant_id, contact_phone, {
-                "type": "new_message",
+            await ws_manager.send_to_conversation(tenant_id, str(conversation_numeric_id), {
+                "type": "Message.receive",
+                "message_id": external_id,
                 "content": user_input,
-                "side": "client",
+                "from_me": is_from_me,
+                "side": "bot" if is_from_me else "client",
                 "timestamp": data.get("timestamp")
             })
 
