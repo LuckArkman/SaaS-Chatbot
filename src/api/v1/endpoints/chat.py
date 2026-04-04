@@ -218,7 +218,7 @@ async def list_conversations(
     }
 
 
-@router.get("/conversations/{jid:path}")
+@router.get("/conversations/{jid:path}", response_model=Dict[str, Any])
 async def get_conversation_history(
     jid: str,
     limit: int = Query(50, ge=1, le=200, description="Mensagens por página."),
@@ -227,29 +227,15 @@ async def get_conversation_history(
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """
-    📖 **Retorna o histórico de mensagens de uma conversa específica diretamente do WhatsApp.**
+    Retorna o histórico consolidado de uma conversa específica.
 
-    Consulta o agente Baileys em tempo real e retorna as mensagens trocadas
-    com o contato identificado pelo `jid` (ID da conversa no WhatsApp).
-
-    - O `jid` pode ser:
-      - Número individual: `5511999999999@s.whatsapp.net`
-      - ID de grupo: `120363xxxxxxx@g.us`
-      - Apenas o número: `5511999999999` (será normalizado automaticamente)
-
-    Cada mensagem retornada contém:
-    - `message_id`: ID único da mensagem no WhatsApp
-    - `from_me`: Se foi enviada pelo bot/agente
-    - `sender`: JID do remetente
-    - `content`: Texto da mensagem
-    - `type`: Tipo (textMessage, imageMessage, audioMessage, etc.)
-    - `timestamp`: Timestamp UNIX
-    - `status`: Status de entrega
-
-    **Requer bot conectado** (status CONNECTED).
+    A fonte principal é o MongoDB, onde o SaaS persiste o histórico de diálogo.
+    Quando a conversa ainda não estiver materializada no Mongo, o bridge WhatsApp
+    é usado apenas para backfill e a resposta final continua vindo do Mongo.
     """
     from src.services.whatsapp_manager_service import WhatsAppManagerService
     from src.services.whatsapp_bridge_service import whatsapp_bridge
+    from src.models.mongo.chat import MessageDocument
 
     # 1. Resolve a instância ativa
     instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
@@ -259,64 +245,62 @@ async def get_conversation_history(
     normalized_jid = jid if "@" in jid else f"{jid}@s.whatsapp.net"
     target_phone = normalized_jid.split("@")[0]
 
-    # 3. Tenta restaurar a conversa pelo Bridge quando o bot estiver conectado.
-    #    Se o Bridge não devolver histórico, o fallback local continua atendendo
-    #    a rota com o que já estiver persistido em Postgres/Mongo.
-    bridge_messages: List[Dict[str, Any]] = []
-    if status_str == "CONNECTED":
-        result = await whatsapp_bridge.get_chat_history(
-            session_id=instance.session_name,
-            jid=normalized_jid,
-            limit=limit
+    async def load_mongo_history(phone: str) -> List[MessageDocument]:
+        return await MessageDocument.find(
+            MessageDocument.tenant_id == tenant_id,
+            MessageDocument.contact_phone == phone
+        ).sort("+timestamp").to_list()
+
+    def serialize_mongo_messages(messages: List[MessageDocument]) -> List[Dict[str, Any]]:
+        serialized: List[Dict[str, Any]] = []
+        for doc in messages:
+            src_val = doc.source.value if hasattr(doc.source, "value") else str(doc.source)
+            serialized.append({
+                "message_id": doc.external_id or str(doc.id),
+                "from_me": src_val in ("agent", "bot", "human"),
+                "sender": instance.session_name if src_val in ("agent", "bot", "human") else target_phone,
+                "content": doc.content,
+                "type": getattr(doc, "message_type", "text"),
+                "timestamp": doc.timestamp.timestamp() if doc.timestamp else None,
+                "status": doc.ack if hasattr(doc, "ack") else None
+            })
+        return serialized
+
+    def dedupe_and_sort(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        by_key: Dict[str, Dict[str, Any]] = {}
+        for msg in messages:
+            key = str(msg.get("message_id") or msg.get("external_id") or msg.get("content") or "")
+            if not key:
+                continue
+            by_key[key] = msg
+        return sorted(
+            by_key.values(),
+            key=lambda item: item.get("timestamp") or 0
         )
 
-        if result.get("success"):
-            bridge_messages = result.get("messages", [])
-            if bridge_messages:
-                await MessageHistoryService.sync_bridge_history(db, target_phone, bridge_messages)
-        else:
-            logger.warning(
-                f"Falha ao obter histórico do Bridge para {normalized_jid}: "
-                f"{result.get('error', 'erro desconhecido')}"
+    # 3. Leitura direta do MongoDB. O bridge só entra para backfill caso ainda
+    #    não exista conversa materializada no banco.
+    mongo_history = await load_mongo_history(target_phone)
+    if not mongo_history and conversation_id != target_phone:
+        mongo_history = await load_mongo_history(conversation_id)
+
+    if not mongo_history and status_str == "CONNECTED":
+        # Backfill opcional: materializa o histórico no Mongo e lê novamente.
+        try:
+            result = await whatsapp_bridge.get_chat_history(
+                session_id=instance.session_name,
+                jid=normalized_jid,
+                limit=limit
             )
-    else:
-        logger.info(
-            f"Bridge indisponível para restauração de histórico de {normalized_jid} "
-            f"(status atual: {status_str.lower()}). Usando persistência local."
-        )
+            if result.get("success"):
+                bridge_messages = result.get("messages", [])
+                if bridge_messages:
+                    await MessageHistoryService.sync_bridge_history(db, target_phone, bridge_messages)
+                    mongo_history = await load_mongo_history(target_phone)
+        except Exception as e:
+            logger.warning(f"Falha ao fazer backfill via Bridge para {normalized_jid}: {e}")
 
-    # 4. Fallback de restauração a partir do Mongo, caso a conversa ainda
-    #    não esteja completa no Postgres ou o Bridge não tenha histórico útil.
-    try:
-        mongo_history = await ChatService.get_history(tenant_id, target_phone, limit=500)
-        if mongo_history:
-            mongo_msgs = []
-            for doc in mongo_history:
-                src_val = doc.source.value if hasattr(doc.source, "value") else str(doc.source)
-                mongo_msgs.append({
-                    "message_id": doc.external_id or str(doc.id),
-                    "from_me": (src_val in ("agent", "bot", "human")),
-                    "content": doc.content,
-                    "type": getattr(doc, "message_type", "text"),
-                    "timestamp": doc.timestamp.timestamp() if doc.timestamp else None
-                })
-
-            if mongo_msgs:
-                await MessageHistoryService.sync_bridge_history(db, target_phone, mongo_msgs)
-    except Exception as e:
-        logger.error(f"Falha ao restaurar histórico a partir do Mongo para {normalized_jid}: {e}")
-
-    # 5. Retorna o histórico consolidado já persistido no banco.
-    conversation = MessageHistoryService.get_or_create_conversation(db, target_phone)
-    detail = MessageHistoryService.get_conversation_detail(
-        db,
-        tenant_id,
-        conversation.id,
-        limit=limit,
-        offset=0
-    )
-
-    if not detail:
+    if not mongo_history:
         return {
             "jid": normalized_jid,
             "phone": target_phone,
@@ -325,25 +309,33 @@ async def get_conversation_history(
             "messages": []
         }
 
+    # 4. Complementa com qualquer histórico que ainda esteja salvo com chave
+    #    alternativa, sem depender do cache temporário do WhatsApp.
+    if status_str == "CONNECTED":
+        try:
+            alt_history = await load_mongo_history(conversation_id)
+            if alt_history and conversation_id != target_phone:
+                mongo_history = dedupe_and_sort(
+                    serialize_mongo_messages(mongo_history) + serialize_mongo_messages(alt_history)
+                )
+                return {
+                    "jid": normalized_jid,
+                    "phone": target_phone,
+                    "total_messages": len(mongo_history),
+                    "has_more": len(mongo_history) > limit,
+                    "messages": mongo_history[:limit]
+                }
+        except Exception as e:
+            logger.warning(f"Falha ao consultar histórico alternativo do Mongo para {normalized_jid}: {e}")
+
+    serialized_history = serialize_mongo_messages(mongo_history)
+    serialized_history = dedupe_and_sort(serialized_history)
+
     return {
         "jid": normalized_jid,
         "phone": target_phone,
-        "total_messages": detail["total_messages"],
-        "has_more": detail["has_more"],
-        "messages": [
-            {
-                "id": msg.id,
-                "conversation_id": msg.conversation_id,
-                "content": msg.content,
-                "side": msg.side,
-                "type": msg.type,
-                "external_id": msg.external_id,
-                "created_at": msg.created_at,
-                "is_read": msg.is_read,
-                "agent_id": msg.agent_id,
-                "status": msg.status
-            }
-            for msg in detail["messages"]
-        ]
+        "total_messages": len(serialized_history),
+        "has_more": len(serialized_history) > limit,
+        "messages": serialized_history[:limit]
     }
 

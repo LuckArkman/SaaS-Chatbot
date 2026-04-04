@@ -187,8 +187,9 @@ class MessageHistoryService:
             
         if new_msgs:
             # Reverte a lista, pois o frontend as vezes exibe ao contrario ou as msgs vem fora de ordem 
-            # A inserção em massa garante agilidade
-            db.bulk_save_objects(new_msgs)
+            new_msgs.reverse()
+            # Usando add_all para garantir validação do ORM e injeção do tenant_id pelo event listner
+            db.add_all(new_msgs)
             db.commit()
             logger.info(f"🔄 Restauradas {len(new_msgs)} mensagens antigas do WhatsApp para a conversa de {contact_phone}")
 

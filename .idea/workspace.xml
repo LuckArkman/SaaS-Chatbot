@@ -4,7 +4,15 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="1b8efb0b-354b-49b8-ae39-f0bc5a1fb44e" name="Changes" comment="" />
+    <list default="true" id="1b8efb0b-354b-49b8-ae39-f0bc5a1fb44e" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/brute_test.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/generate_backend_analysis.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/logs/app.log" beforeDir="false" afterPath="$PROJECT_DIR$/logs/app.log" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/simulate_message.bat" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/api/v1/endpoints/chat.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/api/v1/endpoints/chat.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/services/message_history_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/services/message_history_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_baileys.py" beforeDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
