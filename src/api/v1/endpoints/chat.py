@@ -58,16 +58,17 @@ async def list_chat_history(
     """Busca o histórico de mensagens de uma conversa específica."""
     from src.services.whatsapp_bridge_service import whatsapp_bridge
     from src.services.whatsapp_manager_service import WhatsAppManagerService
-    from src.models.chat import Conversation
     from src.services.chat_service import ChatService
-    
-    # 0. O frontend muitas vezes passa o ID físico de Contato, Conversa ou JID WhatsApp.
+    from src.models.mongo.chat import MessageDocument
+    from src.models.chat import MessageSide
+
+    # 1. O frontend muitas vezes passa o ID físico de Contato, Conversa ou JID WhatsApp.
     try:
         target_phone = await ChatService._resolve_recipient_phone(db, tenant_id, conversation_id)
     except ValueError:
         return []
     
-    # Restauração automática de histórico do WhatsApp Web
+    # 2. Restauração automática de histórico do WhatsApp Web
     try:
         instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
         status_val = str(getattr(instance.status, "value", instance.status)).upper()
@@ -78,41 +79,59 @@ async def list_chat_history(
                 jid=normalized_jid, 
                 limit=limit
             )
+            # A sync pro Postgres via MessageHistoryService continua ocorrendo silenciosamente 
+            # para fins de relatorios antigos caso precise, mas nao atrapalha a consulta MongoDB
             if history_response.get("success"):
                 msgs = history_response.get("messages", [])
                 if msgs:
-                    # Injeta silenciosamente no banco
                     await MessageHistoryService.sync_bridge_history(db, target_phone, msgs)
     except Exception as e:
         logger.warning(f"Não foi possível sincronizar o histórico pré-cadastro com o WhatsApp: {e}")
 
-    # 1.5. Sincronização do Histórico do MongoDB (Fallback do Sprint 40 Restore)
-    try:
-        from src.services.chat_service import ChatService
-        from src.models.mongo.chat import MessageSource
+    # 3. Leitura EXCLUSIVA do MongoDB (Golden Source) - Eliminando a dupla averiguação c/ Postgres
+    mongo_docs = await MessageDocument.find(
+        MessageDocument.tenant_id == tenant_id,
+        MessageDocument.contact_phone == target_phone
+    ).sort("-timestamp").skip(offset).limit(limit).to_list()
+    
+    if conversation_id != target_phone:
+        extra_docs = await MessageDocument.find(
+            MessageDocument.tenant_id == tenant_id,
+            MessageDocument.contact_phone == conversation_id
+        ).sort("-timestamp").skip(offset).limit(limit).to_list()
+        mongo_docs.extend(extra_docs)
+    
+    response_list = []
+    
+    for doc in mongo_docs:
+        src_val = doc.source.value if hasattr(doc.source, "value") else str(doc.source)
         
-        mongo_history = await ChatService.get_history(tenant_id, target_phone, limit=500)
-        # Resgata também as mensagens que acabaram salvas erroneamente com ID ao invés de telefone
-        if conversation_id != target_phone:
-            mongo_history.extend(await ChatService.get_history(tenant_id, conversation_id, limit=500))
-        
-        mongo_msgs = []
-        for doc in mongo_history:
-            src_val = doc.source.value if hasattr(doc.source, "value") else str(doc.source)
-            mongo_msgs.append({
-                "message_id": doc.external_id or str(doc.id),
-                "from_me": (src_val == "agent" or src_val == "bot"),
-                "content": doc.content,
-                "type": getattr(doc, "message_type", "text"),
-                "timestamp": doc.timestamp.timestamp() if doc.timestamp else None
-            })
+        if src_val == "user":
+            side = MessageSide.CLIENT
+        elif src_val in ["agent", "human"]:
+            side = MessageSide.AGENT
+        elif src_val == "system":
+            side = MessageSide.SYSTEM
+        else:
+            side = MessageSide.BOT
             
-        if mongo_msgs:
-            await MessageHistoryService.sync_bridge_history(db, target_phone, mongo_msgs)
-    except Exception as e:
-        logger.error(f"Erro ao sincronizar Mongo DB para Postgres: {e}")
-
-    return MessageHistoryService.list_history(db, target_phone, limit, offset)
+        status_map = {0: "PENDING", 1: "SENT", 2: "DELIVERED", 3: "READ"}
+        ack_val = getattr(doc, "ack", 0)
+        
+        response_list.append({
+            "id": str(doc.id),
+            "conversation_id": str(conversation_id),
+            "is_read": ack_val == 3,
+            "agent_id": None,
+            "status": status_map.get(ack_val, "SENT"),
+            "content": doc.content,
+            "side": side,
+            "type": getattr(doc, "message_type", "text"),
+            "external_id": doc.external_id,
+            "created_at": doc.timestamp
+        })
+        
+    return response_list
 
 @router.post("/transfer/{conversation_id}", status_code=status.HTTP_200_OK)
 async def transfer_chat_endpoint(

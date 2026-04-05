@@ -17,10 +17,10 @@ class MessageCreate(MessageBase):
 
 
 class MessageOut(MessageBase):
-    id: int
-    conversation_id: int
+    id: int | str
+    conversation_id: int | str
     is_read: bool
-    agent_id: Optional[int] = None
+    agent_id: Optional[int | str] = None
     status: Optional[str] = None
 
     class Config:
