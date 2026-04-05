@@ -115,18 +115,25 @@ async def incoming_webhook(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-    # ─── Resolução de Tenant ID ───────────────────────────────────────────────
-    # Prioridade: 1) Middleware (JWT/Header) → 2) Campo 'tenant_id' no body
+    # ─── Resolução de Tenant ID Global ──────────────────────────────────────────
+    # Prioridade: 1) Middleware (JWT/Header) → 2) Campo 'tenant_id' no body → 3) Sessão (CRÍTICO)
     tenant_id = get_current_tenant_id()
     if not tenant_id:
         tenant_id = payload.get("tenant_id", "")
+        
+        # 3. Deriva tenant via nome da sessão para suportar cross-tenancy via Baileys Webhook
+        session_str = str(payload.get("session", ""))
+        if not tenant_id and session_str.startswith("tenant_"):
+            parts = session_str.split("_")
+            tenant_id = parts[1] if len(parts) >= 2 else ""
+
         if tenant_id:
             set_current_tenant_id(tenant_id)
-            logger.info(f"[Gateway] tenant_id extraído do body: '{tenant_id}'")
+            logger.info(f"[Gateway] tenant_id resolvido da origem/sessão: '{tenant_id}'")
         else:
             logger.warning(
-                "[Gateway] tenant_id ausente no middleware E no body. "
-                "O evento será processado sem isolamento de tenant."
+                "[Gateway] tenant_id ausente no middleware, request e na sessão. "
+                "O evento prosseguirá com contexto possivelmente falho."
             )
 
     logger.info(
@@ -211,16 +218,8 @@ async def incoming_webhook(
                     f"| state='{state}' | tenant='{tenant_id}'"
                 )
 
-                # Derivar tenant_id da sessão se ainda não tiver
-                # Formato da sessão: "tenant_{tenant_id}" ou "tenant_{tenant_id}_{suffix}"
-                # Exemplo: "tenant_A0BC60D4_1272625a" → tenant_id = "A0BC60D4"
-                if not tenant_id and ws_payload.session.startswith("tenant_"):
-                    parts = ws_payload.session.split("_")
-                    # parts[0]="tenant", parts[1]=tenant_id, parts[2+]=sufixo opcional
-                    tenant_id = parts[1] if len(parts) >= 2 else ""
-                    if tenant_id:
-                        set_current_tenant_id(tenant_id)
-                        logger.debug(f"[Gateway] tenant_id derivado da sessão: '{ws_payload.session}' → '{tenant_id}'")
+                # Derivação de Tenant_id extraída globamente no topo do arquivo (Fix 26.241 via Bridge)
+
 
                 try:
                     new_status = WhatsAppStatus(state.lower())

@@ -133,8 +133,8 @@ class WhatsAppBridgeService:
         logger.warning("Envio de arquivo via Bridge Node.js ainda não implementado no Bridge.")
         return False
 
-    async def send_message(self, session_key: str, to: str, content: str) -> bool:
-        """Envia uma mensagem de texto via Bridge."""
+    async def send_message(self, session_key: str, to: str, content: str) -> Dict[str, Any]:
+        """Envia uma mensagem de texto via Bridge, retornando ID do sucesso para correlacao de ACKs."""
         try:
             logger.info(f"[*] Enviando mensagem via Bridge: '{content}' para {to} [Sessão: {session_key}]")
             response = await self.client.post(
@@ -149,16 +149,17 @@ class WhatsAppBridgeService:
             )
 
             if response.status_code == 200:
-                logger.info(f"✅ Mensagem enviada para {to} com sucesso")
-                return True
+                data = response.json()
+                logger.info(f"✅ Mensagem enviada para {to} com sucesso (ID: {data.get('messageId')})")
+                return {"success": True, "message_id": data.get("messageId")}
 
             data = response.json()
             logger.error(f"❌ Erro ao enviar mensagem para {to}. Status: {response.status_code}, Resposta: {data}")
-            return False
+            return {"success": False, "error": data}
             
         except Exception as e:
             logger.error(f"❌ Falha de rede ao enviar mensagem para {to}: {str(e)}")
-            return False
+            return {"success": False, "error": str(e)}
 
     async def add_contact(self, session_id: str, phone: str, name: Optional[str] = None) -> Dict[str, Any]:
         """

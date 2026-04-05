@@ -3,6 +3,7 @@ from src.core.database import SessionLocal
 from src.core.tenancy import set_current_tenant_id
 from src.models.whatsapp import WhatsAppInstance, WhatsAppStatus
 from src.services.whatsapp_bridge_service import whatsapp_bridge
+from src.core.ws import ws_manager
 from loguru import logger
 import asyncio
 
@@ -68,12 +69,24 @@ class OutgoingMessageWorker:
                 
             # Envio Real via Bridge
             if msg_type == "text":
-                success = await whatsapp_bridge.send_message(
+                response_bridge = await whatsapp_bridge.send_message(
                     session_key=instance.session_name,
                     to=to,
                     content=content
                 )
-                if not success:
+                
+                if response_bridge.get("success"):
+                    # Dispara callback com o Message ID confirmando a criacao no Whatsapp
+                    await ws_manager.send_to_conversation(
+                        tenant_id=tenant_id,
+                        conversation_id=to,
+                        message={
+                            "type": "message_sent_callback",
+                            "status": "sent",
+                            "message_id": response_bridge.get("message_id")
+                        }
+                    )
+                else:
                     logger.error(
                         f"❌ Falha ao enviar mensagem para '{to}' via Bridge "
                         f"(Sessão: '{instance.session_name}'). "
