@@ -11,4 +11,6 @@ api_router.include_router(billing.router, prefix="/billing", tags=["billing"])
 api_router.include_router(campaigns.router, prefix="/campaigns", tags=["campaigns"])
 api_router.include_router(contacts.router, prefix="/contacts", tags=["contacts"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
+api_router.include_router(ws.router, prefix="/ws", tags=["ws"])
 api_router.add_api_websocket_route("/ws", ws.websocket_endpoint)
+

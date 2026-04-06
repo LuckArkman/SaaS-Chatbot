@@ -8,6 +8,41 @@ from src.core.database import SessionLocal
 from loguru import logger
 
 router = APIRouter()
+@router.get("/", tags=["RPC-WebSocket"], summary="Documentação da Interface RPC via WebSocket")
+async def websocket_docs():
+    """
+    ### Interface de Comunicação Real-time (RPC)
+    Este endpoint não é uma rota HTTP comum. Ele deve ser acessado via protocolo **WebSocket (ws/wss)**.
+    
+    **Conectividade:**
+    * **URL:** `ws://{host}:{port}/api/v1/ws?token={JWT_TOKEN}`
+    
+    **Estrutura de Requisição (RPC Request):**
+    ```json
+    {
+      "method": "string",
+      "params": "object",
+      "id": "string (opcional para notificações)"
+    }
+    ```
+    
+    **Métodos Suportados:**
+    * `send_message`: { conversation_id, content }
+    * `set_typing`: { conversation_id, is_typing: bool }
+    * `ping`: Sem parâmetros.
+    
+    **Estrutura de Resposta (RPC Response):**
+    ```json
+    {
+      "type": "rpc_response",
+      "id": "string",
+      "result": "any",
+      "error": "string"
+    }
+    ```
+    """
+    return {"detail": "Conecte-se via protocolo WebSocket para utilizar esta interface RPC."}
+
 
 @router.websocket("/ws")
 async def websocket_endpoint(
