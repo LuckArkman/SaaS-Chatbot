@@ -126,25 +126,38 @@ async function connectToWhatsApp(sessionId) {
                 }
             });
             // ✅ CRÍTICO: Persiste o histórico maciço recebido durante a conexão (QR Code Linking)
-            ev.on('messaging-history.set', ({ chats, contacts, messages }) => {
-                if (chats) {
-                    for (const chat of chats) {
-                        this.chats[chat.id] = chat;
+            // O processamento agora é feito em CHUNKS assíncronos para não travar o loop de eventos
+            // do Express. Isso permite receber comandos /sendMessage de outros tenants enquanto
+            // um histórico grande é sincronizado.
+            ev.on('messaging-history.set', async ({ chats, contacts, messages }) => {
+                console.log(`[${sessionId}] 📚 Processando histórico massivo: chats=${chats?.length || 0}, contatos=${contacts?.length || 0}, msgs=${messages?.length || 0}`);
+                
+                const processBatch = async (items, processor) => {
+                    if (!items || items.length === 0) return;
+                    const batchSize = 100;
+                    for (let i = 0; i < items.length; i += batchSize) {
+                        items.slice(i, i + batchSize).forEach(processor);
+                        // Cede CPU para outras requests HTTP (como /sendMessage)
+                        await new Promise(resolve => setImmediate(resolve));
                     }
-                }
-                if (contacts) {
-                    for (const contact of contacts) {
-                        if (contact.id) this.contacts[contact.id] = contact;
-                    }
-                }
-                if (messages) {
-                    for (const msg of messages) {
-                        if (!msg.key?.remoteJid || !msg.key?.id) continue;
+                };
+
+                await processBatch(chats, (chat) => {
+                    this.chats[chat.id] = chat;
+                });
+
+                await processBatch(contacts, (contact) => {
+                    if (contact.id) this.contacts[contact.id] = contact;
+                });
+
+                await processBatch(messages, (msg) => {
+                    if (msg.key?.remoteJid && msg.key?.id) {
                         const jid = msg.key.remoteJid;
                         if (!this.messages[jid]) this.messages[jid] = new Map();
                         this.messages[jid].set(msg.key.id, msg);
                     }
-                }
+                });
+                console.log(`[${sessionId}] ✅ Histórico finalizado e persistido em memória.`);
             });
         },
 

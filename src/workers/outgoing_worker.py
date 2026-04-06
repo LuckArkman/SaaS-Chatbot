@@ -42,58 +42,78 @@ class OutgoingMessageWorker:
         set_current_tenant_id(tenant_id)
             
         with SessionLocal() as db:
-            # 🔧 FIX CRÍTICO #2: Usa order_by(desc) para garantir que sempre
-            # pegamos a sessão mais recente. Se o usuário recriou a sessão,
-            # .first() pegaria a antiga e morta, bloqueando o envio eternamente.
+            # 🔧 FIX CRÍTICO #2: Busca a instância MAIS RECENTE e ATIVA para o tenant.
+            # Se houver múltiplas (ex: re-linkagem), pegamos a última.
             instance = db.query(WhatsAppInstance).filter(
                 WhatsAppInstance.tenant_id == tenant_id,
                 WhatsAppInstance.is_active == True
             ).order_by(WhatsAppInstance.id.desc()).execution_options(ignore_tenant=True).first()
             
             if not instance:
-                logger.error(f"❌ Nenhuma instância configurada para o tenant '{tenant_id}'. Mensagem para '{to}' descartada.")
+                logger.error(f"❌ Sem instância ativa para tenant '{tenant_id}'. Mensagem para '{to}' descartada.")
                 return
 
-            # 🔧 FIX CRÍTICO #3: Usa comparação por string (.value) — consistente
-            # com o restante do codebase (bot.py, gateway.py) para evitar falha
-            # silenciosa causada por mismatch de tipo Enum vs String do SQLAlchemy.
             status_str = instance.status.value if hasattr(instance.status, "value") else str(instance.status)
 
-            if status_str != WhatsAppStatus.CONNECTED.value:
-                logger.warning(
-                    f"⚠️ Instância '{instance.session_name}' não está conectada "
-                    f"(Status: '{status_str}'). Mensagem para '{to}' descartada. "
-                    f"Inicie e conecte o bot antes de enviar mensagens."
-                )
+            # 🔧 FIX CRÍTICO #3: Status Leniente.
+            # Se o status no DB é 'disconnected', evitamos o bridge.
+            # Se for qualquer outro (qr, connecting, connected), TENTAMOS o envio.
+            # Isso resolve o problema de o health_check (30s) estar desatualizado.
+            if status_str == WhatsAppStatus.DISCONNECTED.value:
+                logger.warning(f"⚠️ Instância '{instance.session_name}' desconectada. Mensagem para '{to}' abortada.")
                 return
                 
-            # Envio Real via Bridge
-            if msg_type == "text":
-                response_bridge = await whatsapp_bridge.send_message(
-                    session_key=instance.session_name,
-                    to=to,
-                    content=content
-                )
+            # 🚀 Lógica de Envio Real com RETRY (Exponential Backoff)
+            # Fator crítico para multi-tendência: se o bridge estiver processando 
+            # histórico (bloqueio de event loop), o retry garante a entrega.
+            max_retries = 3
+            retry_delay = 1.0
+            response_bridge = {"success": False, "error": "Timeout or No Response"}
+
+            for attempt in range(max_retries):
+                try:
+                    logger.info(f"📤 Tentativa {attempt+1}/{max_retries} | Sessão: '{instance.session_name}'")
+                    if msg_type == "text":
+                        response_bridge = await whatsapp_bridge.send_message(
+                            session_key=instance.session_name,
+                            to=to,
+                            content=content
+                        )
+                        if response_bridge.get("success"):
+                            break # Sucesso!
+                    else:
+                        logger.warning(f"⚠️ Tipo '{msg_type}' não suportado.")
+                        return
+
+                except Exception as e:
+                    logger.warning(f"⚠️ Falha na tentativa {attempt+1}: {e}")
                 
-                if response_bridge.get("success"):
-                    # Dispara callback com o Message ID confirmando a criacao no Whatsapp
-                    await ws_manager.send_to_conversation(
-                        tenant_id=tenant_id,
-                        conversation_id=to,
-                        message={
-                            "type": "message_sent_callback",
+                # Falhou ou Bridge lento? Espera e dobra o tempo (backoff)
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2
+
+            # 🎯 Pós-processamento do resultado do Bridge
+            if response_bridge.get("success"):
+                # Callback de sucesso via WebSocket (RPC Pattern)
+                await ws_manager.send_to_conversation(
+                    tenant_id=tenant_id,
+                    conversation_id=to,
+                    message={
+                        "method": "update_message_status",
+                        "params": {
                             "status": "sent",
-                            "message_id": response_bridge.get("message_id")
+                            "message_id": response_bridge.get("message_id"),
+                            "external_id": response_bridge.get("message_id")
                         }
-                    )
-                else:
-                    logger.error(
-                        f"❌ Falha ao enviar mensagem para '{to}' via Bridge "
-                        f"(Sessão: '{instance.session_name}'). "
-                        f"Verifique os logs do Node.js Bridge na porta 4000."
-                    )
+                    }
+                )
+                logger.info(f"✅ Mensagem entregue ao Bridge para '{to}' (ID: {response_bridge.get('message_id')})")
             else:
-                logger.warning(f"⚠️ Envio de mídias (tipo '{msg_type}') ainda não suportado no worker de envio.")
+                logger.error(
+                    f"❌ FALHA TOTAL após {max_retries} tentativas para '{instance.session_name}'. "
+                    f"Erro: {response_bridge.get('error')}"
+                )
 
 outgoing_worker = OutgoingMessageWorker()
 

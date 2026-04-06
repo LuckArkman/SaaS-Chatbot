@@ -24,12 +24,21 @@ class NodeActions:
         
         # 🟢 Persistência Postgres + MongoDB (Histórico do Bot)
         with SessionLocal() as db:
+            from src.models.whatsapp import WhatsAppInstance
+            # Resolve o nome da sessão real (pode ter UUID) para o MongoDB
+            instance = db.query(WhatsAppInstance).filter(
+                WhatsAppInstance.tenant_id == tenant_id,
+                WhatsAppInstance.is_active == True
+            ).order_by(WhatsAppInstance.id.desc()).execution_options(ignore_tenant=True).first()
+            
+            actual_session = instance.session_name if instance else f"tenant_{tenant_id}"
+
             await MessageHistoryService.record_message(
                 db=db,
                 contact_phone=contact_phone,
                 content=processed_text,
                 side=MessageSide.BOT,
-                session_name=f"tenant_{tenant_id}"
+                session_name=actual_session
             )
 
         # Envia para a fila de saída para que o bot entregue

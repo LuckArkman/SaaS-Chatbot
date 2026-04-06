@@ -50,24 +50,33 @@ class FlowWorker:
 
             # 🟢 Persistência Postgres + MongoDB (Histórico) antes de qualquer lógica
             with SessionLocal() as db:
+                from src.models.whatsapp import WhatsAppInstance
+                # Resolve o nome da sessão real (pode ter UUID) para o MongoDB
+                instance = db.query(WhatsAppInstance).filter(
+                    WhatsAppInstance.tenant_id == tenant_id,
+                    WhatsAppInstance.is_active == True
+                ).order_by(WhatsAppInstance.id.desc()).execution_options(ignore_tenant=True).first()
+                
+                actual_session = instance.session_name if instance else f"tenant_{tenant_id}"
+
                 await MessageHistoryService.record_message(
                     db=db,
                     contact_phone=contact_phone,
                     content=user_input,
                     side=computed_side,
                     external_id=external_id,
-                    session_name=f"tenant_{tenant_id}" # Tagged for restoration
+                    session_name=actual_session
                 )
                 # Resolve o ID relacional da Conversa para o Frontend ancorar a UI
                 postgre_conv = MessageHistoryService.get_or_create_conversation(db, contact_phone)
                 conversation_numeric_id = postgre_conv.id if postgre_conv else contact_phone
 
             # 🟢 Notificação Real-time via Socket RPC (Sprint 21 + RPC)
-            await ws_manager.send_to_conversation(tenant_id, str(conversation_numeric_id), {
+            await ws_manager.send_to_conversation(tenant_id, contact_phone, {
                 "method": "receive_message",
                 "params": {
                     "message_id": external_id,
-                    "conversation_id": str(conversation_numeric_id),
+                    "conversation_id": contact_phone,
                     "content": user_input,
                     "from_me": is_from_me,
                     "side": "bot" if is_from_me else "client",
