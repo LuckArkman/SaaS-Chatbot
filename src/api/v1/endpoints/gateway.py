@@ -272,12 +272,14 @@ async def incoming_webhook(
                         db.rollback()
                         logger.warning(f"⚠️ Log de auditoria falhou: {e_log}")
 
-                # Notifica UI via WebSocket
+                # Notifica UI via WebSocket RPC (Sprint 21 + RPC Consistency)
                 socket_payload = {
-                    "type": "bot_system_event",
-                    "event": state,
-                    "battery": battery,
-                    "session": ws_payload.session
+                    "method": "bot_system_event",
+                    "params": {
+                        "event": state,
+                        "battery": battery,
+                        "session": ws_payload.session
+                    }
                 }
 
                 if state == "QRCODE" and qrcode:
@@ -286,9 +288,11 @@ async def incoming_webhook(
                         f"| size={len(qrcode)} chars"
                     )
                     socket_payload = {
-                        "type": "bot_qrcode_update",
-                        "qrcode": qrcode.strip(),
-                        "session": ws_payload.session
+                        "method": "update_bot_qr",
+                        "params": {
+                            "qrcode": qrcode.strip(),
+                            "session": ws_payload.session
+                        }
                     }
 
                 history_data = []
@@ -296,8 +300,8 @@ async def incoming_webhook(
                     logger.info(f"🔄 Bot '{ws_payload.session}' conectado. Restaurando histórico...")
                     history = await chat_service.get_session_history(tenant_id, ws_payload.session)
                     history_data = [msg.model_dump(mode='json') for msg in history]
-                    socket_payload["history"] = history_data
-                    socket_payload["type"] = "chat_history_restored"
+                    socket_payload["params"]["history"] = history_data
+                    socket_payload["method"] = "chat_history_restored"
                     logger.info(f"📚 Histórico restaurado: {len(history_data)} msg(s)")
 
                 await ws_manager.broadcast_to_tenant(tenant_id, socket_payload)

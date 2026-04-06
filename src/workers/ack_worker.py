@@ -53,13 +53,15 @@ class AckWorker:
             updated = MessageHistoryService.update_message_status(db, external_id, new_status)
             
             if updated:
-                # 3. Notificação WebSocket para o Agente (Real-time UI Update)
-                # O Frontend precisa saber que a mensagem ID externo X agora está Y.
+                # 3. Notificação WebSocket para o Agente (Real-time UI Update via RPC)
                 await ws_manager.broadcast_to_tenant(tenant_id, {
-                    "type": "message_status_update",
-                    "external_id": external_id,
-                    "status": new_status
+                    "method": "update_message_status",
+                    "params": {
+                        "external_id": external_id,
+                        "status": new_status,
+                        "timestamp": ack_data.get("t")
+                    }
                 })
-                logger.debug(f"🔔 WebSocket Notificado: Msg {external_id} Status {new_status}")
+                logger.debug(f"🔔 WebSocket Notificado (RPC): Msg {external_id} Status {new_status}")
 
 ack_worker = AckWorker()

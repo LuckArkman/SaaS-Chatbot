@@ -62,14 +62,20 @@ class FlowWorker:
                 postgre_conv = MessageHistoryService.get_or_create_conversation(db, contact_phone)
                 conversation_numeric_id = postgre_conv.id if postgre_conv else contact_phone
 
-            # 🟢 Notificação Real-time imediata para todos os Agentes (Front-End via Broadcast UI)
+            # 🟢 Notificação Real-time via Socket RPC (Sprint 21 + RPC)
             await ws_manager.send_to_conversation(tenant_id, str(conversation_numeric_id), {
-                "type": "Message.receive",
-                "message_id": external_id,
-                "content": user_input,
-                "from_me": is_from_me,
-                "side": "bot" if is_from_me else "client",
-                "timestamp": data.get("timestamp")
+                "method": "receive_message",
+                "params": {
+                    "message_id": external_id,
+                    "conversation_id": str(conversation_numeric_id),
+                    "content": user_input,
+                    "from_me": is_from_me,
+                    "side": "bot" if is_from_me else "client",
+                    "type": data.get("type", "text"),
+                    "caption": data.get("caption"),
+                    "timestamp": data.get("timestamp"),
+                    "metadata": data.get("metadata", {})
+                }
             })
 
             # 2. Busca Fluxo Ativo para o Tenant (Regras de Prioridade .NET)
