@@ -243,6 +243,7 @@ class ChatService:
         await ws_manager.send_to_conversation(tenant_id, contact_phone, {
             "type": "new_message",
             "agent_id": agent_id,
+            "conversation_id": contact_phone,
             "content": content,
             "side": "agent",
             "timestamp": str(datetime.utcnow())

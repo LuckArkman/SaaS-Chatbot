@@ -52,7 +52,7 @@ class AckWorker:
         with SessionLocal() as db:
             from src.models.chat import Message, Conversation
             
-            # Resolve o contato/conversa desta mensagem para notificar o frontend
+            # Resolve o contato (WhatsApp ID / Fone) desta mensagem para notificar o frontend
             msg_obj = db.query(Message).filter(Message.external_id == external_id).first()
             contact_phone = "unknown"
             if msg_obj and msg_obj.conversation:
