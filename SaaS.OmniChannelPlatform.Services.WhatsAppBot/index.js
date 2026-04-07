@@ -274,54 +274,55 @@ async function connectToWhatsApp(sessionId) {
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type === 'notify') {
-            for (const msg of messages) {
-                if (msg.message) {
-                    try {
-                        const content =
-                            msg.message.conversation ||
-                            msg.message.extendedTextMessage?.text ||
-                            msg.message.imageMessage?.caption ||
-                            msg.message.videoMessage?.caption ||
-                            "";
+        if (type !== 'notify') return;
 
-                        const webhookUrl = process.env.WEBHOOK_URL || 'http://127.0.0.1:8001/api/v1/gateway/webhook/whatsapp';
-                        const headers = { 'x-api-key': 'SaaS_Secret_Gateway_Key_2026' };
+        // 🚀 Processamento PARALELO e NÃO-BLOQUEANTE
+        // Não usamos 'await' no loop para garantir que o Baileys continue 
+        // processando pings/eventos enquanto enviamos o webhook.
+        messages.forEach(async (msg) => {
+            if (!msg.message) return;
 
-                        const envelope = {
-                            event: 'on_message',
-                            session: sessionId,
-                            payload: {
-                                id:         msg.key.id,
-                                from:       msg.key.remoteJid,
-                                body:       content,
-                                type:       'chat',
-                                isGroupMsg: msg.key.remoteJid?.endsWith('@g.us') || false,
-                                pushName:   msg.pushName || null,
-                                fromMe:     msg.key.fromMe || false,
-                                timestamp:  msg.messageTimestamp || Math.floor(Date.now() / 1000)
-                            }
-                        };
+            try {
+                const content = 
+                    msg.message.conversation ||
+                    msg.message.extendedTextMessage?.text ||
+                    msg.message.imageMessage?.caption ||
+                    msg.message.videoMessage?.caption ||
+                    "";
 
-                        console.log(`[${sessionId}] 📥 Mensagem recebida de ${msg.key.remoteJid}: "${content.substring(0, 60)}"`);
-                        await axios.post(webhookUrl, envelope, { headers });
-                    } catch (err) {
-                        console.error(`[${sessionId}] Erro ao encaminhar para webhook:`, err.message);
+                const webhookUrl = process.env.WEBHOOK_URL || 'http://127.0.0.1:8001/api/v1/gateway/webhook/whatsapp';
+                const headers = { 'x-api-key': 'SaaS_Secret_Gateway_Key_2026' };
+
+                const envelope = {
+                    event: 'on_message',
+                    session: sessionId,
+                    payload: {
+                        id:         msg.key.id,
+                        from:       msg.key.remoteJid,
+                        body:       content,
+                        type:       'chat',
+                        isGroupMsg: msg.key.remoteJid?.endsWith('@g.us') || false,
+                        pushName:   msg.pushName || null,
+                        fromMe:     msg.key.fromMe || false,
+                        timestamp:  msg.messageTimestamp || Math.floor(Date.now() / 1000)
                     }
+                };
+
+                // ✅ Timeout de 10s para evitar que webhooks pendentes causem leak de memória
+                axios.post(webhookUrl, envelope, { headers, timeout: 10000 })
+                    .then(() => console.log(`[${sessionId}] ✅ Webhook entregue: ${msg.key.id}`))
+                    .catch(e => console.error(`[${sessionId}] ❌ Erro Webhook: ${e.message}`));
+
+                // ✅ Cache local para retries
+                msgCache.set(msg.key.id, msg.message);
+                if (msgCache.size > 500) {
+                    msgCache.delete(msgCache.keys().next().value);
                 }
 
-                // ✅ Salva TODAS as mensagens no cache (incluindo fromMe=true)
-                // Necessário para getMessage funcionar corretamente em retries do WhatsApp
-                if (msg.message && msg.key?.id) {
-                    msgCache.set(msg.key.id, msg.message);
-                    // Limita cache a 500 mensagens por sessão para evitar vazamento de memória
-                    if (msgCache.size > 500) {
-                        const firstKey = msgCache.keys().next().value;
-                        msgCache.delete(firstKey);
-                    }
-                }
+            } catch (err) {
+                console.error(`[${sessionId}] ❌ Erro interno no handler de mensagem:`, err.message);
             }
-        }
+        });
     });
 
     // ✅ Monitora ACKs de entrega E repassa ao Python (AckWorker)
@@ -330,55 +331,39 @@ async function connectToWhatsApp(sessionId) {
         const webhookUrl = process.env.WEBHOOK_URL || 'http://127.0.0.1:8001/api/v1/gateway/webhook/whatsapp';
         const headers = { 'x-api-key': 'SaaS_Secret_Gateway_Key_2026' };
 
-        for (const update of updates) {
-            if (update.update?.status === undefined) continue;
+        // 🚀 Despacho paralelo de ACKs
+        updates.forEach(update => {
+            if (update.update?.status === undefined) return;
 
-            const ack   = update.update.status;
-            const msgId = update.key?.id || 'unknown';
-            const jid   = update.key?.remoteJid || 'unknown';
-            const ackLabels = { 1: 'SERVIDOR', 2: 'RECEBIDO', 3: 'ENTREGUE', 4: 'LIDO' };
-            const label = ackLabels[ack] || `ACK_${ack}`;
-
-            console.log(`[${sessionId}] 📬 ACK [${label}] msg='${msgId}' → jid='${jid}'`);
-
-            // ─── Forward do ACK para o Python (AckWorker) ──────────────────
-            try {
-                await axios.post(webhookUrl, {
-                    event: 'on_ack',
-                    session: sessionId,
-                    payload: {
-                        id:     msgId,
-                        to:     jid,
-                        status: ack,
-                        ack:    ack
-                    }
-                }, { headers, timeout: 5000 });
-                console.log(`[${sessionId}] ✅ ACK [${label}] encaminhado ao webhook Python | msg='${msgId}'`);
-            } catch (ackErr) {
-                console.warn(`[${sessionId}] ⚠️ Falha ao encaminhar ACK ao webhook: ${ackErr.message}`);
-            }
-        }
+            const ack       = update.update.status;
+            const msgId     = update.key?.id || 'unknown';
+            const jid       = update.key?.remoteJid || 'unknown';
+            
+            axios.post(webhookUrl, {
+                event: 'on_ack',
+                session: sessionId,
+                payload: { id: msgId, to: jid, status: ack, ack: ack }
+            }, { headers, timeout: 5000 }).catch(e => {
+                console.warn(`[${sessionId}] ⚠️ Falha no forward do ACK: ${e.message}`);
+            });
+        });
     });
 }
 
 
-// Helper para notificação de status unificada
-async function notifyStatus(sessionId, state, qrcode = null) {
+// Helper para notificação de status unificada (NÃO-BLOQUEANTE)
+function notifyStatus(sessionId, state, qrcode = null) {
     const webhookUrl = process.env.WEBHOOK_URL || 'http://127.0.0.1:8001/api/v1/gateway/webhook/whatsapp';
     const headers = { 'x-api-key': 'SaaS_Secret_Gateway_Key_2026' };
     
-    try {
-        await axios.post(webhookUrl, {
-            event: 'on_state_change',
-            session: sessionId,
-            payload: {
-                state: state,
-                qrcode: qrcode
-            }
-        }, { headers });
-    } catch (e) {
-        console.error(`[${sessionId}] Erro ao notificar status (${state}) no webhook:`, e.message);
-    }
+    // 🔥 Fire-and-Forget com timeout de 5s
+    axios.post(webhookUrl, {
+        event: 'on_state_change',
+        session: sessionId,
+        payload: { state: state, qrcode: qrcode }
+    }, { headers, timeout: 5000 }).catch(e => {
+        console.warn(`[${sessionId}] ⚠️ Notificação de status '${state}' falhou: ${e.message}`);
+    });
 }
 
 // --- Bridge Endpoints ---
