@@ -68,8 +68,8 @@ class AckWorker:
         updated = await MessageHistoryService.update_message_status(None, external_id, new_status)
         
         if updated:
-            # 3. Notificação WebSocket para o Agente (Real-time UI Update via RPC)
-            await ws_manager.send_to_conversation(tenant_id, numeric_id, {
+            # 3. Notificação RPC via Bus (Garante entrega em cenários distribuídos)
+            await ws_manager.publish_event(tenant_id, {
                 "method": "update_message_status",
                 "params": {
                     "external_id": external_id,
@@ -78,6 +78,6 @@ class AckWorker:
                     "timestamp": ack_data.get("t")
                 }
             })
-            logger.debug(f"🔔 WebSocket Notificado (RPC): Msg {external_id} Status {new_status}")
+            logger.debug(f"🔔 Evento de Status publicado no Bus: Msg {external_id} Status {new_status}")
 
 ack_worker = AckWorker()

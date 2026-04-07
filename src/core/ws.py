@@ -65,8 +65,27 @@ class ConnectionManager:
                     except Exception as e:
                         logger.error(f"❌ Erro ao enviar WS para Usuário {user_id}: {e}")
 
+    async def publish_event(self, tenant_id: str, payload: dict, user_id: str = None):
+        """
+        🚀 NOVO: Publica um evento no RabbitMQ para ser distribuído pela Bridge.
+        Isso resolve o isolamento de processos (PM2/Multi-workers).
+        """
+        from src.core.bus import rabbitmq_bus
+        try:
+            await rabbitmq_bus.publish(
+                exchange_name="messages_exchange",
+                routing_key=f"ws.broadcast.{tenant_id}",
+                message={
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                    "data": payload
+                }
+            )
+        except Exception as e:
+            logger.error(f"❌ Falha ao publicar evento WS no bus: {e}")
+
     async def broadcast_to_tenant(self, tenant_id: str, message: dict):
-        """Envia mensagem para todos os usuários online de um Tenant específico."""
+        """Envia mensagem para todos os usuários online de um Tenant ESPECIFICAMENTE neste processo."""
         if tenant_id in self.active_connections:
             for user_id in self.active_connections[tenant_id]:
                 for connection in self.active_connections[tenant_id][user_id]:

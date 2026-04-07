@@ -77,8 +77,9 @@ class FlowWorker:
                 postgre_conv = MessageHistoryService.get_or_create_conversation(db, contact_phone)
                 conversation_numeric_id = postgre_conv.id if postgre_conv else contact_phone
 
-            # 🟢 Notificação Real-time via Socket RPC (Sprint 21 + RPC)
-            await ws_manager.send_to_conversation(tenant_id, str(conversation_numeric_id), {
+            # 🟢 Notificação Real-time via Bus para a Bridge (Sprint 21 + RPC)
+            # Usamos publish_event para garantir entrega em multi-processo
+            await ws_manager.publish_event(tenant_id, {
                 "method": "receive_message",
                 "params": {
                     "message_id": external_id,

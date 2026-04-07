@@ -94,7 +94,7 @@ class WhatsAppManagerService:
             inst.last_health_check = datetime.utcnow()
             
             from src.core.ws import ws_manager
-            await ws_manager.broadcast_to_tenant(inst.tenant_id, {
+            await ws_manager.publish_event(inst.tenant_id, {
                 "type": "bot_status_update",
                 "status": new_status,
                 "session": inst.session_name
@@ -106,7 +106,7 @@ class WhatsAppManagerService:
             if qr and qr != inst.qrcode_base64:
                 inst.qrcode_base64 = qr
                 from src.core.ws import ws_manager
-                await ws_manager.broadcast_to_tenant(inst.tenant_id, {
+                await ws_manager.publish_event(inst.tenant_id, {
                     "type": "bot_qrcode_update",
                     "qrcode": qr
                 })

@@ -304,7 +304,8 @@ async def incoming_webhook(
                     socket_payload["method"] = "chat_history_restored"
                     logger.info(f"📚 Histórico restaurado: {len(history_data)} msg(s)")
 
-                await ws_manager.broadcast_to_tenant(tenant_id, socket_payload)
+                # 🟢 Notificação Real-time via Bus (Garante entrega em multi-processo)
+                await ws_manager.publish_event(tenant_id, socket_payload)
                 logger.debug(
                     f"[Gateway] Estado '{state}' broadcast via WS | "
                     f"tenant='{tenant_id}' | history={len(history_data)} msgs"
