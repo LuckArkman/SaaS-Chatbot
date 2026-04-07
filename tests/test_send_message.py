@@ -31,6 +31,17 @@ def test_send_message():
         r = client.post(f"{BASE_URL}/api/v1/auth/login", data=login_data)
         
         if r.status_code != 200:
+            print(f"[*] Registrando novo usuário: {EMAIL}")
+            reg_payload = {
+                "email": EMAIL,
+                "password": PASSWORD,
+                "full_name": "Send Message Tester",
+                "tenant_name": "Integration Test Tenant"
+            }
+            client.post(f"{BASE_URL}/api/v1/auth/register", json=reg_payload)
+            r = client.post(f"{BASE_URL}/api/v1/auth/login", data=login_data)
+
+        if r.status_code != 200:
             print(f"❌ Falha no login: {r.status_code} - {r.text}")
             return
             
