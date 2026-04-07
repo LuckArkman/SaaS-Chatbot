@@ -52,21 +52,19 @@ class AckWorker:
         with SessionLocal() as db:
             from src.models.chat import Message, Conversation
             
-            # Resolve o contato (WhatsApp ID / Fone) desta mensagem para notificar o frontend
+            # Resolve o ID numérico da conversa desta mensagem para notificar o frontend
             msg_obj = db.query(Message).filter(Message.external_id == external_id).first()
-            contact_phone = "unknown"
-            if msg_obj and msg_obj.conversation:
-                contact_phone = msg_obj.conversation.contact_phone
+            numeric_id = str(msg_obj.conversation_id) if msg_obj else "unknown"
 
             updated = MessageHistoryService.update_message_status(db, external_id, new_status)
             
             if updated:
                 # 3. Notificação WebSocket para o Agente (Real-time UI Update via RPC)
-                await ws_manager.send_to_conversation(tenant_id, contact_phone, {
+                await ws_manager.send_to_conversation(tenant_id, numeric_id, {
                     "method": "update_message_status",
                     "params": {
                         "external_id": external_id,
-                        "conversation_id": contact_phone,
+                        "conversation_id": numeric_id,
                         "status": new_status,
                         "timestamp": ack_data.get("t")
                     }

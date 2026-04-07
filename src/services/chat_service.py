@@ -240,10 +240,11 @@ class ChatService:
         )
 
         # 3. Sync em tempo real para outras abas/agentes do mesmo Tenant (WebSocket)
-        await ws_manager.send_to_conversation(tenant_id, contact_phone, {
+        await ws_manager.send_to_conversation(tenant_id, str(conversation.id), {
             "type": "new_message",
             "agent_id": agent_id,
-            "conversation_id": contact_phone,
+            "conversation_id": str(conversation.id),
+            "contact_phone": contact_phone,
             "content": content,
             "side": "agent",
             "timestamp": str(datetime.utcnow())
