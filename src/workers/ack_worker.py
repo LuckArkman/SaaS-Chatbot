@@ -48,27 +48,36 @@ class AckWorker:
         elif ws_status == WhatsAppAckStatus.ERROR:
             new_status = MessageStatus.ERROR
             
-        # 2. Persistência Postgres
-        with SessionLocal() as db:
-            from src.models.chat import Message, Conversation
-            
-            # Resolve o ID numérico da conversa desta mensagem para notificar o frontend
-            msg_obj = db.query(Message).filter(Message.external_id == external_id).first()
-            numeric_id = str(msg_obj.conversation_id) if msg_obj else "unknown"
+        # 2. Persistência de status exclusivamente no MongoDB
+        from src.models.mongo.chat import MessageDocument
+        from src.models.chat import Conversation
+        
+        mongo_msg = await MessageDocument.find_one(MessageDocument.external_id == external_id)
+        numeric_id = "unknown"
+        
+        if mongo_msg:
+            # Resolve o ID numérico da conversa via Postgres (usando contact_phone do Mongo)
+            with SessionLocal() as db:
+                conv = db.query(Conversation).filter(
+                    Conversation.contact_phone == mongo_msg.contact_phone,
+                    Conversation.tenant_id == tenant_id
+                ).first()
+                if conv:
+                    numeric_id = str(conv.id)
 
-            updated = MessageHistoryService.update_message_status(db, external_id, new_status)
-            
-            if updated:
-                # 3. Notificação WebSocket para o Agente (Real-time UI Update via RPC)
-                await ws_manager.send_to_conversation(tenant_id, numeric_id, {
-                    "method": "update_message_status",
-                    "params": {
-                        "external_id": external_id,
-                        "conversation_id": numeric_id,
-                        "status": new_status,
-                        "timestamp": ack_data.get("t")
-                    }
-                })
-                logger.debug(f"🔔 WebSocket Notificado (RPC): Msg {external_id} Status {new_status}")
+        updated = await MessageHistoryService.update_message_status(None, external_id, new_status)
+        
+        if updated:
+            # 3. Notificação WebSocket para o Agente (Real-time UI Update via RPC)
+            await ws_manager.send_to_conversation(tenant_id, numeric_id, {
+                "method": "update_message_status",
+                "params": {
+                    "external_id": external_id,
+                    "conversation_id": numeric_id,
+                    "status": new_status,
+                    "timestamp": ack_data.get("t")
+                }
+            })
+            logger.debug(f"🔔 WebSocket Notificado (RPC): Msg {external_id} Status {new_status}")
 
 ack_worker = AckWorker()

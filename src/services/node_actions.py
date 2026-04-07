@@ -129,7 +129,7 @@ class NodeActions:
         
         # Busca histórico recente para contexto multi-turn (últimas 10 trocas)
         with SessionLocal() as db:
-            recent_messages = MessageHistoryService.get_recent_messages(
+            recent_messages = await MessageHistoryService.get_recent_messages(
                 db, contact_phone=contact_phone, limit=10
             )
         

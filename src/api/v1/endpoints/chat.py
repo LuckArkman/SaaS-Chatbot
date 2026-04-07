@@ -263,7 +263,7 @@ async def get_conversation_history(
             detail="conversation_id inválido. Esperado um ID numérico de conversa."
         )
 
-    conversation_detail = MessageHistoryService.get_conversation_detail(
+    conversation_detail = await MessageHistoryService.get_conversation_detail(
         db=db,
         tenant_id=tenant_id,
         conversation_id=conversation_id_int,
