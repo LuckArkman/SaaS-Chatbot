@@ -27,10 +27,22 @@ class RabbitMQBus:
             logger.info("🐰 Conexão RabbitMQ encerrada.")
 
     async def publish(self, exchange_name: str, routing_key: str, message: Any):
-        """Publica uma mensagem em uma Exchange."""
-        exchange = await self.channel.declare_exchange(
-            exchange_name, aio_pika.ExchangeType.TOPIC, durable=True
-        )
+        """Publica uma mensagem em uma Exchange com cache de declaração (High-Throughput)."""
+        if not self.channel:
+            await self.connect()
+
+        # ✅ Otimização: Cache de exchanges evita REDECLARE massivo em cada mensagem (Spring 08 Performance)
+        if not hasattr(self, '_exchanges_cache'):
+            self._exchanges_cache = {}
+
+        if exchange_name not in self._exchanges_cache:
+            exchange = await self.channel.declare_exchange(
+                exchange_name, aio_pika.ExchangeType.TOPIC, durable=True
+            )
+            self._exchanges_cache[exchange_name] = exchange
+            logger.debug(f"🐰 Exchange declarada e cacheada: {exchange_name}")
+        else:
+            exchange = self._exchanges_cache[exchange_name]
         
         message_body = json.dumps(message).encode()
         await exchange.publish(

@@ -28,6 +28,75 @@ let sessionStatuses = {};
 const logger = pino({ level: 'info' });
 
 /**
+ * ✅ NOVO: WebhookQueue - Gerenciador Sequencial de Webhooks
+ * Garante que os eventos do WhatsApp cheguem ao Python na ordem exata e sem sobrecarregar o backend.
+ * Resolve o gargalo de concorrência onde bursts de mensagens travavam o loopback ou saturavam o worker do Python.
+ */
+class WebhookQueue {
+    constructor(sessionId) {
+        this.sessionId = sessionId;
+        this.queue = [];
+        this.isProcessing = false;
+        this.webhookUrl = process.env.WEBHOOK_URL || 'http://127.0.0.1:8001/api/v1/gateway/webhook/whatsapp';
+        this.headers = { 'x-api-key': 'SaaS_Secret_Gateway_Key_2026' };
+    }
+
+    // Enfileira um evento (mensagens, ACKs, status)
+    enqueue(event, payload) {
+        this.queue.push({ event, session: this.sessionId, payload });
+        console.debug(`[${this.sessionId}] [Queue] + Enfileirado (${event}) | Itens: ${this.queue.length}`);
+        if (!this.isProcessing) {
+            this.process();
+        }
+    }
+
+    // Processamento estritamente SEQUENCIAL (FIFO)
+    async process() {
+        if (this.isProcessing) return;
+        this.isProcessing = true;
+
+        while (this.queue.length > 0) {
+            const item = this.queue[0];
+            try {
+                // Awaiting garante que não disparamos 50 requests paralelos no loopback
+                await axios.post(this.webhookUrl, item, { 
+                    headers: this.headers,
+                    timeout: 20000 // Ttimeout generoso para cenários de carga
+                });
+                console.log(`[${this.sessionId}] ✅ [Queue] Webhook entregue: ${item.event} | ID: ${item.payload.id || 'N/A'}`);
+            } catch (e) {
+                const status = e.response ? e.response.status : 'SEM_RESPOSTA';
+                console.error(`[${this.sessionId}] ❌ [Queue] Falha Webhook (${item.event}) | Status: ${status} | Erro: ${e.message}`);
+                
+                // Se for erro de rate-limit (429) ou sobrecarga (503), aguarda 2s antes de tentar o próximo
+                if (status === 429 || status === 503) {
+                    console.warn(`[${this.sessionId}] 🚦 Downtime preventivo: 2s (Backend sobrecarregado)`);
+                    await new Promise(r => setTimeout(r, 2000));
+                }
+            }
+            
+            this.queue.shift(); // Remove o primeiro (já processado)
+            
+            // 🔥 Backpressure safe: Intervalo de 20ms entre cada entrega 
+            // para permitir que o Event Loop do Python (que é async mas usa pydantic/ORM lento) respire.
+            await new Promise(r => setTimeout(r, 20));
+        }
+
+        this.isProcessing = false;
+        console.debug(`[${this.sessionId}] [Queue] ✅ Fila vazia.`);
+    }
+}
+
+const webhookQueues = {};
+
+function getWebhookQueue(sessionId) {
+    if (!webhookQueues[sessionId]) {
+        webhookQueues[sessionId] = new WebhookQueue(sessionId);
+    }
+    return webhookQueues[sessionId];
+}
+
+/**
  * Normaliza um número de telefone para o formato JID do WhatsApp.
  *
  * Regras de detecção de código de país (DDI):
@@ -209,7 +278,7 @@ async function connectToWhatsApp(sessionId) {
             io.emit('qr', { sessionId, qr: base64Qr });
 
             console.log(`[${sessionId}] Enviando QR Code para Webhook (${base64Qr.length} chars)`);
-            await notifyStatus(sessionId, 'QRCODE', base64Qr);
+            getWebhookQueue(sessionId).enqueue('on_state_change', { state: 'QRCODE', qrcode: base64Qr });
         }
 
         if (connection === 'close') {
@@ -255,8 +324,7 @@ async function connectToWhatsApp(sessionId) {
             delete sockets[sessionId];
             delete latestQrs[sessionId];
             sessionStatuses[sessionId] = 'DISCONNECTED';
-
-            await notifyStatus(sessionId, 'DISCONNECTED');
+            getWebhookQueue(sessionId).enqueue('on_state_change', { state: 'DISCONNECTED' });
 
             if (shouldReconnect) {
                 setTimeout(() => connectToWhatsApp(sessionId), 3000);
@@ -266,8 +334,7 @@ async function connectToWhatsApp(sessionId) {
             sessionStatuses[sessionId] = 'CONNECTED';
             delete latestQrs[sessionId];
             io.emit('status', { sessionId, status: 'CONNECTED' });
-            
-            await notifyStatus(sessionId, 'CONNECTED');
+            getWebhookQueue(sessionId).enqueue('on_state_change', { state: 'CONNECTED' });
         }
     });
 
@@ -276,62 +343,42 @@ async function connectToWhatsApp(sessionId) {
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
 
-        // 🚀 Processamento PARALELO e NÃO-BLOQUEANTE
-        // Não usamos 'await' no loop para garantir que o Baileys continue 
-        // processando pings/eventos enquanto enviamos o webhook.
-        messages.forEach(async (msg) => {
-            if (!msg.message) return;
+        // 🚀 Despacho via Fila Sequencial
+        // Resolve o bug onde bursts de mensagens faziam o loopback descartar pacotes do Bridge.
+        for (const msg of messages) {
+            if (!msg.message) continue;
 
-            try {
-                const content = 
-                    msg.message.conversation ||
-                    msg.message.extendedTextMessage?.text ||
-                    msg.message.imageMessage?.caption ||
-                    msg.message.videoMessage?.caption ||
-                    "";
+            const content = 
+                msg.message.conversation ||
+                msg.message.extendedTextMessage?.text ||
+                msg.message.imageMessage?.caption ||
+                msg.message.videoMessage?.caption ||
+                "";
 
-                const webhookUrl = process.env.WEBHOOK_URL || 'http://127.0.0.1:8001/api/v1/gateway/webhook/whatsapp';
-                const headers = { 'x-api-key': 'SaaS_Secret_Gateway_Key_2026' };
+            const payload = {
+                id:         msg.key.id,
+                from:       msg.key.remoteJid,
+                body:       content,
+                type:       'chat',
+                isGroupMsg: msg.key.remoteJid?.endsWith('@g.us') || false,
+                pushName:   msg.pushName || null,
+                fromMe:     msg.key.fromMe || false,
+                timestamp:  msg.messageTimestamp || Math.floor(Date.now() / 1000)
+            };
 
-                const envelope = {
-                    event: 'on_message',
-                    session: sessionId,
-                    payload: {
-                        id:         msg.key.id,
-                        from:       msg.key.remoteJid,
-                        body:       content,
-                        type:       'chat',
-                        isGroupMsg: msg.key.remoteJid?.endsWith('@g.us') || false,
-                        pushName:   msg.pushName || null,
-                        fromMe:     msg.key.fromMe || false,
-                        timestamp:  msg.messageTimestamp || Math.floor(Date.now() / 1000)
-                    }
-                };
-
-                // ✅ Timeout de 10s para evitar que webhooks pendentes causem leak de memória
-                axios.post(webhookUrl, envelope, { headers, timeout: 10000 })
-                    .then(() => console.log(`[${sessionId}] ✅ Webhook entregue: ${msg.key.id}`))
-                    .catch(e => console.error(`[${sessionId}] ❌ Erro Webhook: ${e.message}`));
-
-                // ✅ Cache local para retries
-                msgCache.set(msg.key.id, msg.message);
-                if (msgCache.size > 500) {
-                    msgCache.delete(msgCache.keys().next().value);
-                }
-
-            } catch (err) {
-                console.error(`[${sessionId}] ❌ Erro interno no handler de mensagem:`, err.message);
+            // ✅ Cache local imediato para retries/getMessage
+            msgCache.set(msg.key.id, msg.message);
+            if (msgCache.size > 1000) {
+                msgCache.delete(msgCache.keys().next().value);
             }
-        });
+
+            // Enfileira para o Python de forma segura
+            getWebhookQueue(sessionId).enqueue('on_message', payload);
+        }
     });
 
-    // ✅ Monitora ACKs de entrega E repassa ao Python (AckWorker)
-    // ack: 1 = Servidor | 2 = Recebido | 3 = Entregue ao dispositivo | 4 = Lido
+    // ✅ Monitora ACKs de entrega E repassa ao Python (AckWorker) de forma sequencial
     sock.ev.on('messages.update', async (updates) => {
-        const webhookUrl = process.env.WEBHOOK_URL || 'http://127.0.0.1:8001/api/v1/gateway/webhook/whatsapp';
-        const headers = { 'x-api-key': 'SaaS_Secret_Gateway_Key_2026' };
-
-        // 🚀 Despacho paralelo de ACKs
         updates.forEach(update => {
             if (update.update?.status === undefined) return;
 
@@ -339,32 +386,17 @@ async function connectToWhatsApp(sessionId) {
             const msgId     = update.key?.id || 'unknown';
             const jid       = update.key?.remoteJid || 'unknown';
             
-            axios.post(webhookUrl, {
-                event: 'on_ack',
-                session: sessionId,
-                payload: { id: msgId, to: jid, status: ack, ack: ack }
-            }, { headers, timeout: 5000 }).catch(e => {
-                console.warn(`[${sessionId}] ⚠️ Falha no forward do ACK: ${e.message}`);
+            getWebhookQueue(sessionId).enqueue('on_ack', { 
+                id: msgId, 
+                to: jid, 
+                status: ack, 
+                ack: ack 
             });
         });
     });
 }
 
 
-// Helper para notificação de status unificada (NÃO-BLOQUEANTE)
-function notifyStatus(sessionId, state, qrcode = null) {
-    const webhookUrl = process.env.WEBHOOK_URL || 'http://127.0.0.1:8001/api/v1/gateway/webhook/whatsapp';
-    const headers = { 'x-api-key': 'SaaS_Secret_Gateway_Key_2026' };
-    
-    // 🔥 Fire-and-Forget com timeout de 5s
-    axios.post(webhookUrl, {
-        event: 'on_state_change',
-        session: sessionId,
-        payload: { state: state, qrcode: qrcode }
-    }, { headers, timeout: 5000 }).catch(e => {
-        console.warn(`[${sessionId}] ⚠️ Notificação de status '${state}' falhou: ${e.message}`);
-    });
-}
 
 // --- Bridge Endpoints ---
 
