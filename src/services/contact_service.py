@@ -82,3 +82,25 @@ class ContactService:
             contact.is_blacklisted = status
             db.commit()
             logger.info(f"🛑 Contato {phone} (Tenant: {tenant_id}) marcou Opt-out.")
+
+    @staticmethod
+    def get_or_create_contact(db: Session, tenant_id: str, phone: str, name: str = "Contato S/ Nome") -> Contact:
+        """Busca ou cria um contato/lead no CRM do Tenant (Sprint 43)."""
+        phone = ContactService.normalize_phone(phone)
+        contact = db.query(Contact).filter(
+            Contact.tenant_id == tenant_id,
+            Contact.phone_number == phone
+        ).first()
+
+        if not contact:
+            contact = Contact(
+                phone_number=phone,
+                full_name=name,
+                tenant_id=tenant_id
+            )
+            db.add(contact)
+            db.commit()
+            db.refresh(contact)
+            logger.info(f"👤 Novo contato registrado via interação: {phone} (Tenant: {tenant_id})")
+        
+        return contact

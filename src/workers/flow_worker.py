@@ -48,9 +48,11 @@ class FlowWorker:
             is_from_me = data.get("from_me", False)
             computed_side = MessageSide.AGENT if is_from_me else MessageSide.CLIENT
 
-            # 🟢 Persistência Postgres + MongoDB (Histórico) antes de qualquer lógica
+            # Resolve o ID relacional da Conversa para o Frontend ancorar a UI
             with SessionLocal() as db:
                 from src.models.whatsapp import WhatsAppInstance
+                from src.services.contact_service import ContactService
+                
                 # Resolve o nome da sessão real (pode ter UUID) para o MongoDB
                 instance = db.query(WhatsAppInstance).filter(
                     WhatsAppInstance.tenant_id == tenant_id,
@@ -58,6 +60,10 @@ class FlowWorker:
                 ).order_by(WhatsAppInstance.id.desc()).execution_options(ignore_tenant=True).first()
                 
                 actual_session = instance.session_name if instance else f"tenant_{tenant_id}"
+
+                # 👤 Resolve e Enriquece dados do contato (CRM/Sprint 43)
+                notify_name = data.get("metadata", {}).get("notifyName") or "Contato S/ Nome"
+                contact = ContactService.get_or_create_contact(db, tenant_id, contact_phone, name=notify_name)
 
                 await MessageHistoryService.record_message(
                     db=db,
@@ -67,7 +73,7 @@ class FlowWorker:
                     external_id=external_id,
                     session_name=actual_session
                 )
-                # Resolve o ID relacional da Conversa para o Frontend ancorar a UI
+                
                 postgre_conv = MessageHistoryService.get_or_create_conversation(db, contact_phone)
                 conversation_numeric_id = postgre_conv.id if postgre_conv else contact_phone
 
@@ -78,6 +84,11 @@ class FlowWorker:
                     "message_id": external_id,
                     "conversation_id": str(conversation_numeric_id),
                     "contact_phone": contact_phone,
+                    "contact": {
+                        "id": contact.id,
+                        "full_name": contact.full_name,
+                        "phone_number": contact.phone_number
+                    },
                     "content": user_input,
                     "from_me": is_from_me,
                     "side": "bot" if is_from_me else "client",
