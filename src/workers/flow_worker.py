@@ -46,6 +46,12 @@ class FlowWorker:
             user_input = data.get("content", "")
             external_id = data.get("message_id")
             is_from_me = data.get("from_me", False)
+            
+            # 🟢 Normalização Imediata: Remove sufixos JID (ex: @s.whatsapp.net)
+            # Garante que o telefone no Banco de Dados baterá perfeitamente com 
+            # as requisições de Histórico do Frontend e o roteamento de Tenancy via WebSocket.
+            if contact_phone and "@" in contact_phone:
+                contact_phone = contact_phone.split("@")[0]
             computed_side = MessageSide.AGENT if is_from_me else MessageSide.CLIENT
 
             # Resolve o ID relacional da Conversa para o Frontend ancorar a UI

@@ -239,15 +239,18 @@ class ChatService:
             f"(resolvido de '{raw_conversation_id}', original: '{contact_phone}'): '{content[:60]}'"
         )
 
-        # 3. Sync em tempo real para outras abas/agentes do mesmo Tenant (WebSocket)
-        await ws_manager.send_to_conversation(tenant_id, str(conversation.id), {
-            "type": "new_message",
-            "agent_id": agent_id,
-            "conversation_id": str(conversation.id),
-            "contact_phone": contact_phone,
-            "content": content,
-            "side": "agent",
-            "timestamp": str(datetime.utcnow())
+        # 3. Sync em tempo real para outras abas/agentes do mesmo Tenant via RabbitMQ (Backplane)
+        await ws_manager.publish_event(tenant_id, {
+            "method": "receive_message",
+            "params": {
+                "type": "new_message",
+                "agent_id": agent_id,
+                "conversation_id": str(conversation.id),
+                "contact_phone": phone_to_send,
+                "content": content,
+                "side": "agent",
+                "timestamp": str(datetime.utcnow())
+            }
         })
 
         logger.info(f"✅ Agente {agent_id} → '{contact_phone}' (origem: '{raw_conversation_id}'): '{content[:60]}'")
@@ -256,7 +259,7 @@ class ChatService:
 
     @staticmethod
     async def set_typing_status(tenant_id: str, conversation_id: str, is_typing: bool):
-        """Define o status de 'digitando' no Redis e notifica outros agentes."""
+        """Define o status de 'digitando' no Redis e notifica via barramento distribuído."""
         key = f"typing:{tenant_id}:{conversation_id}"
         if is_typing:
             # TTL de 5s para não prender o status se travar
@@ -264,10 +267,13 @@ class ChatService:
         else:
             await redis_client.delete(key)
 
-        await ws_manager.send_to_conversation(tenant_id, conversation_id, {
-            "type": "typing_update",
-            "is_typing": is_typing,
-            "conversation_id": conversation_id
+        await ws_manager.publish_event(tenant_id, {
+            "method": "typing_update",
+            "params": {
+                "type": "typing_update",
+                "is_typing": is_typing,
+                "conversation_id": conversation_id
+            }
         })
 
     # --- 🔵 Lógica Nova de Histórico (MongoDB) ---
