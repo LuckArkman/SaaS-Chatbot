@@ -30,13 +30,19 @@ async def start_websocket_bridge():
             # Envio em Massa para o Tenant (Broadcast)
             await ws_manager.broadcast_to_tenant(tenant_id, data)
 
+    import uuid
     # Inicia Consumo em Background
     try:
+        # Gera fila exclusiva para esta instância de worker (Pub/Sub fanout-like em Topic)
+        unique_queue_name = f"outgoing_ws_queue_{uuid.uuid4().hex[:8]}"
+        
         await rabbitmq_bus.subscribe(
-            queue_name="outgoing_ws_queue",
+            queue_name=unique_queue_name,
             routing_key="ws.broadcast.#",
             exchange_name="messages_exchange",
-            callback=process_outgoing_message
+            callback=process_outgoing_message,
+            auto_delete=True,
+            exclusive=True
         )
     except Exception as e:
         logger.error(f"❌ Falha crítica ao iniciar bridge RabbitMQ-WS: {e}")

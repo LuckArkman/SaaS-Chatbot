@@ -55,13 +55,18 @@ class RabbitMQBus:
         )
         logger.debug(f"📤 Mensagem enviada para {exchange_name}:{routing_key}")
 
-    async def subscribe(self, queue_name: str, routing_key: str, exchange_name: str, callback: Callable[[Any], Awaitable[None]]):
+    async def subscribe(self, queue_name: str, routing_key: str, exchange_name: str, callback: Callable[[Any], Awaitable[None]], auto_delete: bool = False, exclusive: bool = False):
         """Inscreve um consumidor em uma fila ligada a uma Exchange."""
         exchange = await self.channel.declare_exchange(
             exchange_name, aio_pika.ExchangeType.TOPIC, durable=True
         )
         
-        queue = await self.channel.declare_queue(queue_name, durable=True)
+        queue = await self.channel.declare_queue(
+            queue_name, 
+            durable=not auto_delete, 
+            auto_delete=auto_delete, 
+            exclusive=exclusive
+        )
         await queue.bind(exchange, routing_key=routing_key)
 
         async def on_message(message: aio_pika.abc.AbstractIncomingMessage):
