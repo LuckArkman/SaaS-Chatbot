@@ -7,6 +7,8 @@ from src.core.ws import ws_manager
 from src.schemas.whatsapp import WhatsAppAckStatus
 from loguru import logger
 import asyncio
+import uuid
+from contextvars import copy_context
 
 class AckWorker:
     """
@@ -16,24 +18,37 @@ class AckWorker:
     async def start(self):
         logger.info("✔️ Iniciando Ack Tracking Worker em Segundo Plano...")
         
-        # Subscreve na fila de ACKs do Gateway
+        # 🔒 FIX MULTI-TENANCY: Fila exclusiva por instância.
+        # Evita Round-Robin que entregaria ACKs do Tenant B ao worker do Tenant A.
+        worker_queue_name = f"message_ack_queue_{uuid.uuid4().hex[:8]}"
+        
         await rabbitmq_bus.subscribe(
-            queue_name="message_ack_queue",
+            queue_name=worker_queue_name,
             routing_key="message.ack",
             exchange_name="messages_exchange",
-            callback=self.handle_message_ack
+            callback=self.handle_message_ack,
+            auto_delete=True,
+            exclusive=True
         )
+        logger.info(f"✔️ AckWorker inscrito na fila exclusiva: '{worker_queue_name}'")
 
     async def handle_message_ack(self, payload: dict):
         """
         Ponto de entrada para cada confirmação (READ, DELIVERED, etc).
+        Processado num contexto de variáveis ISOLADO para evitar
+        vazamento de tenant_id entre coroutines concorrentes.
         """
         tenant_id = payload.get("tenant_id")
-        ack_data = payload.get("ack") # Pydantic WhatsAppAck
+        ack_data = payload.get("ack")
         
         if not tenant_id or not ack_data:
             return
 
+        # Isola o contexto desta mensagem para evitar contaminação de outros handlers
+        ctx = copy_context()
+        await asyncio.get_event_loop().run_in_executor(
+            None, lambda: ctx.run(set_current_tenant_id, tenant_id)
+        )
         set_current_tenant_id(tenant_id)
         
         external_id = ack_data.get("id")

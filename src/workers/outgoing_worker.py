@@ -6,6 +6,7 @@ from src.services.whatsapp_bridge_service import whatsapp_bridge
 from src.core.ws import ws_manager
 from loguru import logger
 import asyncio
+import uuid
 
 class OutgoingMessageWorker:
     """
@@ -15,12 +16,19 @@ class OutgoingMessageWorker:
     async def start(self):
         logger.info("📤 Iniciando Outgoing Message Worker no RabbitMQ...")
         
+        # 🔒 FIX MULTI-TENANCY: Fila exclusiva por instância.
+        # Garante que todos os workers recebam cada evento de envio (sem Round-Robin).
+        worker_queue_name = f"outgoing_whatsapp_queue_{uuid.uuid4().hex[:8]}"
+        
         await rabbitmq_bus.subscribe(
-            queue_name="outgoing_whatsapp_queue",
+            queue_name=worker_queue_name,
             routing_key="message.outgoing",
             exchange_name="messages_exchange",
-            callback=self.process_outgoing
+            callback=self.process_outgoing,
+            auto_delete=True,
+            exclusive=True
         )
+        logger.info(f"📤 OutgoingWorker inscrito na fila exclusiva: '{worker_queue_name}'")
 
     async def process_outgoing(self, payload: dict):
         """
@@ -95,19 +103,19 @@ class OutgoingMessageWorker:
 
             # 🎯 Pós-processamento do resultado do Bridge
             if response_bridge.get("success"):
-                # Callback de sucesso via WebSocket (RPC Pattern)
-                await ws_manager.send_to_conversation(
-                    tenant_id=tenant_id,
-                    conversation_id=to,
-                    message={
-                        "method": "update_message_status",
-                        "params": {
-                            "status": "sent",
-                            "message_id": response_bridge.get("message_id"),
-                            "external_id": response_bridge.get("message_id")
-                        }
+                # Callback de sucesso via Barramento Distribuído (RPC Pattern)
+                # 🔒 FIX BUG #3: Substituindo send_to_conversation (local) por publish_event (distribuído)
+                # Garante que o frontend receba a confirmação independentemente de qual worker 
+                # processou o envio vs. qual worker tem a conexão WebSocket do agente.
+                await ws_manager.publish_event(tenant_id, {
+                    "method": "update_message_status",
+                    "params": {
+                        "status": "sent",
+                        "message_id": response_bridge.get("message_id"),
+                        "external_id": response_bridge.get("message_id"),
+                        "to": to
                     }
-                )
+                })
                 logger.info(f"✅ Mensagem entregue ao Bridge para '{to}' (ID: {response_bridge.get('message_id')})")
             else:
                 logger.error(

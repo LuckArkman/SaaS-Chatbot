@@ -122,10 +122,12 @@ async def incoming_webhook(
         tenant_id = payload.get("tenant_id", "")
         
         # 3. Deriva tenant via nome da sessão para suportar cross-tenancy via Baileys Webhook
+        # 🔒 FIX MULTI-TENANCY #4: Usar removeprefix em vez de split("_")[1].
+        # split("_") quebra tenant IDs que contêm underscores (ex: "tenant_my_company" → "my")
+        # ou UUIDs com hifens. removeprefix("tenant_") extrai corretamente o ID completo.
         session_str = str(payload.get("session", ""))
         if not tenant_id and session_str.startswith("tenant_"):
-            parts = session_str.split("_")
-            tenant_id = parts[1] if len(parts) >= 2 else ""
+            tenant_id = session_str.removeprefix("tenant_")
 
         if tenant_id:
             set_current_tenant_id(tenant_id)

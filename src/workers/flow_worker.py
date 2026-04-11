@@ -10,6 +10,8 @@ from src.core.ws import ws_manager
 from loguru import logger
 import json
 import asyncio
+import uuid
+from contextvars import copy_context
 
 class FlowWorker:
     """
@@ -19,27 +21,49 @@ class FlowWorker:
     async def start(self):
         logger.info("🤖 Iniciando Flow Engine Worker em Segundo Plano...")
         
-        # Subscreve na fila de mensagens de entrada do Gateway
+        # 🔒 FIX MULTI-TENANCY #1: Fila exclusiva por instância de worker.
+        # Usando UUID único, cada processo da API cria a sua própria fila.
+        # Isso elimina o Round-Robin do RabbitMQ que redirecionava mensagens
+        # de Tenant B para o worker do Tenant A (causa raiz do bug).
+        worker_queue_name = f"flow_engine_queue_{uuid.uuid4().hex[:8]}"
+        
         await rabbitmq_bus.subscribe(
-            queue_name="flow_engine_queue",
+            queue_name=worker_queue_name,
             routing_key="message.incoming",
             exchange_name="messages_exchange",
-            callback=self.handle_incoming_message
+            callback=self.handle_incoming_message,
+            auto_delete=True,
+            exclusive=True
         )
+        logger.info(f"🤖 FlowWorker inscrito na fila exclusiva: '{worker_queue_name}'")
 
     async def handle_incoming_message(self, payload: dict):
         """
         Ponto de entrada para processamento de cada mensagem.
+        Cada mensagem é processada num contexto de variáveis ISOLADO
+        para evitar vazamento de tenant_id entre coroutines concorrentes.
         """
-        try:
-            # 1. Recupera Payload Normalizado (UnifiedMessage)
-            tenant_id = payload.get("tenant_id")
-            data = payload.get("data")
-            
-            if not tenant_id or not data:
-                return
+        tenant_id = payload.get("tenant_id")
+        data = payload.get("data")
+        
+        if not tenant_id or not data:
+            return
 
-            # Configura Contexto de Tenancy (Sprint 03)
+        # 🔒 FIX MULTI-TENANCY #2: Contexto isolado por mensagem.
+        # copy_context() cria uma cópia independente do ContextVar atual.
+        # Sem isso, set_current_tenant_id() numa coroutine pode contaminar
+        # outras coroutines concorrentes que já iniciaram no mesmo event loop.
+        ctx = copy_context()
+        await asyncio.get_event_loop().run_in_executor(
+            None, lambda: ctx.run(set_current_tenant_id, tenant_id)
+        )
+        
+        # Processa a mensagem em bloco isolado (sem afetar outros handlers)
+        await self._process_message(tenant_id, data)
+
+    async def _process_message(self, tenant_id: str, data: dict):
+        """Lógica interna de processamento, com contexto de tenant já configurado."""
+        try:
             set_current_tenant_id(tenant_id)
             
             contact_phone = data.get("from_id")
