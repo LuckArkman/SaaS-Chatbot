@@ -9,8 +9,9 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     
     # Security
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "SUPER_SECRET_KEY_CHANGE_ME")
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "SUPER_SECRET_KEY_CHANGE_ME") # Em producao usar uma variavel de ambiente forte
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8080")
     
     # Database
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "admin")
@@ -18,6 +19,10 @@ class Settings(BaseSettings):
     POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER", "127.0.0.1")
     POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
     POSTGRES_DB: str = os.getenv("POSTGRES_DB", "saas_omnichannel")
+    
+    # Pool de conexoes
+    DATABASE_POOL_SIZE: int = int(os.getenv("DATABASE_POOL_SIZE", "20"))
+    DATABASE_MAX_OVERFLOW: int = int(os.getenv("DATABASE_MAX_OVERFLOW", "30"))
     
     @property
     def DATABASE_URL(self) -> str:
@@ -35,9 +40,13 @@ class Settings(BaseSettings):
     # WhatsApp Bridge - Node.js (Sprint 26)
     WHATSAPP_BRIDGE_URL: str = os.getenv("WHATSAPP_BRIDGE_URL", "http://127.0.0.1:8081")
     BRIDGE_API_KEY: str = os.getenv("BRIDGE_API_KEY", "BOT_API_KEY_CHANGE_ME")
+    GATEWAY_API_KEY: str = os.getenv("GATEWAY_API_KEY", "SaaS_Secret_Gateway_Key_2026")
 
     # Google Gemini AI (Sprint 50)
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+
+    # Pagamentos (Sprint 32)
+    PAYMENT_WEBHOOK_SECRET: str = os.getenv("PAYMENT_WEBHOOK_SECRET", "DEV_SECRET_KEY_FOR_WEBHOOK")
 
     model_config = SettingsConfigDict(
         case_sensitive=True, 

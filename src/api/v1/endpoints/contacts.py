@@ -82,11 +82,19 @@ async def import_contacts_from_file(
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """Importa contatos de um arquivo CSV (Sprint 37)."""
+    import codecs
+    import csv
+    
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Formato de arquivo inválido. Use .csv")
 
-    content = await file.read()
-    results = ContactService.import_csv(db, tenant_id, content.decode("utf-8"))
+    # 🔄 FIX CRÍTICO ANTIPADRÃO #20: (Parte 1) Streaming
+    # Nunca carrega gigabytes usando 'await file.read()' para decodificar na RAM.
+    # Usa stream linear (iterdecode) suportado de fábrica via SpooledTemporaryFile do FastAPI.
+    csv_reader = csv.DictReader(codecs.iterdecode(file.file, 'utf-8'))
+    
+    # Repassa o generator lazy pro serviço, poupando O(N) memória
+    results = ContactService.import_csv(db, tenant_id, csv_reader)
     return results
 
 

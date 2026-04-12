@@ -34,7 +34,6 @@ class MessageHistoryService:
 
     @staticmethod
     async def record_message(
-        db: Session, 
         contact_phone: str, 
         content: str, 
         side: MessageSide,
@@ -45,15 +44,18 @@ class MessageHistoryService:
         session_name: Optional[str] = None
     ) -> dict: # Retorna um dicionário com os dados da mensagem (agora no MongoDB)
         """Salva uma mensagem exclusivamente no histórico do MongoDB e atualiza o metadado da conversa no Postgres."""
-        conversation = MessageHistoryService.get_or_create_conversation(db, contact_phone)
         tenant_id = get_current_tenant_id()
         
-        # 🟢 1. Atualiza metadados da conversa no Postgres
-        conversation.last_message_content = content[:50] + ("..." if len(content) > 50 else "")
-        conversation.last_interaction = datetime.utcnow()
-        db.commit()
+        # 🟢 1. Transação Curta: Atualiza metadados da conversa no Postgres sem segurar conexão
+        from src.core.database import SessionLocal
+        with SessionLocal() as db:
+            conversation = MessageHistoryService.get_or_create_conversation(db, contact_phone)
+            conversation.last_message_content = content[:50] + ("..." if len(content) > 50 else "")
+            conversation.last_interaction = datetime.utcnow()
+            conversation_id = conversation.id
+            db.commit()
 
-        # 🟢 2. Persistência MongoDB enviando como fonte da verdade
+        # 🟢 2. Persistência MongoDB enviando como fonte da verdade (Sem transação PG aberta!)
         from src.services.chat_service import chat_service
         from src.models.mongo.chat import MessageSource
         
@@ -78,7 +80,7 @@ class MessageHistoryService:
             logger.debug(f"💾 Mensagem salva no MongoDB (ID: {mongo_msg.id}) para {contact_phone}")
             return {
                 "id": str(mongo_msg.id),
-                "conversation_id": conversation.id,
+                "conversation_id": conversation_id,
                 "content": content,
                 "side": side,
                 "status": status,
@@ -89,31 +91,41 @@ class MessageHistoryService:
             raise e
 
     @staticmethod
-    async def update_message_status(db: Session, external_id: str, new_status: MessageStatus) -> bool:
-        """Atualiza o status (ack) de uma mensagem EXCLUSIVAMENTE no MongoDB."""
+    async def update_message_status(external_id: str, new_status: MessageStatus) -> bool:
+        """
+        Atualiza o status (ack) de uma mensagem EXCLUSIVAMENTE no MongoDB.
+
+        Nao recebe db: Session pois esta operacao usa apenas MongoDB.
+        Manter o parametro seria enganoso e quebraria ao adicionar logica Postgres futuramente.
+        """
         from src.models.mongo.chat import MessageDocument
-        
+
         # Mapeamento do MessageStatus para o valor ACK numérico do Baileys
         ack_map = {
-            MessageStatus.SENT: 1,
+            MessageStatus.SENT:      1,
             MessageStatus.DELIVERED: 2,
-            MessageStatus.READ: 3,
-            MessageStatus.ERROR: -1
+            MessageStatus.READ:      3,
+            MessageStatus.ERROR:    -1
         }
-        
+
         mongo_msg = await MessageDocument.find_one(MessageDocument.external_id == external_id)
         if not mongo_msg:
+            logger.debug(f"[AckWorker] Mensagem '{external_id}' nao encontrada no MongoDB — ACK ignorado.")
             return False
-            
+
         new_ack = ack_map.get(new_status, 0)
-        
-        # Não permite 'downgrade' de status no ACK
+
+        # Nao permite 'downgrade' de status no ACK (ex: READ → DELIVERED seria regressao)
         if new_ack > mongo_msg.ack:
             mongo_msg.ack = new_ack
             await mongo_msg.save()
-            logger.debug(f"✔️ Status da Mensagem {external_id} atualizado para {new_status} no MongoDB")
+            logger.debug(f"✔️ ACK atualizado | msg='{external_id}' | ack={new_ack} ({new_status.value})")
             return True
-            
+
+        logger.debug(
+            f"[AckWorker] ACK ignorado (sem upgrade) | msg='{external_id}' "
+            f"| atual={mongo_msg.ack} → solicitado={new_ack}"
+        )
         return False
 
     @staticmethod

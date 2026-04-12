@@ -88,18 +88,23 @@ class FlowWorker:
                 # 👤 Resolve e Enriquece dados do contato (CRM/Sprint 43)
                 notify_name = data.get("metadata", {}).get("notifyName") or "Contato S/ Nome"
                 contact = ContactService.get_or_create_contact(db, tenant_id, contact_phone, name=notify_name)
+                # Salva em dict para que possa ser lido fora da SessionLocal (evitar DetachedInstanceError)
+                contact_dict = {
+                    "id": contact.id,
+                    "full_name": contact.full_name,
+                    "phone_number": contact.phone_number
+                }
 
-                await MessageHistoryService.record_message(
-                    db=db,
-                    contact_phone=contact_phone,
-                    content=user_input,
-                    side=computed_side,
-                    external_id=external_id,
-                    session_name=actual_session
-                )
-                
-                postgre_conv = MessageHistoryService.get_or_create_conversation(db, contact_phone)
-                conversation_numeric_id = postgre_conv.id if postgre_conv else contact_phone
+            # 🟢 Persistencia MongoDB e Metadados executada fora do 'with SessionLocal()',
+            # liberando a conexao do Postgres antes do I/O de rede. (Problema Arquitetural #13)
+            msg_data = await MessageHistoryService.record_message(
+                contact_phone=contact_phone,
+                content=user_input,
+                side=computed_side,
+                external_id=external_id,
+                session_name=actual_session
+            )
+            conversation_numeric_id = msg_data.get("conversation_id")
 
             # 🟢 Notificação Real-time DIRETA via WebSocket
             active = ws_manager.active_connections.get(tenant_id, {})
@@ -117,11 +122,7 @@ class FlowWorker:
                         "message_id": external_id,
                         "conversation_id": str(conversation_numeric_id),
                         "contact_phone": contact_phone,
-                        "contact": {
-                            "id": contact.id,
-                            "full_name": contact.full_name,
-                            "phone_number": contact.phone_number
-                        },
+                        "contact": contact_dict,
                         "content": user_input,
                         "from_me": is_from_me,
                         "side": "bot" if is_from_me else "client",

@@ -27,37 +27,59 @@ class ContactService:
         return clean
 
     @staticmethod
-    def import_csv(db: Session, tenant_id: str, csv_content: str) -> Dict[str, int]:
-        """Processa um arquivo CSV e importa contatos novos."""
-        reader = csv.DictReader(io.StringIO(csv_content))
+    def import_csv(db: Session, tenant_id: str, csv_reader: Any) -> Dict[str, int]:
+        """
+        Processa um arquivo CSV e importa contatos novos em BATCH O(1).
+        
+        🔄 FIX CRÍTICO ANTIPADRÃO #20: (Parte 2) Fim do N+1 Quering.
+        Consultar 'db.query(...).first()' iterativamente dentro de um for de CSV causa 
+        um colapso de N transações simultâneas que trava a thread do FastAPI inteira.
+        """
         imported = 0
         skipped = 0
         
-        for row in reader:
+        # 1. Puxa TODOS os telefones existentes do tenant PARA A MEMÓRIA (Set O(1))
+        # Muito mais rápido que ir ao banco 100.000 vezes sequenciais.
+        existing_phones_query = db.query(Contact.phone_number).filter(Contact.tenant_id == tenant_id).all()
+        existing_phones = {row[0] for row in existing_phones_query}
+        
+        new_contacts = []
+        batch_size = 1000
+        
+        for row in csv_reader:
             phone = ContactService.normalize_phone(row.get("phone", ""))
             if not phone:
                 skipped += 1
                 continue
                 
-            # Verifica Duplicidade
-            exists = db.query(Contact).filter(
-                Contact.tenant_id == tenant_id,
-                Contact.phone_number == phone
-            ).first()
-            
-            if exists:
+            # Verifica Duplicidade instantaneamente O(1)
+            if phone in existing_phones:
                 skipped += 1
                 continue
                 
-            new_contact = Contact(
-                phone_number=phone,
-                full_name=row.get("name", "Contato S/ Nome"),
-                tenant_id=tenant_id
+            # Protege contra duplicados dentro do PRÓPRIO CSV na mesma injeção
+            existing_phones.add(phone)
+            
+            new_contacts.append(
+                Contact(
+                    phone_number=phone,
+                    full_name=row.get("name", "Contato S/ Nome"),
+                    tenant_id=tenant_id
+                )
             )
-            db.add(new_contact)
             imported += 1
             
-        db.commit()
+            # Flush Batch Paginado para salvar RAM em Carga Massiva (> 5 Milhões de leads)
+            if len(new_contacts) >= batch_size:
+                db.add_all(new_contacts)
+                db.commit() # Salva a cada 1000 iteracoes evitando OOM Session
+                new_contacts.clear()
+        
+        # Consolida remanescentes
+        if new_contacts:
+            db.add_all(new_contacts)
+            db.commit()
+
         logger.info(f"📊 Importação completa para {tenant_id}: {imported} novos contatos.")
         return {"imported": imported, "skipped": skipped}
 

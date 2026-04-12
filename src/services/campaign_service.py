@@ -36,7 +36,7 @@ class CampaignService:
             db.add(contact)
         
         # Atualiza contagem total
-        campaign = db.query(Campaign).get(campaign_id)
+        campaign = db.get(Campaign, campaign_id)
         if campaign:
             campaign.total_contacts += len(contacts)
             db.commit()
@@ -44,7 +44,7 @@ class CampaignService:
     @staticmethod
     async def schedule_campaign(db: Session, campaign_id: int):
         """Marca a campanha como agendada para o Worker processar."""
-        campaign = db.query(Campaign).get(campaign_id)
+        campaign = db.get(Campaign, campaign_id)
         if not campaign: return False
         
         campaign.status = CampaignStatus.SCHEDULED

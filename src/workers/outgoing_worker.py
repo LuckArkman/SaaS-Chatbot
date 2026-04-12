@@ -45,13 +45,11 @@ class OutgoingMessageWorker:
             return
 
         # 🔧 FIX CRÍTICO #1: Define o contexto de tenant ANTES de qualquer query.
-        # Sem isso, o filtro global de MultiTenantMixin pode herdar o tenant_id
-        # de uma task asyncio anterior, consultando o banco do tenant errado.
         set_current_tenant_id(tenant_id)
-            
+        
+        # Transação Curta Inicial: Busca a sessão ativa e o status atual
         with SessionLocal() as db:
             # 🔧 FIX CRÍTICO #2: Busca a instância MAIS RECENTE e ATIVA para o tenant.
-            # Se houver múltiplas (ex: re-linkagem), pegamos a última.
             instance = db.query(WhatsAppInstance).filter(
                 WhatsAppInstance.tenant_id == tenant_id,
                 WhatsAppInstance.is_active == True
@@ -62,66 +60,61 @@ class OutgoingMessageWorker:
                 return
 
             status_str = instance.status.value if hasattr(instance.status, "value") else str(instance.status)
+            session_name = instance.session_name
 
-            # 🔧 FIX CRÍTICO #3: Status Leniente.
-            # Se o status no DB é 'disconnected', evitamos o bridge.
-            # Se for qualquer outro (qr, connecting, connected), TENTAMOS o envio.
-            # Isso resolve o problema de o health_check (30s) estar desatualizado.
-            if status_str == WhatsAppStatus.DISCONNECTED.value:
-                logger.warning(f"⚠️ Instância '{instance.session_name}' desconectada. Mensagem para '{to}' abortada.")
-                return
+        # 🔧 FIX CRÍTICO #3: Status Leniente executado fora da SessionLocal.
+        if status_str == WhatsAppStatus.DISCONNECTED.value:
+            logger.warning(f"⚠️ Instância '{session_name}' desconectada. Mensagem para '{to}' abortada.")
+            return
                 
-            # 🚀 Lógica de Envio Real com RETRY (Exponential Backoff)
-            # Fator crítico para multi-tendência: se o bridge estiver processando 
-            # histórico (bloqueio de event loop), o retry garante a entrega.
-            max_retries = 3
-            retry_delay = 1.0
-            response_bridge = {"success": False, "error": "Timeout or No Response"}
+        # 🚀 Lógica de Envio Real com RETRY (Exponential Backoff) executada FORA do Postgres
+        max_retries = 3
+        retry_delay = 1.0
+        response_bridge = {"success": False, "error": "Timeout or No Response"}
 
-            for attempt in range(max_retries):
-                try:
-                    logger.info(f"📤 Tentativa {attempt+1}/{max_retries} | Sessão: '{instance.session_name}'")
-                    if msg_type == "text":
-                        response_bridge = await whatsapp_bridge.send_message(
-                            session_key=instance.session_name,
-                            to=to,
-                            content=content
-                        )
-                        if response_bridge.get("success"):
-                            break # Sucesso!
-                    else:
-                        logger.warning(f"⚠️ Tipo '{msg_type}' não suportado.")
-                        return
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"📤 Tentativa {attempt+1}/{max_retries} | Sessão: '{session_name}'")
+                if msg_type == "text":
+                    # Chamada assíncrona executada FORA da transação do Postgres
+                    # (Correção: Problema Arquitetural #14)
+                    response_bridge = await whatsapp_bridge.send_message(
+                        session_key=session_name,
+                        to=to,
+                        content=content
+                    )
+                    if response_bridge.get("success"):
+                        break # Sucesso!
+                else:
+                    logger.warning(f"⚠️ Tipo '{msg_type}' não suportado.")
+                    return
 
-                except Exception as e:
-                    logger.warning(f"⚠️ Falha na tentativa {attempt+1}: {e}")
-                
-                # Falhou ou Bridge lento? Espera e dobra o tempo (backoff)
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(retry_delay)
-                    retry_delay *= 2
+            except Exception as e:
+                logger.warning(f"⚠️ Falha na tentativa {attempt+1}: {e}")
+            
+            # Falhou ou Bridge lento? Espera e dobra o tempo (backoff)
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2
 
-            # 🎯 Pós-processamento do resultado do Bridge
-            if response_bridge.get("success"):
-                # Callback de sucesso via Barramento Distribuído (RPC Pattern)
-                # 🔒 FIX BUG #3: Substituindo send_to_conversation (local) por publish_event (distribuído)
-                # Garante que o frontend receba a confirmação independentemente de qual worker 
-                # processou o envio vs. qual worker tem a conexão WebSocket do agente.
-                await ws_manager.publish_event(tenant_id, {
-                    "method": "update_message_status",
-                    "params": {
-                        "status": "sent",
-                        "message_id": response_bridge.get("message_id"),
-                        "external_id": response_bridge.get("message_id"),
-                        "to": to
-                    }
-                })
-                logger.info(f"✅ Mensagem entregue ao Bridge para '{to}' (ID: {response_bridge.get('message_id')})")
-            else:
-                logger.error(
-                    f"❌ FALHA TOTAL após {max_retries} tentativas para '{instance.session_name}'. "
-                    f"Erro: {response_bridge.get('error')}"
-                )
+        # 🎯 Pós-processamento do resultado do Bridge
+        if response_bridge.get("success"):
+            # Callback de sucesso via Barramento Distribuído (RPC Pattern)
+            # 🔒 FIX BUG #3: Substituindo send_to_conversation (local) por publish_event (distribuído)
+            await ws_manager.publish_event(tenant_id, {
+                "method": "update_message_status",
+                "params": {
+                    "status": "sent",
+                    "message_id": response_bridge.get("message_id"),
+                    "external_id": response_bridge.get("message_id"),
+                    "to": to
+                }
+            })
+            logger.info(f"✅ Mensagem entregue ao Bridge para '{to}' (ID: {response_bridge.get('message_id')})")
+        else:
+            logger.error(
+                f"❌ FALHA TOTAL após {max_retries} tentativas para '{session_name}'. "
+                f"Erro: {response_bridge.get('error')}"
+            )
 
 outgoing_worker = OutgoingMessageWorker()
-

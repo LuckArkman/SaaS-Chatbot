@@ -203,8 +203,8 @@ class ChatService:
         contact_phone = await ChatService._resolve_recipient_phone(db, tenant_id, raw_conversation_id)
 
         # 1. Persistência Dual (Postgres + MongoDB via MessageHistoryService)
+        # O Service gerencia as transaçoes internamente (Problema #13)
         await MessageHistoryService.record_message(
-            db=db,
             contact_phone=contact_phone,
             content=content,
             side=MessageSide.AGENT,

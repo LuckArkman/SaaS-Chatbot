@@ -20,6 +20,9 @@ from src.core.database import SessionLocal, engine, Base
 from loguru import logger
 import asyncio
 
+# Coleção global para prevenir Garbage Collection prematura de tarefas em segundo plano (Problema Arquitetural #15)
+_background_tasks = set()
+
 # Importa todos os modelos para registro no SQLAlchemy (Metadata)
 from src.models import user, chat, whatsapp, whatsapp_events, billing, campaign, contact, department, invoice, transaction
 
@@ -69,10 +72,12 @@ def create_application() -> FastAPI:
     # Inclusão de Rotas
     application.include_router(api_router, prefix=settings.API_V1_STR)
 
-    # Configuração de CORS (Essencial para o ChatUI)
+    # Configuração de CORS Segura (Problema Arquitetural #11 resolvido)
+    origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
+    
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -139,28 +144,41 @@ def create_application() -> FastAPI:
             ]
         )
         logger.info(f"💾 MongoDB Initialized via Beanie: {settings.MONGODB_URL}")
-        
         # 🟢 Inicia Bridge em Background (SignalR Equivalent)
-        asyncio.create_task(start_websocket_bridge())
+        task_bridge = asyncio.create_task(start_websocket_bridge())
+        _background_tasks.add(task_bridge)
+        task_bridge.add_done_callback(_background_tasks.discard)
         
         # 🟢 Inicia Motor de Fluxo (FlowEngine Equivalent)
-        asyncio.create_task(flow_worker.start())
+        task_flow = asyncio.create_task(flow_worker.start())
+        _background_tasks.add(task_flow)
+        task_flow.add_done_callback(_background_tasks.discard)
         
         # 🟢 Inicia Rastreamento de Status (AckTracker Equivalent)
-        asyncio.create_task(ack_worker.start())
+        task_ack = asyncio.create_task(ack_worker.start())
+        _background_tasks.add(task_ack)
+        task_ack.add_done_callback(_background_tasks.discard)
         
         # 🟢 Inicia Roteador de Envio (Sending dispatcher)
-        asyncio.create_task(outgoing_worker.start())
+        task_out = asyncio.create_task(outgoing_worker.start())
+        _background_tasks.add(task_out)
+        task_out.add_done_callback(_background_tasks.discard)
         
         from src.workers.campaign_worker import campaign_worker
         # 🟢 Inicia Monitoramento de Bots (BotMonitor Equivalent)
-        asyncio.create_task(start_bot_monitoring())
+        task_botmon = asyncio.create_task(start_bot_monitoring())
+        _background_tasks.add(task_botmon)
+        task_botmon.add_done_callback(_background_tasks.discard)
         
         # 🟢 Inicia Monitoramento Financeiro (BillingMonitor)
-        asyncio.create_task(start_billing_monitoring())
+        task_billmon = asyncio.create_task(start_billing_monitoring())
+        _background_tasks.add(task_billmon)
+        task_billmon.add_done_callback(_background_tasks.discard)
 
         # 🟢 Inicia Dispatcher de Campanhas (Broadcasting)
-        asyncio.create_task(campaign_worker.start())
+        task_camp = asyncio.create_task(campaign_worker.start())
+        _background_tasks.add(task_camp)
+        task_camp.add_done_callback(_background_tasks.discard)
 
     @application.on_event("shutdown")
     async def shutdown_event():

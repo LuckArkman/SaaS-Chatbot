@@ -13,8 +13,10 @@ from src.models.mongo.chat import MessageSource
 
 router = APIRouter()
 
-# API Key simples para validação de webhooks (Pode ser migrada para DB depois)
-GATEWAY_API_KEY = "SaaS_Secret_Gateway_Key_2026"
+from src.core.config import settings
+
+# API Key validacao migrada do hardcode para env var
+GATEWAY_API_KEY = settings.GATEWAY_API_KEY
 
 # Mapeamento de aliases de evento → formato canônico interno
 # Aceita tanto o formato Baileys raw quanto o do painel UTalk/simulador
@@ -276,6 +278,7 @@ async def incoming_webhook(
 
                 # Notifica UI via WebSocket RPC (Sprint 21 + RPC Consistency)
                 socket_payload = {
+                    "type": "bot_event",
                     "method": "bot_system_event",
                     "params": {
                         "event": state,
@@ -290,6 +293,7 @@ async def incoming_webhook(
                         f"| size={len(qrcode)} chars"
                     )
                     socket_payload = {
+                        "type": "bot_qrcode",
                         "method": "update_bot_qr",
                         "params": {
                             "qrcode": qrcode.strip(),
@@ -303,6 +307,7 @@ async def incoming_webhook(
                     history = await chat_service.get_session_history(tenant_id, ws_payload.session)
                     history_data = [msg.model_dump(mode='json') for msg in history]
                     socket_payload["params"]["history"] = history_data
+                    socket_payload["type"]   = "bot_history"
                     socket_payload["method"] = "chat_history_restored"
                     logger.info(f"📚 Histórico restaurado: {len(history_data)} msg(s)")
 

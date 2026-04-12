@@ -33,13 +33,14 @@ class NodeActions:
             
             actual_session = instance.session_name if instance else f"tenant_{tenant_id}"
 
-            await MessageHistoryService.record_message(
-                db=db,
-                contact_phone=contact_phone,
-                content=processed_text,
-                side=MessageSide.BOT,
-                session_name=actual_session
-            )
+        # 🟢 Persistência Postgres + MongoDB (Histórico do Bot)
+        # Executada FORA da trasaçao SQLAlchemy local (Problema Arquitetural #13)
+        await MessageHistoryService.record_message(
+            contact_phone=contact_phone,
+            content=processed_text,
+            side=MessageSide.BOT,
+            session_name=actual_session
+        )
 
         # Envia para a fila de saída para que o bot entregue
         await rabbitmq_bus.publish(
@@ -133,8 +134,18 @@ class NodeActions:
                 db, contact_phone=contact_phone, limit=10
             )
         
+        # get_recent_messages retorna List[dict] com chaves "side" (MessageSide Enum) e "content" (str).
+        # CORRECAO BUG #5a: m.side / m.content causavam AttributeError — dicts nao tem atributos.
+        # CORRECAO BUG #5b: converte o Enum MessageSide para string antes de passar ao GeminiService,
+        # pois build_history_from_messages compara side == "client" / "bot" (strings).
         conversation_history = GeminiService.build_history_from_messages(
-            [{"side": m.side, "content": m.content} for m in recent_messages]
+            [
+                {
+                    "side":    m["side"].value if hasattr(m["side"], "value") else str(m["side"]),
+                    "content": m["content"]
+                }
+                for m in recent_messages
+            ]
         )
 
         # Injeta variáveis da sessão no prompt do usuário se aplicável
@@ -148,15 +159,13 @@ class NodeActions:
             conversation_history=conversation_history
         )
 
-        # Persiste a resposta do bot no histórico
-        with SessionLocal() as db:
-            await MessageHistoryService.record_message(
-                db=db,
-                contact_phone=contact_phone,
-                content=ai_reply,
-                side=MessageSide.BOT,
-                session_name=f"tenant_{tenant_id}"
-            )
+        # Persiste a resposta do bot no histórico (transação interna ao metodo)
+        await MessageHistoryService.record_message(
+            contact_phone=contact_phone,
+            content=ai_reply,
+            side=MessageSide.BOT,
+            session_name=f"tenant_{tenant_id}"
+        )
 
         # Publica na fila de saída para o Bridge entregar via WhatsApp
         await rabbitmq_bus.publish(
