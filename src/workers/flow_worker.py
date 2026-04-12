@@ -107,28 +107,34 @@ class FlowWorker:
                 postgre_conv = MessageHistoryService.get_or_create_conversation(db, contact_phone)
                 conversation_numeric_id = postgre_conv.id if postgre_conv else contact_phone
 
-            # 🟢 Notificação Real-time via Bus para a Bridge (Sprint 21 + RPC)
-            # Usamos publish_event para garantir entrega em multi-processo
-            await ws_manager.publish_event(tenant_id, {
-                "method": "receive_message",
-                "params": {
-                    "message_id": external_id,
-                    "conversation_id": str(conversation_numeric_id),
-                    "contact_phone": contact_phone,
-                    "contact": {
-                        "id": contact.id,
-                        "full_name": contact.full_name,
-                        "phone_number": contact.phone_number
-                    },
-                    "content": user_input,
-                    "from_me": is_from_me,
-                    "side": "bot" if is_from_me else "client",
-                    "type": data.get("type", "text"),
-                    "caption": data.get("caption"),
-                    "timestamp": data.get("timestamp"),
-                    "metadata": data.get("metadata", {})
+            # 🟢 Notificação Real-time DIRETA via WebSocket (sem intermediário)
+            # CRÍTICO: NÃO usar publish_event() — ele publicaria no RabbitMQ
+            # numa fila sem consumers, causando o "flip-flop" onde apenas
+            # a 1ª mensagem chegava ao frontend e as demais eram engolidas.
+            await ws_manager.send_to_conversation(
+                tenant_id,
+                str(conversation_numeric_id),
+                {
+                    "method": "receive_message",
+                    "params": {
+                        "message_id": external_id,
+                        "conversation_id": str(conversation_numeric_id),
+                        "contact_phone": contact_phone,
+                        "contact": {
+                            "id": contact.id,
+                            "full_name": contact.full_name,
+                            "phone_number": contact.phone_number
+                        },
+                        "content": user_input,
+                        "from_me": is_from_me,
+                        "side": "bot" if is_from_me else "client",
+                        "type": data.get("type", "text"),
+                        "caption": data.get("caption"),
+                        "timestamp": data.get("timestamp"),
+                        "metadata": data.get("metadata", {})
+                    }
                 }
-            })
+            )
 
             # 2. Busca Fluxo Ativo para o Tenant (Regras de Prioridade .NET)
             flow = await FlowDocument.find_one(

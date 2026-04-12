@@ -55,13 +55,33 @@ class RabbitMQBus:
         )
         logger.debug(f"📤 Mensagem enviada para {exchange_name}:{routing_key}")
 
-    async def subscribe(self, queue_name: str, routing_key: str, exchange_name: str, callback: Callable[[Any], Awaitable[None]], auto_delete: bool = False, exclusive: bool = False):
-        """Inscreve um consumidor em uma fila ligada a uma Exchange."""
-        exchange = await self.channel.declare_exchange(
+    async def subscribe(
+        self,
+        queue_name: str,
+        routing_key: str,
+        exchange_name: str,
+        callback: Callable[[Any], Awaitable[None]],
+        auto_delete: bool = False,
+        exclusive: bool = False
+    ):
+        """Inscreve um consumidor em uma fila ligada a uma Exchange.
+        
+        Usa um canal DEDICADO com prefetch=1 para garantir que cada mensagem
+        seja entregue imediatamente sem bloqueio por operações concorrentes
+        no canal compartilhado de publish.
+        """
+        if not self.connection:
+            await self.connect()
+
+        # Canal dedicado para consume — isolado do canal de publish
+        consume_channel = await self.connection.channel()
+        await consume_channel.set_qos(prefetch_count=1)
+
+        exchange = await consume_channel.declare_exchange(
             exchange_name, aio_pika.ExchangeType.TOPIC, durable=True
         )
         
-        queue = await self.channel.declare_queue(
+        queue = await consume_channel.declare_queue(
             queue_name, 
             durable=not auto_delete, 
             auto_delete=auto_delete, 
@@ -78,6 +98,6 @@ class RabbitMQBus:
                     logger.error(f"❌ Erro ao processar mensagem da fila {queue_name}: {e}")
 
         await queue.consume(on_message)
-        logger.info(f"📥 Inscrito na fila: {queue_name} (Routing: {routing_key})")
+        logger.info(f"📥 Inscrito na fila: {queue_name} (Routing: {routing_key}) [canal dedicado, prefetch=1]")
 
 rabbitmq_bus = RabbitMQBus()
