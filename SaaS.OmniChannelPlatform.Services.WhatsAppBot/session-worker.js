@@ -46,7 +46,8 @@ const logger = pino({ level: 'warn' }); // warn para reduzir ruído por thread
 // Estado privado desta thread (completamente isolado dos outros workers)
 // ─────────────────────────────────────────────────────────────────────────────
 let sock         = null;
-let latestQr     = null;
+let latestQr     = null;  // dataURL (data:image/png;base64,...) para exibição
+let latestQrRaw  = null;  // raw string do Baileys para re-encoding pelo frontend
 let sessionState = 'DISCONNECTED';  // DISCONNECTED | CONNECTING | QRCODE | CONNECTED
 let manualStore  = null;
 const msgCache   = new Map();
@@ -209,16 +210,21 @@ async function connectToWhatsApp() {
 
         if (qr) {
             log('📱 Novo QR Code gerado.');
+            // Salva AMBOS: o dataURL para display E o raw para re-encoding
+            latestQrRaw  = qr.trim();
             latestQr     = (await QRCode.toDataURL(qr)).trim();
             sessionState = 'QRCODE';
-            emit('state_change', { state: 'QRCODE' });
-            webhookQueue.enqueue('on_state_change', { state: 'QRCODE', qrcode: latestQr });
+            emit('state_change', { state: 'QRCODE', qrcode: latestQr, qrcode_raw: latestQrRaw });
+            // Envia ao Python: qrcode (imagem dataURL) + qrcode_raw (string original, permite que
+            // o front-end re-renderize via SSE sem depender do banco que pode ter QR velho)
+            webhookQueue.enqueue('on_state_change', { state: 'QRCODE', qrcode: latestQr, qrcode_raw: latestQrRaw });
         }
 
         if (connection === 'open') {
             log('✅ Conectado!');
             sessionState = 'CONNECTED';
             latestQr     = null;
+            latestQrRaw  = null;
             emit('state_change', { state: 'CONNECTED' });
             webhookQueue.enqueue('on_state_change', { state: 'CONNECTED' });
         }
@@ -233,6 +239,7 @@ async function connectToWhatsApp() {
 
             sock         = null;
             latestQr     = null;
+            latestQrRaw  = null;
             sessionState = 'DISCONNECTED';
             emit('state_change', { state: 'DISCONNECTED' });
             webhookQueue.enqueue('on_state_change', { state: 'DISCONNECTED' });
@@ -329,8 +336,8 @@ parentPort.on('message', async (msg) => {
                 break;
 
             case 'GET_QRCODE':
-                if (latestQr) reply(reqId, true, { qrcode: latestQr });
-                else          reply(reqId, false, null, 'QR não disponível');
+                if (latestQr) reply(reqId, true, { qrcode: latestQr, qrcode_raw: latestQrRaw });
+                else          reply(reqId, false, null, 'QR não disponível (sessão pode já estar conectada ou QR expirou)');
                 break;
 
             case 'SEND_MESSAGE': {

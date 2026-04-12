@@ -218,61 +218,82 @@ class ChatService:
             conversation.first_response_at = datetime.utcnow()
             db.commit()
 
-        # 2. Dispatch para o Canal (via RabbitMQ → OutgoingMessageWorker → Bridge)
-        # Normaliza o número garantindo que o DDI está presente antes de publicar
+        # 2. Dispatch DIRETO ao Bridge WhatsApp
+        # FIX ANTIPADRÃO: O fluxo anterior (ChatService → RabbitMQ → OutgoingWorker → Bridge)
+        # criava filas fantasmas 'message.outgoing' que acumulavam sem leitura garantida.
+        # Para mensagens interativas (agente → cliente), o dispatch é síncrono e direto.
+        # O OutgoingWorker continua existindo SOMENTE para Campanhas (fluxo assíncrono).
+        from src.services.whatsapp_bridge_service import whatsapp_bridge
+        from src.models.whatsapp import WhatsAppInstance, WhatsAppStatus
         phone_to_send = ChatService.normalize_phone(contact_phone)
 
-        await rabbitmq_bus.publish(
-            exchange_name="messages_exchange",
-            routing_key="message.outgoing",
-            message={
-                "tenant_id": tenant_id,
-                "agent_id": agent_id,
-                "to": phone_to_send,
-                "content": content,
-                "type": "text"
-            }
+        with SessionLocal() as db_send:
+            from src.core.database import SessionLocal as _SL
+            instance = db_send.query(WhatsAppInstance).filter(
+                WhatsAppInstance.tenant_id == tenant_id,
+                WhatsAppInstance.is_active == True
+            ).order_by(WhatsAppInstance.id.desc()).execution_options(ignore_tenant=True).first()
+
+            session_name = instance.session_name if instance else None
+
+        if not session_name:
+            raise ValueError(f"Nenhuma instância ativa para o tenant '{tenant_id}'.")
+
+        result = await whatsapp_bridge.send_message(
+            session_key=session_name,
+            to=phone_to_send,
+            content=content
         )
+        if not result.get("success"):
+            logger.error(f"❌ Falha no envio direto ao Bridge para '{phone_to_send}': {result.get('error')}")
+            raise ValueError(f"Falha ao enviar mensagem: {result.get('error')}")
 
         logger.info(
-            f"✅ Agente {agent_id} → '{phone_to_send}' "
-            f"(resolvido de '{raw_conversation_id}', original: '{contact_phone}'): '{content[:60]}'"
+            f"✅ Agente {agent_id} → '{phone_to_send}' via Bridge direto "
+            f"(ID: {result.get('message_id')}): '{content[:60]}'"
         )
 
-        # 3. Sync em tempo real para outras abas/agentes do mesmo Tenant via RabbitMQ (Backplane)
-        await ws_manager.publish_event(tenant_id, {
-            "method": "receive_message",
-            "params": {
-                "type": "new_message",
-                "agent_id": agent_id,
-                "conversation_id": str(conversation.id),
-                "contact_phone": phone_to_send,
-                "content": content,
-                "side": "agent",
-                "timestamp": str(datetime.utcnow())
+        # 3. Sync em tempo real DIRETO via WebSocket (sem hop no RabbitMQ)
+        # publish_event criava filas ws.broadcast.{tenant} que nunca eram consumidas.
+        await ws_manager.broadcast_to_tenant(tenant_id, {
+            "type": "conversation_update",
+            "conversation_id": str(conversation.id),
+            "data": {
+                "method": "receive_message",
+                "params": {
+                    "type": "new_message",
+                    "agent_id": agent_id,
+                    "conversation_id": str(conversation.id),
+                    "contact_phone": phone_to_send,
+                    "content": content,
+                    "side": "agent",
+                    "timestamp": str(datetime.utcnow())
+                }
             }
         })
-
-        logger.info(f"✅ Agente {agent_id} → '{contact_phone}' (origem: '{raw_conversation_id}'): '{content[:60]}'")
 
 
 
     @staticmethod
     async def set_typing_status(tenant_id: str, conversation_id: str, is_typing: bool):
-        """Define o status de 'digitando' no Redis e notifica via barramento distribuído."""
+        """Define o status de 'digitando' no Redis e notifica via WebSocket direto."""
         key = f"typing:{tenant_id}:{conversation_id}"
         if is_typing:
-            # TTL de 5s para não prender o status se travar
             await redis_client.set(key, "typing", expire=5)
         else:
             await redis_client.delete(key)
 
-        await ws_manager.publish_event(tenant_id, {
-            "method": "typing_update",
-            "params": {
-                "type": "typing_update",
-                "is_typing": is_typing,
-                "conversation_id": conversation_id
+        # Broadcast direto (sem RabbitMQ) - typing é time-critical, MQ introduz latencia inaceitável
+        await ws_manager.broadcast_to_tenant(tenant_id, {
+            "type": "conversation_update",
+            "conversation_id": conversation_id,
+            "data": {
+                "method": "typing_update",
+                "params": {
+                    "type": "typing_update",
+                    "is_typing": is_typing,
+                    "conversation_id": conversation_id
+                }
             }
         })
 

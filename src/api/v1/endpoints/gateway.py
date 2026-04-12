@@ -173,7 +173,8 @@ async def incoming_webhook(
                     f"| from='{unified_msg.from_id}' | tenant='{tenant_id}'"
                 )
 
-                # Publicar para o Barramento de Eventos
+                # Publicar para o Barramento de Eventos → FlowWorker (Bot automático)
+                # O RabbitMQ É necessário aqui pois o FlowWorker/ConditionEvaluator dependem dele.
                 await rabbitmq_bus.publish(
                     exchange_name="messages_exchange",
                     routing_key="message.incoming",
@@ -187,6 +188,27 @@ async def incoming_webhook(
                     f"[Gateway] ✅ Publicado em RabbitMQ (message.incoming) "
                     f"| msg_id='{unified_msg.message_id}' | tenant='{tenant_id}'"
                 )
+
+                # FIX ANTIPADRÃO: Entrega IMEDIATA ao front-end via WS direto.
+                # O FlowWorker processa o bot em paralelo, mas a UI não pode esperar.
+                # Sem isso, o agente só veria a mensagem depois do RabbitMQ processar.
+                from src.core.ws import ws_manager as _ws
+                await _ws.broadcast_to_tenant(tenant_id, {
+                    "type": "conversation_update",
+                    "conversation_id": unified_msg.from_id,
+                    "data": {
+                        "method": "receive_message",
+                        "params": {
+                            "type":        "new_message",
+                            "message_id":  unified_msg.message_id,
+                            "contact_phone": unified_msg.from_id,
+                            "contact_name":  unified_msg.contact_name,
+                            "content":     unified_msg.content,
+                            "side":        "client",
+                            "timestamp":   str(unified_msg.timestamp)
+                        }
+                    }
+                })
 
             # ── ACK de entrega ─────────────────────────────────────────────
             elif ws_payload.event == WhatsAppMessageEvent.ON_ACK:
@@ -245,6 +267,10 @@ async def incoming_webhook(
                             instance.status = new_status
                             if qrcode:
                                 instance.qrcode_base64 = qrcode
+                                # Persiste também o raw string para allow-list do SSE
+                                qrcode_raw = state_body.get("qrcode_raw")
+                                if qrcode_raw:
+                                    instance.qrcode_raw = qrcode_raw
                             db.commit()
                             logger.info(
                                 f"✅ Instância '{ws_payload.session}' atualizada: "
@@ -276,33 +302,26 @@ async def incoming_webhook(
                         db.rollback()
                         logger.warning(f"⚠️ Log de auditoria falhou: {e_log}")
 
-                # Notifica UI via WebSocket RPC (Sprint 21 + RPC Consistency)
-                socket_payload = {
-                    "type": "bot_event",
-                    "method": "bot_system_event",
-                    "params": {
-                        "event": state,
-                        "battery": battery,
-                        "session": ws_payload.session
-                    }
-                }
-
+                # Notifica UI via WebSocket DIRETO (sem RabbitMQ - evita filas fantasmas)
+                # FIX #20 ANTIPADRÃO: publish_event roteia pelo RabbitMQ criando 
+                # filas ws.broadcast.{tenant} que nunca são lidas = mensagens perdidas.
+                # broadcast_to_tenant entrega diretamente nos websockets conectados neste processo.
                 if state == "QRCODE" and qrcode:
                     logger.info(
                         f"📤 Encaminhando QR Code via WS | tenant='{tenant_id}' "
                         f"| size={len(qrcode)} chars"
                     )
+                    qrcode_raw = state_body.get("qrcode_raw", "")
                     socket_payload = {
                         "type": "bot_qrcode",
                         "method": "update_bot_qr",
                         "params": {
-                            "qrcode": qrcode.strip(),
-                            "session": ws_payload.session
+                            "qrcode":     qrcode.strip(),
+                            "qrcode_raw": qrcode_raw,
+                            "session":    ws_payload.session
                         }
                     }
-
-                history_data = []
-                if state == "CONNECTED":
+                elif state == "CONNECTED":
                     logger.info(f"🔄 Bot '{ws_payload.session}' conectado. Restaurando histórico...")
                     history = await chat_service.get_session_history(tenant_id, ws_payload.session)
                     history_data = [msg.model_dump(mode='json') for msg in history]
@@ -311,11 +330,11 @@ async def incoming_webhook(
                     socket_payload["method"] = "chat_history_restored"
                     logger.info(f"📚 Histórico restaurado: {len(history_data)} msg(s)")
 
-                # 🟢 Notificação Real-time via Bus (Garante entrega em multi-processo)
-                await ws_manager.publish_event(tenant_id, socket_payload)
+                # 🟢 Broadcast direto aos WebSockets deste processo (sem hop no MQ)
+                await ws_manager.broadcast_to_tenant(tenant_id, socket_payload)
                 logger.debug(
-                    f"[Gateway] Estado '{state}' broadcast via WS | "
-                    f"tenant='{tenant_id}' | history={len(history_data)} msgs"
+                    f"[Gateway] Estado '{state}' broadcast via WS (direto) | "
+                    f"tenant='{tenant_id}'"
                 )
 
             return {"success": True, "status": "processed"}
