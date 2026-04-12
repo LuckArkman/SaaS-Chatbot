@@ -40,25 +40,19 @@ class FlowWorker:
     async def handle_incoming_message(self, payload: dict):
         """
         Ponto de entrada para processamento de cada mensagem.
-        Cada mensagem é processada num contexto de variáveis ISOLADO
-        para evitar vazamento de tenant_id entre coroutines concorrentes.
         """
         tenant_id = payload.get("tenant_id")
         data = payload.get("data")
         
         if not tenant_id or not data:
+            logger.warning(f"⚠️ FlowWorker: payload inválido (tenant={tenant_id}, data={'presente' if data else 'ausente'})")
             return
 
-        # 🔒 FIX MULTI-TENANCY #2: Contexto isolado por mensagem.
-        # copy_context() cria uma cópia independente do ContextVar atual.
-        # Sem isso, set_current_tenant_id() numa coroutine pode contaminar
-        # outras coroutines concorrentes que já iniciaram no mesmo event loop.
-        ctx = copy_context()
-        await asyncio.get_event_loop().run_in_executor(
-            None, lambda: ctx.run(set_current_tenant_id, tenant_id)
-        )
+        # 🔒 Define o contexto de tenant DIRETAMENTE na coroutine atual.
+        # NUNCA usar run_in_executor para ContextVars — o executor roda numa
+        # thread diferente e o valor definido lá não é visível no event loop.
+        set_current_tenant_id(tenant_id)
         
-        # Processa a mensagem em bloco isolado (sem afetar outros handlers)
         await self._process_message(tenant_id, data)
 
     async def _process_message(self, tenant_id: str, data: dict):
@@ -107,10 +101,13 @@ class FlowWorker:
                 postgre_conv = MessageHistoryService.get_or_create_conversation(db, contact_phone)
                 conversation_numeric_id = postgre_conv.id if postgre_conv else contact_phone
 
-            # 🟢 Notificação Real-time DIRETA via WebSocket (sem intermediário)
-            # CRÍTICO: NÃO usar publish_event() — ele publicaria no RabbitMQ
-            # numa fila sem consumers, causando o "flip-flop" onde apenas
-            # a 1ª mensagem chegava ao frontend e as demais eram engolidas.
+            # 🟢 Notificação Real-time DIRETA via WebSocket
+            active = ws_manager.active_connections.get(tenant_id, {})
+            logger.info(
+                f"[FlowWorker] 📶 Entregando ao WebSocket | tenant='{tenant_id}' "
+                f"| conv_id='{conversation_numeric_id}' "
+                f"| users_conectados={list(active.keys()) or 'NENHUM'}"
+            )
             await ws_manager.send_to_conversation(
                 tenant_id,
                 str(conversation_numeric_id),
