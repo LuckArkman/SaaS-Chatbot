@@ -1,11 +1,13 @@
-from typing import Any, Dict, List
-from fastapi import APIRouter, Depends, Query, status
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, Depends, Query, status, HTTPException
 from sqlalchemy.orm import Session
 from src.services.chat_service import ChatService
 from src.services.agent_assignment_service import AgentAssignmentService
 from src.services.message_history_service import MessageHistoryService
 from src.core.ws import ws_manager
-from src.schemas.chat import MessageOut
+from src.schemas.chat import (
+    MessageOut, ConversationListResponse, ConversationDetailResponse
+)
 from src.api import deps
 from src.core.database import get_db
 from src.core.tenancy import get_current_tenant_id
@@ -24,8 +26,14 @@ async def send_message(
     Agente envia uma mensagem para o cliente (WhatsApp).
     O payload deve conter 'conversation_id' e 'content'.
     """
-    await ChatService.send_agent_message(db, tenant_id, str(current_user.id), payload)
-    return {"success": True, "status": "sent"}
+    try:
+        await ChatService.send_agent_message(db, tenant_id, str(current_user.id), payload)
+        return {"success": True, "status": "sent"}
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
 
 @router.post("/typing", status_code=status.HTTP_200_OK)
 async def update_typing(
@@ -48,7 +56,82 @@ async def list_chat_history(
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """Busca o histórico de mensagens de uma conversa específica."""
-    return MessageHistoryService.list_history(db, conversation_id, limit, offset)
+    from src.services.whatsapp_bridge_service import whatsapp_bridge
+    from src.services.whatsapp_manager_service import WhatsAppManagerService
+    from src.services.chat_service import ChatService
+    from src.models.mongo.chat import MessageDocument
+    from src.models.chat import MessageSide
+
+    # 1. O frontend muitas vezes passa o ID físico de Contato, Conversa ou JID WhatsApp.
+    try:
+        target_phone = await ChatService._resolve_recipient_phone(db, tenant_id, conversation_id)
+    except ValueError:
+        return []
+    
+    # 2. Restauração automática de histórico do WhatsApp Web
+    try:
+        instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+        status_val = str(getattr(instance.status, "value", instance.status)).upper()
+        if status_val == "CONNECTED":
+            normalized_jid = target_phone if "@" in target_phone else f"{target_phone}@s.whatsapp.net"
+            history_response = await whatsapp_bridge.get_chat_history(
+                session_id=instance.session_name, 
+                jid=normalized_jid, 
+                limit=limit
+            )
+            # A sync pro Postgres via MessageHistoryService continua ocorrendo silenciosamente 
+            # para fins de relatorios antigos caso precise, mas nao atrapalha a consulta MongoDB
+            if history_response.get("success"):
+                msgs = history_response.get("messages", [])
+                if msgs:
+                    await MessageHistoryService.sync_bridge_history(db, target_phone, msgs)
+    except Exception as e:
+        logger.warning(f"Não foi possível sincronizar o histórico pré-cadastro com o WhatsApp: {e}")
+
+    # 3. Leitura EXCLUSIVA do MongoDB (Golden Source) - Eliminando a dupla averiguação c/ Postgres
+    mongo_docs = await MessageDocument.find(
+        MessageDocument.tenant_id == tenant_id,
+        MessageDocument.contact_phone == target_phone
+    ).sort("-timestamp").skip(offset).limit(limit).to_list()
+    
+    if conversation_id != target_phone:
+        extra_docs = await MessageDocument.find(
+            MessageDocument.tenant_id == tenant_id,
+            MessageDocument.contact_phone == conversation_id
+        ).sort("-timestamp").skip(offset).limit(limit).to_list()
+        mongo_docs.extend(extra_docs)
+    
+    response_list = []
+    
+    for doc in mongo_docs:
+        src_val = doc.source.value if hasattr(doc.source, "value") else str(doc.source)
+        
+        if src_val == "user":
+            side = MessageSide.CLIENT
+        elif src_val in ["agent", "human"]:
+            side = MessageSide.AGENT
+        elif src_val == "system":
+            side = MessageSide.SYSTEM
+        else:
+            side = MessageSide.BOT
+            
+        status_map = {0: "PENDING", 1: "SENT", 2: "DELIVERED", 3: "READ"}
+        ack_val = getattr(doc, "ack", 0)
+        
+        response_list.append({
+            "id": str(doc.id),
+            "conversation_id": str(conversation_id),
+            "is_read": ack_val == 3,
+            "agent_id": None,
+            "status": status_map.get(ack_val, "SENT"),
+            "content": doc.content,
+            "side": side,
+            "type": getattr(doc, "message_type", "text"),
+            "external_id": doc.external_id,
+            "created_at": doc.timestamp
+        })
+        
+    return response_list
 
 @router.post("/transfer/{conversation_id}", status_code=status.HTTP_200_OK)
 async def transfer_chat_endpoint(
@@ -84,3 +167,211 @@ async def get_agent_presence(
     from src.core.redis import redis_client
     status = await redis_client.get(f"presence:{tenant_id}:{user_id}")
     return {"user_id": user_id, "status": status or "offline"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 📱 ROTAS DE CONVERSAS: Diretamente do Agente WhatsApp (Baileys Bridge)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/conversations")
+async def list_conversations(
+    limit: int = Query(50, ge=1, le=200, description="Número máximo de conversas."),
+    db: Session = Depends(get_db),
+    tenant_id: str = Depends(get_current_tenant_id),
+    current_user: Any = Depends(deps.get_current_active_user)
+) -> Any:
+    """
+    📱 **Lista todas as conversas abertas diretamente do WhatsApp conectado.**
+
+    Esta rota consulta o agente Baileys em tempo real, retornando os chats
+    presentes no WhatsApp do número sincronizado com o Tenant, ordenados
+    da interação mais recente para a mais antiga.
+
+    Cada item retornado contém:
+    - `id`: JID completo do WhatsApp (ex: `5511999999999@s.whatsapp.net`)
+    - `phone`: Número limpo
+    - `name`: Nome exibido no WhatsApp (se disponível)
+    - `unread_count`: Mensagens não lidas
+    - `last_message_timestamp`: Timestamp UNIX da última mensagem
+    - `is_group`: Se é uma conversa de grupo
+    - `pinned`: Se está fixada
+
+    **Requer bot conectado** (status CONNECTED).
+    """
+    from src.services.whatsapp_manager_service import WhatsAppManagerService
+    from src.services.whatsapp_bridge_service import whatsapp_bridge
+
+    # 1. Resolve a instância ativa do Tenant
+    instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+    status_str = str(getattr(instance.status, "value", instance.status)).upper()
+
+    if status_str != "CONNECTED":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"O agente WhatsApp não está conectado. Status atual: {status_str.lower()}. Conecte o bot antes de listar conversas."
+        )
+
+    # 2. Consulta o Bridge diretamente
+    result = await whatsapp_bridge.list_chats(session_id=instance.session_name)
+
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Falha ao obter conversas do agente: {result.get('error', 'Erro desconhecido')}"
+        )
+
+    chats = result.get("chats", [])
+    # Aplica limite no lado Python
+    chats = chats[:limit]
+
+    return {
+        "total": result.get("total", len(chats)),
+        "session_id": instance.session_name,
+        "conversations": chats
+    }
+
+
+@router.get("/conversations/{conversation_id}", response_model=Dict[str, Any])
+async def get_conversation_history(
+    conversation_id: str,
+    limit: int = Query(50, ge=1, le=200, description="Mensagens por página."),
+    db: Session = Depends(get_db),
+    tenant_id: str = Depends(get_current_tenant_id),
+    current_user: Any = Depends(deps.get_current_active_user)
+) -> Any:
+    """
+    Retorna o histórico consolidado de uma conversa específica.
+
+    A fonte principal é o MongoDB, onde o SaaS persiste o histórico de diálogo.
+    Quando a conversa ainda não estiver materializada no Mongo, o bridge WhatsApp
+    é usado apenas para backfill e a resposta final continua vindo do Mongo.
+    """
+    from src.services.whatsapp_manager_service import WhatsAppManagerService
+    from src.services.whatsapp_bridge_service import whatsapp_bridge
+    from src.models.mongo.chat import MessageDocument
+
+    # 1. Resolve a instância ativa
+    instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+    status_str = str(getattr(instance.status, "value", instance.status)).upper()
+
+    # 2. Resolve o ID da conversa -> telefone do contato (fonte: Postgres)
+    try:
+        conversation_id_int = int(conversation_id)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="conversation_id inválido. Esperado um ID numérico de conversa."
+        )
+
+    conversation_detail = await MessageHistoryService.get_conversation_detail(
+        db=db,
+        tenant_id=tenant_id,
+        conversation_id=conversation_id_int,
+        limit=1,
+        offset=0
+    )
+
+    def extract_contact_phone(detail: Any) -> Optional[str]:
+        if not detail:
+            return None
+        if isinstance(detail, dict):
+            conv = detail.get("conversation")
+            if isinstance(conv, dict):
+                return conv.get("contact_phone") or conv.get("phone") or conv.get("contact")
+            return detail.get("contact_phone") or detail.get("phone") or detail.get("contact")
+        if hasattr(detail, "contact_phone"):
+            return getattr(detail, "contact_phone")
+        conv = getattr(detail, "conversation", None)
+        if conv is not None:
+            if isinstance(conv, dict):
+                return conv.get("contact_phone") or conv.get("phone") or conv.get("contact")
+            if hasattr(conv, "contact_phone"):
+                return getattr(conv, "contact_phone")
+        return None
+
+    target_phone = extract_contact_phone(conversation_detail)
+    if not target_phone:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversa não encontrada para este conversation_id."
+        )
+
+    normalized_jid = target_phone if "@" in target_phone else f"{target_phone}@s.whatsapp.net"
+
+    async def load_mongo_history(phone: str) -> List[MessageDocument]:
+        return await MessageDocument.find(
+            MessageDocument.tenant_id == tenant_id,
+            MessageDocument.contact_phone == phone
+        ).sort("+timestamp").to_list()
+
+    def serialize_mongo_messages(messages: List[MessageDocument]) -> List[Dict[str, Any]]:
+        serialized: List[Dict[str, Any]] = []
+        for doc in messages:
+            src_val = doc.source.value if hasattr(doc.source, "value") else str(doc.source)
+            is_from_me = src_val in ("agent", "bot", "human", "system")
+            serialized.append({
+                "message_id": doc.external_id or str(doc.id),
+                "from_me": is_from_me,
+                "side": "bot" if is_from_me else "client",
+                "sender": instance.session_name if is_from_me else target_phone,
+                "content": doc.content,
+                "type": getattr(doc, "message_type", "text"),
+                "timestamp": doc.timestamp.timestamp() if doc.timestamp else None,
+                "status": doc.ack if hasattr(doc, "ack") else None
+            })
+        return serialized
+
+    def dedupe_and_sort(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        by_key: Dict[str, Dict[str, Any]] = {}
+        for msg in messages:
+            key = str(msg.get("message_id") or msg.get("external_id") or msg.get("content") or "")
+            if not key:
+                continue
+            by_key[key] = msg
+        return sorted(
+            by_key.values(),
+            key=lambda item: item.get("timestamp") or 0
+        )
+
+    # 3. Leitura direta do MongoDB. O bridge só entra para backfill caso ainda
+    #    não exista conversa materializada no banco.
+    mongo_history = await load_mongo_history(target_phone)
+
+    if not mongo_history and status_str == "CONNECTED":
+        # Backfill opcional: materializa o histórico no Mongo e lê novamente.
+        try:
+            result = await whatsapp_bridge.get_chat_history(
+                session_id=instance.session_name,
+                jid=normalized_jid,
+                limit=limit
+            )
+            if result.get("success"):
+                bridge_messages = result.get("messages", [])
+                if bridge_messages:
+                    await MessageHistoryService.sync_bridge_history(db, target_phone, bridge_messages)
+                    mongo_history = await load_mongo_history(target_phone)
+        except Exception as e:
+            logger.warning(f"Falha ao fazer backfill via Bridge para {normalized_jid}: {e}")
+
+    if not mongo_history:
+        return {
+            "jid": normalized_jid,
+            "phone": target_phone,
+            "total_messages": 0,
+            "has_more": False,
+            "messages": []
+        }
+
+    # 4. Complementa com qualquer histórico que ainda esteja salvo com chave
+    #    alternativa, sem depender do cache temporário do WhatsApp.
+    serialized_history = serialize_mongo_messages(mongo_history)
+    serialized_history = dedupe_and_sort(serialized_history)
+
+    return {
+        "jid": normalized_jid,
+        "phone": target_phone,
+        "total_messages": len(serialized_history),
+        "has_more": len(serialized_history) > limit,
+        "messages": serialized_history[:limit]
+    }
+

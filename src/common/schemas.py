@@ -43,6 +43,7 @@ class UnifiedMessage(BaseModel):
     
     # Flags de Processamento
     is_bot_message: bool = False
+    from_me: bool = False
     
     def sanitize_content(self):
         """Limpeza básica do conteúdo textual."""

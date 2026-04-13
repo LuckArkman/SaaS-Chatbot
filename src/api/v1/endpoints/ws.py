@@ -2,10 +2,47 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, Depends
 from src.core.ws import ws_manager
 from src.api import deps
 from src.core import security
-from loguru import logger
 import json
+from src.services.chat_service import ChatService
+from src.core.database import SessionLocal
+from loguru import logger
 
 router = APIRouter()
+@router.get("/", tags=["RPC-WebSocket"], summary="Documentação da Interface RPC via WebSocket")
+async def websocket_docs():
+    """
+    ### Interface de Comunicação Real-time (RPC)
+    Este endpoint não é uma rota HTTP comum. Ele deve ser acessado via protocolo **WebSocket (ws/wss)**.
+    
+    **Conectividade:**
+    * **URL:** `ws://{host}:{port}/api/v1/ws?token={JWT_TOKEN}`
+    
+    **Estrutura de Requisição (RPC Request):**
+    ```json
+    {
+      "method": "string",
+      "params": "object",
+      "id": "string (opcional para notificações)"
+    }
+    ```
+    
+    **Métodos Suportados:**
+    * `send_message`: { conversation_id, content }
+    * `set_typing`: { conversation_id, is_typing: bool }
+    * `ping`: Sem parâmetros.
+    
+    **Estrutura de Resposta (RPC Response):**
+    ```json
+    {
+      "type": "rpc_response",
+      "id": "string",
+      "result": "any",
+      "error": "string"
+    }
+    ```
+    """
+    return {"detail": "Conecte-se via protocolo WebSocket para utilizar esta interface RPC."}
+
 
 @router.websocket("/ws")
 async def websocket_endpoint(
@@ -23,24 +60,104 @@ async def websocket_endpoint(
         # Em produção, poderíamos buscar tenant_id no payload
         tenant_id = payload.get("tenant_id", "DEFAULT_TENANT") 
         
-        if not user_id:
-            logger.warning("🔒 Tentativa de conexão WebSocket sem UserID no token.")
+        if not user_id or not tenant_id:
+            logger.warning("🔒 Tentativa de conexão WebSocket sem UserID ou TenantID no token.")
             await websocket.close(code=1008)
             return
+
+        # 🔒 FIX CRÍTICO DE SEGURANÇA #16: Validação de Estado no Banco de Dados
+        # Um token JWT válido não é suficiente. Devemos garantir que o usuário ainda existe, 
+        # não foi demitido/desativado (is_active) e pertence de fato ao Tenant.
+        from src.models.user import User
+        from src.core.database import SessionLocal
+        with SessionLocal() as db:
+            user = db.query(User).filter(User.id == int(user_id)).execution_options(ignore_tenant=True).first()
+            if not user or not user.is_active or user.tenant_id != tenant_id:
+                logger.warning(f"🚫 WS Acesso Negado: Usuário '{user_id}' apagado, inativo ou tenant fraudado.")
+                await websocket.close(code=1008)
+                return
 
         # Conectar ao gerenciador
         await ws_manager.connect(tenant_id, str(user_id), websocket)
         
-        # Loop de recepção (Mantém a conexão viva e responde heartbeats)
+        # Loop de recepção (Mantém a conexão viva e responde RPC/Heartbeats)
         while True:
-            data = await websocket.receive_text()
-            # Opcional: Tratar comandos vindos do Frontend (Ping/Pong/JoinGroup)
-            if data == "ping":
-                await websocket.send_text("pong")
+            raw_data = await websocket.receive_text()
+            
+            try:
+                data = json.loads(raw_data)
                 
+                # ─── Estrutura de RPC ──────────────────────────────────────────
+                # O Frontend envia: { "method": "...", "params": {...}, "id": "req_123" }
+                # O Backend responde: { "type": "rpc_response", "id": "req_123", "result": ... }
+                # ──────────────────────────────────────────────────────────────
+                
+                if isinstance(data, dict) and "method" in data:
+                    method = data.get("method")
+                    params = data.get("params", {})
+                    rpc_id = data.get("id")
+                    
+                    logger.debug(f"🔌 RPC Request: {method} (id={rpc_id}) | Tenant {tenant_id}")
+                    
+                    result = None
+                    error = None
+                    
+                    if method == "ping":
+                        result = "pong"
+                    
+                    elif method == "send_message":
+                        # Params esperado: { "conversation_id": "...", "content": "..." }
+                        try:
+                            with SessionLocal() as db:
+                                # Resolvido via ChatService (enfileira no RabbitMQ)
+                                await ChatService.send_agent_message(
+                                    db=db, 
+                                    tenant_id=tenant_id, 
+                                    agent_id=str(user_id), 
+                                    payload=params
+                                )
+                                result = {"success": True, "status": "queued"}
+                        except Exception as e:
+                            logger.error(f"❌ Erro no RPC send_message: {e}")
+                            error = str(e)
+
+                    elif method == "set_typing":
+                        # Params esperado: { "conversation_id": "...", "is_typing": bool }
+                        try:
+                            conv_id = params.get("conversation_id")
+                            is_typing = params.get("is_typing", False)
+                            await ChatService.set_typing_status(tenant_id, conv_id, is_typing)
+                            result = {"success": True}
+                        except Exception as e:
+                            logger.error(f"❌ Erro no RPC set_typing: {e}")
+                            error = str(e)
+                    
+                    # ─── Resposta de RPC ─────────
+                    if rpc_id:
+                        response = {
+                            "type": "rpc_response",
+                            "id": rpc_id,
+                            "result": result,
+                            "error": error
+                        }
+                        await websocket.send_json(response)
+                
+                elif raw_data == "ping":
+                    await websocket.send_text("pong")
+                    
+            except json.JSONDecodeError:
+                # Trata strings puras se não for JSON
+                if raw_data == "ping":
+                    await websocket.send_text("pong")
+                else:
+                    logger.warning(f"⚠️ Mensagem WebSocket inválida (não JSON): {raw_data}")
+                    
     except WebSocketDisconnect:
         ws_manager.disconnect(tenant_id, str(user_id), websocket)
     except Exception as e:
         logger.error(f"❌ Erro fatal no WebSocket para usuário {user_id}: {e}")
         ws_manager.disconnect(tenant_id, str(user_id), websocket)
-        await websocket.close(code=1011)
+        try:
+            await websocket.close(code=1011)
+        except:
+            pass

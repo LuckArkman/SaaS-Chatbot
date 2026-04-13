@@ -108,7 +108,9 @@ def main():
             "t": 123456789, "from": "5511999999999", "to": "5511888888888"
         }
     }
-    resp = httpx.post(f"{base_url}/api/v1/gateway/webhook/whatsapp", json=wa_hook)
+    # 🎯 GATEWAY_API_KEY do backend (gateway.py:17)
+    gate_headers = {"X-API-Key": "SaaS_Secret_Gateway_Key_2026", "Content-Type": "application/json"}
+    resp = httpx.post(f"{base_url}/api/v1/gateway/webhook/whatsapp", json=wa_hook, headers=gate_headers)
     p("POST", "/api/v1/gateway/webhook/whatsapp (public)", resp.status_code)
     if resp.status_code in (200, 201, 202): success_count += 1
     total_count += 1
@@ -127,7 +129,7 @@ def main():
     print("\n💬 Module: CHAT & OMNICHANNEL")
     perform("get", "/api/v1/chat/history/5511999999999")
     perform("get", "/api/v1/chat/presence/5511999999999")
-    perform("post", "/api/v1/chat/send", json={"phone_number": "5511999999999", "content": "Welcome"})
+    perform("post", "/api/v1/chat/send", json={"conversation_id": "5511999999999", "content": "Welcome"})
     perform("post", "/api/v1/chat/typing", params={"is_typing": True, "conversation_id": "5511999999999"})
     perform("post", "/api/v1/chat/transfer/5511999999999", params={"target_agent_id": 1})
     

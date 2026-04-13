@@ -14,74 +14,287 @@ class ChatService:
     Serviço Unificado de Chat (Postgres + MongoDB).
     Controla interações em tempo real (Sprint 21) e Persistência de Histórico (Sprint 40).
     """
+
+    # ────────────────────────────────────────────────────────────────────────────
+    # 📏 NORMALIZAÇÃO DE NÚM ERO DE TELEFONE
+    # ────────────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def normalize_phone(phone: str, country_code: str = "55") -> str:
+        """
+        Normaliza um número de telefone garantindo que o código de país (DDI) está presente.
+
+        Lógica de decisão:
+          ✅ Número com 12+ dígitos  → já contém DDI → usa diretamente (ex: '5511999882626')
+          ➕ Número com 10-11 dígitos → sem DDI   → adiciona o country_code (padrão: '55' = Brasil)
+          ⚠️  Número com < 10 dígitos   → formato inválido → retorna como está (o Bridge reportará o erro)
+
+        Args:
+            phone:        Número em qualquer formato (com/sem DDI, com/sem máscara)
+            country_code: DDI a adicionar quando ausente (padrão '55' = Brasil)
+
+        Returns:
+            Número normalizado contendo obrigatoriamente o DDI, apenas dígitos.
+        """
+        digits = "".join(filter(str.isdigit, phone))
+
+        # Já possui DDI: 12 dígitos (DDI2 + DDD2 + tel8) ou 13 (DDI2 + DDD2 + tel9)
+        if len(digits) >= 12:
+            logger.debug(f"[normalize_phone] '{phone}' já contém DDI → usando diretamente: {digits}")
+            return digits
+
+        # Sem DDI: 10 (DDD2+tel8) ou 11 (DDD2+tel9) → adiciona country_code
+        if 10 <= len(digits) <= 11:
+            normalized = f"{country_code}{digits}"
+            logger.debug(f"[normalize_phone] '{phone}' sem DDI → adicionando +{country_code} → {normalized}")
+            return normalized
+
+        # Formato inesperado: retorna como está e deixa o Bridge reportar o problema
+        logger.warning(f"[normalize_phone] '{phone}' com {len(digits)} dígitos — formato inesperado, usando sem alteração.")
+        return digits
+
+
     
-    # --- 🟢 Lógica Original de Agente Humano (.NET Migration) ---
-    
+    # ─────────────────────────────────────────────────────────────────────────
+    # 🔍 RESOLVER MULTI-FONTE DE DESTINATÁRIO
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    async def _resolve_recipient_phone(
+        db: Session,
+        tenant_id: str,
+        conversation_id: str
+    ) -> str:
+        """
+        Resolve o número de telefone do destinatário a partir de múltiplas fontes,
+        em ordem de prioridade — garante que qualquer formato enviado pelo front-end
+        seja traduzido para um número real antes de publicar no RabbitMQ.
+
+        Estratégias (em cascata):
+          1️⃣  JID WhatsApp  (ex: '5511999999999@s.whatsapp.net') → extrai phone
+          2️⃣  Número longo  (10+ dígitos)                        → usa diretamente
+          3️⃣  ID numérico curto → busca PRIMEIRO nos chats abertos do Bridge (índice 1-based)
+               depois na tabela conversations do Postgres como fallback
+        """
+        from src.models.chat import Conversation
+        from src.models.whatsapp import WhatsAppStatus
+        from src.services.whatsapp_manager_service import WhatsAppManagerService
+        from src.services.whatsapp_bridge_service import whatsapp_bridge
+
+        # ── Estratégia 1: JID WhatsApp completo ──────────────────────────────
+        if "@" in conversation_id:
+            phone = conversation_id.split("@")[0]
+            logger.debug(f"📱 [Resolver] Destinatário via JID: {phone}")
+            return phone
+
+        # ── Estratégia 2: Número de telefone longo (10+ dígitos) ─────────────
+        digits = "".join(filter(str.isdigit, conversation_id))
+        if len(digits) >= 10:
+            logger.debug(f"📱 [Resolver] Destinatário via número direto: {digits}")
+            return digits
+
+        # ── Estratégia 3: ID numérico curto ──────────────────────────────────
+        #
+        # O front-end envia o ID de um contato ou conversa registrado no Postgres.
+        # A ordem correta de busca é:
+        #   3a. Tabela `contacts`      (Contact.id)      — CRM local, fonte usada pela tela de Contatos
+        #   3b. Tabela `conversations` (Conversation.id) — histórico de diálogos já persistidos
+        #   3c. Lista de chats ao vivo do Bridge         — fallback se o registro ainda não existe localmente
+        #
+        if conversation_id.isdigit():
+            numeric_id = int(conversation_id)
+
+            # 3a. Tabela contacts (CRM local do Tenant) — fonte primária do front-end
+            from src.models.contact import Contact
+            contact = db.query(Contact).filter(
+                Contact.id == numeric_id,
+                Contact.tenant_id == tenant_id
+            ).first()
+            if contact and contact.phone_number:
+                logger.info(
+                    f"✅ [Resolver] Destinatário via tabela contacts "
+                    f"(ID={numeric_id}): {contact.phone_number} — {contact.full_name or 'sem nome'}"
+                )
+                return contact.phone_number
+
+            logger.debug(
+                f"🔍 [Resolver] Contact ID={numeric_id} não encontrado. "
+                f"Tentando tabela conversations..."
+            )
+
+            # 3b. Tabela conversations (diálogos já persistidos no histórico)
+            conv = db.query(Conversation).filter(
+                Conversation.id == numeric_id,
+                Conversation.tenant_id == tenant_id
+            ).first()
+            if conv and conv.contact_phone:
+                logger.info(
+                    f"✅ [Resolver] Destinatário via tabela conversations "
+                    f"(ID={numeric_id}): {conv.contact_phone}"
+                )
+                return conv.contact_phone
+
+            logger.warning(
+                f"⚠️ [Resolver] ID={numeric_id} não encontrado nas tabelas locais. "
+                f"Consultando lista de chats ao vivo no Bridge WhatsApp..."
+            )
+
+            # 3c. Fallback: lista de chats ao vivo do Bridge (último recurso)
+            try:
+                instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+                status_str = (
+                    instance.status.value
+                    if hasattr(instance.status, "value")
+                    else str(instance.status)
+                )
+
+                if status_str == WhatsAppStatus.CONNECTED.value:
+                    chats_result = await whatsapp_bridge.list_chats(session_id=instance.session_name)
+                    if chats_result.get("success"):
+                        chats = chats_result.get("chats", [])
+                        # Usa o numeric_id como índice posicional 1-based na lista ao vivo
+                        if 1 <= numeric_id <= len(chats):
+                            chat  = chats[numeric_id - 1]
+                            phone = chat.get("phone") or chat.get("id", "").split("@")[0]
+                            if phone:
+                                logger.info(
+                                    f"✅ [Resolver] Destinatário via lista de chats do Bridge "
+                                    f"(posição {numeric_id}/{len(chats)}): {phone} "
+                                    f"— Nome: {chat.get('name', 'N/A')}"
+                                )
+                                return phone
+                        logger.warning(
+                            f"⚠️ [Resolver] Índice {numeric_id} fora do range "
+                            f"({len(chats)} chats disponíveis no Bridge)."
+                        )
+                    else:
+                        logger.warning(f"⚠️ [Resolver] Bridge retornou erro: {chats_result.get('error')}")
+                else:
+                    logger.warning(f"⚠️ [Resolver] Bot não conectado ('{status_str}'). Bridge indisponível.")
+
+            except Exception as e:
+                logger.error(f"❌ [Resolver] Falha ao consultar Bridge: {e}")
+
+        raise ValueError(
+            f"Destinatário não encontrado para conversation_id='{conversation_id}'. "
+            f"Formatos aceitos: "
+            f"(1) ID de contato ou conversa do banco de dados (ex: '1', '2', '3'), "
+            f"(2) JID WhatsApp (ex: '5511999999999@s.whatsapp.net'), "
+            f"(3) número de telefone com 10+ dígitos."
+        )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 📤 ENVIO DE MENSAGEM PELO AGENTE
+    # ─────────────────────────────────────────────────────────────────────────
+
     @staticmethod
     async def send_agent_message(db: Session, tenant_id: str, agent_id: str, payload: Dict[str, Any]):
         """
         Envia uma mensagem do agente para o cliente final e persiste no histórico (Dual Write).
+        O campo 'conversation_id' aceita: ID Postgres, JID WhatsApp ou número de telefone.
         """
-        conversation_id = payload.get("conversation_id")
-        content = payload.get("content")
-        
-        if not conversation_id or not content:
-            return
+        raw_conversation_id = str(payload.get("conversation_id") or "").strip()
+        content = (payload.get("content") or "").strip()
+
+        if not raw_conversation_id or not content:
+            raise ValueError("Os campos 'conversation_id' e 'content' são obrigatórios.")
+
+        # 🔍 Resolve o número de telefone do destinatário via cascata multi-fonte
+        contact_phone = await ChatService._resolve_recipient_phone(db, tenant_id, raw_conversation_id)
 
         # 1. Persistência Dual (Postgres + MongoDB via MessageHistoryService)
-        # ✅ Note: Agora record_message é assíncrono
+        # O Service gerencia as transaçoes internamente (Problema #13)
         await MessageHistoryService.record_message(
-            db=db,
-            contact_phone=conversation_id,
+            contact_phone=contact_phone,
             content=content,
             side=MessageSide.AGENT,
             agent_id=int(agent_id),
             session_name=f"tenant_{tenant_id}"
         )
-        
+
         # 🟢 Atualiza SLA de Primeira Resposta (Sprint 25)
-        conversation = MessageHistoryService.get_or_create_conversation(db, conversation_id)
+        conversation = MessageHistoryService.get_or_create_conversation(db, contact_phone)
         if not conversation.first_response_at:
             conversation.first_response_at = datetime.utcnow()
             db.commit()
 
-        # 2. Dispatch para o Canal (via RabbitMQ)
-        await rabbitmq_bus.publish(
-            exchange_name="messages_exchange",
-            routing_key="message.outgoing",
-            message={
-                "tenant_id": tenant_id,
-                "agent_id": agent_id,
-                "to": conversation_id,
-                "content": content,
-                "type": "text"
-            }
+        # 2. Dispatch DIRETO ao Bridge WhatsApp
+        # FIX ANTIPADRÃO: O fluxo anterior (ChatService → RabbitMQ → OutgoingWorker → Bridge)
+        # criava filas fantasmas 'message.outgoing' que acumulavam sem leitura garantida.
+        # Para mensagens interativas (agente → cliente), o dispatch é síncrono e direto.
+        # O OutgoingWorker continua existindo SOMENTE para Campanhas (fluxo assíncrono).
+        from src.services.whatsapp_bridge_service import whatsapp_bridge
+        from src.models.whatsapp import WhatsAppInstance, WhatsAppStatus
+        phone_to_send = ChatService.normalize_phone(contact_phone)
+
+        with SessionLocal() as db_send:
+            from src.core.database import SessionLocal as _SL
+            instance = db_send.query(WhatsAppInstance).filter(
+                WhatsAppInstance.tenant_id == tenant_id,
+                WhatsAppInstance.is_active == True
+            ).order_by(WhatsAppInstance.id.desc()).execution_options(ignore_tenant=True).first()
+
+            session_name = instance.session_name if instance else None
+
+        if not session_name:
+            raise ValueError(f"Nenhuma instância ativa para o tenant '{tenant_id}'.")
+
+        result = await whatsapp_bridge.send_message(
+            session_key=session_name,
+            to=phone_to_send,
+            content=content
         )
-        
-        # 3. Sync com as outras telas do mesmo Tenant (Broadcast WebSocket)
-        await ws_manager.send_to_conversation(tenant_id, conversation_id, {
-            "agent_id": agent_id,
-            "content": content,
-            "side": "agent",
-            "timestamp": str(datetime.utcnow())
+        if not result.get("success"):
+            logger.error(f"❌ Falha no envio direto ao Bridge para '{phone_to_send}': {result.get('error')}")
+            raise ValueError(f"Falha ao enviar mensagem: {result.get('error')}")
+
+        logger.info(
+            f"✅ Agente {agent_id} → '{phone_to_send}' via Bridge direto "
+            f"(ID: {result.get('message_id')}): '{content[:60]}'"
+        )
+
+        # 3. Sync em tempo real DIRETO via WebSocket (sem hop no RabbitMQ)
+        # publish_event criava filas ws.broadcast.{tenant} que nunca eram consumidas.
+        await ws_manager.broadcast_to_tenant(tenant_id, {
+            "type": "conversation_update",
+            "conversation_id": str(conversation.id),
+            "data": {
+                "method": "receive_message",
+                "params": {
+                    "type": "new_message",
+                    "agent_id": agent_id,
+                    "conversation_id": str(conversation.id),
+                    "contact_phone": phone_to_send,
+                    "content": content,
+                    "side": "agent",
+                    "timestamp": str(datetime.utcnow())
+                }
+            }
         })
-        
-        logger.info(f"👨‍💻 Agente {agent_id} enviou msg para {conversation_id}")
+
+
 
     @staticmethod
     async def set_typing_status(tenant_id: str, conversation_id: str, is_typing: bool):
-        """Define o status de 'digitando' no Redis e notifica outros agentes."""
+        """Define o status de 'digitando' no Redis e notifica via WebSocket direto."""
         key = f"typing:{tenant_id}:{conversation_id}"
         if is_typing:
-            # TTL de 5s para não prender o status se travar
             await redis_client.set(key, "typing", expire=5)
         else:
             await redis_client.delete(key)
 
-        await ws_manager.send_to_conversation(tenant_id, conversation_id, {
-            "type": "typing_update",
-            "is_typing": is_typing,
-            "conversation_id": conversation_id
+        # Broadcast direto (sem RabbitMQ) - typing é time-critical, MQ introduz latencia inaceitável
+        await ws_manager.broadcast_to_tenant(tenant_id, {
+            "type": "conversation_update",
+            "conversation_id": conversation_id,
+            "data": {
+                "method": "typing_update",
+                "params": {
+                    "type": "typing_update",
+                    "is_typing": is_typing,
+                    "conversation_id": conversation_id
+                }
+            }
         })
 
     # --- 🔵 Lógica Nova de Histórico (MongoDB) ---

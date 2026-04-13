@@ -85,16 +85,19 @@ class WhatsAppBridgeService:
                 f"{self.base_url}/instance/connectionState?sessionId={session_id}",
                 headers=self.headers
             )
+            # 404 = worker thread ainda não inicializou (normal no boot)
+            if response.status_code == 404:
+                return WhatsAppStatus.CONNECTING
             if response.status_code != 200:
                 return WhatsAppStatus.DISCONNECTED
 
             state = response.json().get("state", "DISCONNECTED")
             
             mapping = {
-                "CONNECTED": WhatsAppStatus.CONNECTED,
-                "CONNECTING": WhatsAppStatus.CONNECTING,
+                "CONNECTED":    WhatsAppStatus.CONNECTED,
+                "CONNECTING":   WhatsAppStatus.CONNECTING,
                 "DISCONNECTED": WhatsAppStatus.DISCONNECTED,
-                "QRCODE": WhatsAppStatus.QRCODE,
+                "QRCODE":       WhatsAppStatus.QRCODE,
             }
             return mapping.get(state, WhatsAppStatus.DISCONNECTED)
         except Exception as e:
@@ -130,9 +133,207 @@ class WhatsAppBridgeService:
 
     async def send_file(self, session_id: str, to: str, file_url: str, caption: str = "") -> bool:
         """Envia um arquivo via Bridge."""
-        # TODO: Implementar rota de envio no Bridge Node.js se necessário
         logger.warning("Envio de arquivo via Bridge Node.js ainda não implementado no Bridge.")
         return False
+
+    async def send_message(self, session_key: str, to: str, content: str) -> Dict[str, Any]:
+        """Envia uma mensagem de texto via Bridge, retornando ID do sucesso para correlacao de ACKs."""
+        try:
+            logger.info(f"[*] Enviando mensagem via Bridge: '{content}' para {to} [Sessão: {session_key}]")
+            response = await self.client.post(
+                f"{self.base_url}/instance/sendMessage",
+                json={
+                    "sessionId": session_key,
+                    "to": to,
+                    "content": content
+                },
+                headers=self.headers,
+                timeout=15.0
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(f"✅ Mensagem enviada para {to} com sucesso (ID: {data.get('messageId')})")
+                return {"success": True, "message_id": data.get("messageId")}
+
+            data = response.json()
+            logger.error(f"❌ Erro ao enviar mensagem para {to}. Status: {response.status_code}, Resposta: {data}")
+            return {"success": False, "error": data}
+            
+        except Exception as e:
+            logger.error(f"❌ Falha de rede ao enviar mensagem para {to}: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    async def add_contact(self, session_id: str, phone: str, name: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Verifica se um número tem conta WhatsApp ativa e o valida como contato.
+        Utiliza o endpoint /contacts/add do Bridge Node.js (Baileys onWhatsApp).
+
+        Retorna dict com: success, contact (jid, phone, name, verified) ou error.
+        """
+        try:
+            payload = {"sessionId": session_id, "phone": phone}
+            if name:
+                payload["name"] = name
+
+            logger.info(f"[Bridge] Verificando/adicionando contato {phone} na sessão {session_id}")
+            response = await self.client.post(
+                f"{self.base_url}/contacts/add",
+                json=payload,
+                headers=self.headers
+            )
+
+            data = response.json()
+
+            if response.status_code == 200:
+                logger.info(f"✅ Contato {phone} verificado com sucesso: {data.get('contact', {}).get('jid')}")
+                return {"success": True, "contact": data.get("contact", {})}
+
+            if response.status_code == 422:
+                # Número não tem conta WhatsApp – não é erro de rede
+                return {"success": False, "error": data.get("error", "Número sem conta WhatsApp.")}
+
+            logger.error(f"❌ Bridge retornou {response.status_code} ao adicionar contato {phone}: {data}")
+            return {"success": False, "error": data.get("error", "Erro inesperado no Bridge.")}
+
+        except Exception as e:
+            logger.error(f"❌ Falha de rede ao adicionar contato {phone}: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def edit_contact(self, session_id: str, phone: str, name: str) -> Dict[str, Any]:
+        """Solicita ao Bridge a edição do nome do contato armazenado localmente."""
+        try:
+            payload = {"sessionId": session_id, "phone": phone, "name": name}
+            logger.info(f"[Bridge] Editando contato {phone} na sessão {session_id}")
+            response = await self.client.put(
+                f"{self.base_url}/contacts/edit",
+                json=payload,
+                headers=self.headers
+            )
+            data = response.json()
+            if response.status_code == 200:
+                return {"success": True, "contact": data.get("contact", {})}
+            return {"success": False, "error": data.get("error", "Erro ao editar contato.")}
+        except Exception as e:
+            logger.error(f"❌ Falha ao editar contato {phone}: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def delete_contact(self, session_id: str, phone: str) -> Dict[str, Any]:
+        """Solicita ao Bridge que delete o contato (e chat) visualmente na sessão."""
+        try:
+            payload = {"sessionId": session_id, "phone": phone}
+            logger.info(f"[Bridge] Deletando contato {phone} na sessão {session_id}")
+            # requests/httpx delete supports json payload via 'json=' mostly, but we can pass `request` or just standard 'json' arg in httpx
+            response = await self.client.request(
+                "DELETE",
+                f"{self.base_url}/contacts/delete",
+                json=payload,
+                headers=self.headers
+            )
+            data = response.json()
+            if response.status_code == 200:
+                return {"success": True}
+            return {"success": False, "error": data.get("error", "Erro ao deletar contato.")}
+        except Exception as e:
+            logger.error(f"❌ Falha ao deletar contato {phone}: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def list_contacts(self, session_id: str) -> Dict[str, Any]:
+        """
+        Solicita ao Bridge a lista completa de contatos WhatsApp conhecidos pela sessão.
+        Utiliza o endpoint GET /contacts/list do Bridge Node.js.
+
+        Retorna dict com: success, total, contacts (lista de {jid, phone, name, short_name}).
+        """
+        try:
+            logger.info(f"[Bridge] Solicitando lista de contatos da sessão {session_id}")
+            response = await self.client.get(
+                f"{self.base_url}/contacts/list",
+                params={"sessionId": session_id},
+                headers=self.headers
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                total = data.get("total", 0)
+                logger.info(f"✅ Lista de contatos recebida: {total} contato(s) para sessão {session_id}")
+                return {"success": True, "total": total, "contacts": data.get("contacts", [])}
+
+            if response.status_code in [404, 409]:
+                data = response.json()
+                return {"success": False, "error": data.get("error", "Sessão indisponível.")}
+
+            logger.error(f"❌ Bridge retornou {response.status_code} ao listar contatos: {response.text}")
+            return {"success": False, "error": "Erro inesperado no Bridge ao listar contatos."}
+
+        except Exception as e:
+            logger.error(f"❌ Falha de rede ao listar contatos da sessão {session_id}: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def list_chats(self, session_id: str) -> Dict[str, Any]:
+        """
+        Solicita ao Bridge a lista completa de conversas (chats) do WhatsApp conectado.
+        Retorna diretamente os dados do cache do Baileys: JID, nome, não lidos e timestamp.
+        """
+        try:
+            logger.info(f"[Bridge] Solicitando lista de chats da sessão {session_id}")
+            response = await self.client.get(
+                f"{self.base_url}/instance/chats",
+                params={"sessionId": session_id},
+                headers=self.headers,
+                timeout=30.0
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                total = data.get("total", 0)
+                logger.info(f"✅ {total} chat(s) recebidos do Bridge para sessão {session_id}")
+                return {"success": True, "total": total, "chats": data.get("chats", [])}
+
+            data = response.json()
+            error_msg = data.get("error", "Erro ao listar chats.")
+            logger.warning(f"⚠️ Bridge retornou {response.status_code} para /chats de {session_id}: {error_msg}")
+            return {"success": False, "error": error_msg}
+
+        except Exception as e:
+            logger.error(f"❌ Falha de rede ao listar chats da sessão {session_id}: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def get_chat_history(self, session_id: str, jid: str, limit: int = 50) -> Dict[str, Any]:
+        """
+        Solicita ao Bridge o histórico de mensagens de uma conversa específica.
+        O JID deve estar no formato WhatsApp: ex. '5511999999999@s.whatsapp.net'
+        """
+        try:
+            logger.info(f"[Bridge] Buscando histórico de {jid} na sessão {session_id} (limit={limit})")
+            response = await self.client.get(
+                f"{self.base_url}/instance/chat-history",
+                params={"sessionId": session_id, "jid": jid, "limit": limit},
+                headers=self.headers,
+                timeout=30.0
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                total = data.get("total", 0)
+                logger.info(f"✅ {total} mensagem(s) recebidas do Bridge para {jid}")
+                return {
+                    "success": True,
+                    "jid": data.get("jid"),
+                    "phone": data.get("phone"),
+                    "total": total,
+                    "has_more": data.get("has_more", False),
+                    "messages": data.get("messages", [])
+                }
+
+            data = response.json()
+            error_msg = data.get("error", "Erro ao buscar histórico.")
+            logger.warning(f"⚠️ Bridge retornou {response.status_code} para /chat-history de {jid}: {error_msg}")
+            return {"success": False, "error": error_msg}
+
+        except Exception as e:
+            logger.error(f"❌ Falha de rede ao buscar histórico de {jid}: {e}")
+            return {"success": False, "error": str(e)}
 
 # Instância Global
 whatsapp_bridge = WhatsAppBridgeService()

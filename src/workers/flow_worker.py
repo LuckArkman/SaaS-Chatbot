@@ -10,6 +10,8 @@ from src.core.ws import ws_manager
 from loguru import logger
 import json
 import asyncio
+import uuid
+from contextvars import copy_context
 
 class FlowWorker:
     """
@@ -19,43 +21,118 @@ class FlowWorker:
     async def start(self):
         logger.info("🤖 Iniciando Flow Engine Worker em Segundo Plano...")
         
-        # Subscreve na fila de mensagens de entrada do Gateway
+        # 🔒 FIX MULTI-TENANCY #1: Fila exclusiva por instância de worker.
+        # Usando UUID único, cada processo da API cria a sua própria fila.
+        # Isso elimina o Round-Robin do RabbitMQ que redirecionava mensagens
+        # de Tenant B para o worker do Tenant A (causa raiz do bug).
+        worker_queue_name = f"flow_engine_queue_{uuid.uuid4().hex[:8]}"
+        
         await rabbitmq_bus.subscribe(
-            queue_name="flow_engine_queue",
+            queue_name=worker_queue_name,
             routing_key="message.incoming",
             exchange_name="messages_exchange",
-            callback=self.handle_incoming_message
+            callback=self.handle_incoming_message,
+            auto_delete=True,
+            exclusive=True
         )
+        logger.info(f"🤖 FlowWorker inscrito na fila exclusiva: '{worker_queue_name}'")
 
     async def handle_incoming_message(self, payload: dict):
         """
         Ponto de entrada para processamento de cada mensagem.
         """
-        try:
-            # 1. Recupera Payload Normalizado (UnifiedMessage)
-            tenant_id = payload.get("tenant_id")
-            data = payload.get("data")
-            
-            if not tenant_id or not data:
-                return
+        tenant_id = payload.get("tenant_id")
+        data = payload.get("data")
+        
+        if not tenant_id or not data:
+            logger.warning(f"⚠️ FlowWorker: payload inválido (tenant={tenant_id}, data={'presente' if data else 'ausente'})")
+            return
 
-            # Configura Contexto de Tenancy (Sprint 03)
+        # 🔒 Define o contexto de tenant DIRETAMENTE na coroutine atual.
+        # NUNCA usar run_in_executor para ContextVars — o executor roda numa
+        # thread diferente e o valor definido lá não é visível no event loop.
+        set_current_tenant_id(tenant_id)
+        
+        await self._process_message(tenant_id, data)
+
+    async def _process_message(self, tenant_id: str, data: dict):
+        """Lógica interna de processamento, com contexto de tenant já configurado."""
+        try:
             set_current_tenant_id(tenant_id)
             
             contact_phone = data.get("from_id")
             user_input = data.get("content", "")
             external_id = data.get("message_id")
+            is_from_me = data.get("from_me", False)
+            
+            # 🟢 Normalização Imediata: Remove sufixos JID (ex: @s.whatsapp.net)
+            # Garante que o telefone no Banco de Dados baterá perfeitamente com 
+            # as requisições de Histórico do Frontend e o roteamento de Tenancy via WebSocket.
+            if contact_phone and "@" in contact_phone:
+                contact_phone = contact_phone.split("@")[0]
+            computed_side = MessageSide.AGENT if is_from_me else MessageSide.CLIENT
 
-            # 🟢 Persistência Postgres + MongoDB (Histórico) antes de qualquer lógica
+            # Resolve o ID relacional da Conversa para o Frontend ancorar a UI
             with SessionLocal() as db:
-                await MessageHistoryService.record_message(
-                    db=db,
-                    contact_phone=contact_phone,
-                    content=user_input,
-                    side=MessageSide.CLIENT,
-                    external_id=external_id,
-                    session_name=f"tenant_{tenant_id}" # Tagged for restoration
-                )
+                from src.models.whatsapp import WhatsAppInstance
+                from src.services.contact_service import ContactService
+                
+                # Resolve o nome da sessão real (pode ter UUID) para o MongoDB
+                instance = db.query(WhatsAppInstance).filter(
+                    WhatsAppInstance.tenant_id == tenant_id,
+                    WhatsAppInstance.is_active == True
+                ).order_by(WhatsAppInstance.id.desc()).execution_options(ignore_tenant=True).first()
+                
+                actual_session = instance.session_name if instance else f"tenant_{tenant_id}"
+
+                # 👤 Resolve e Enriquece dados do contato (CRM/Sprint 43)
+                notify_name = data.get("metadata", {}).get("notifyName") or "Contato S/ Nome"
+                contact = ContactService.get_or_create_contact(db, tenant_id, contact_phone, name=notify_name)
+                # Salva em dict para que possa ser lido fora da SessionLocal (evitar DetachedInstanceError)
+                contact_dict = {
+                    "id": contact.id,
+                    "full_name": contact.full_name,
+                    "phone_number": contact.phone_number
+                }
+
+            # 🟢 Persistencia MongoDB e Metadados executada fora do 'with SessionLocal()',
+            # liberando a conexao do Postgres antes do I/O de rede. (Problema Arquitetural #13)
+            msg_data = await MessageHistoryService.record_message(
+                contact_phone=contact_phone,
+                content=user_input,
+                side=computed_side,
+                external_id=external_id,
+                session_name=actual_session
+            )
+            conversation_numeric_id = msg_data.get("conversation_id")
+
+            # 🟢 Notificação Real-time DIRETA via WebSocket
+            active = ws_manager.active_connections.get(tenant_id, {})
+            logger.info(
+                f"[FlowWorker] 📶 Entregando ao WebSocket | tenant='{tenant_id}' "
+                f"| conv_id='{conversation_numeric_id}' "
+                f"| users_conectados={list(active.keys()) or 'NENHUM'}"
+            )
+            await ws_manager.send_to_conversation(
+                tenant_id,
+                str(conversation_numeric_id),
+                {
+                    "method": "receive_message",
+                    "params": {
+                        "message_id": external_id,
+                        "conversation_id": str(conversation_numeric_id),
+                        "contact_phone": contact_phone,
+                        "contact": contact_dict,
+                        "content": user_input,
+                        "from_me": is_from_me,
+                        "side": "bot" if is_from_me else "client",
+                        "type": data.get("type", "text"),
+                        "caption": data.get("caption"),
+                        "timestamp": data.get("timestamp"),
+                        "metadata": data.get("metadata", {})
+                    }
+                }
+            )
 
             # 2. Busca Fluxo Ativo para o Tenant (Regras de Prioridade .NET)
             flow = await FlowDocument.find_one(
@@ -76,12 +153,7 @@ class FlowWorker:
 
             # --- 🟢 Lógica de Handover (Sprint 21) ---
             if session.is_human_support:
-                logger.debug(f"👥 Handover ativo para {contact_phone}. Repassando para Agentes...")
-                await ws_manager.send_to_conversation(tenant_id, contact_phone, {
-                    "content": user_input,
-                    "side": "client",
-                    "timestamp": data.get("timestamp")
-                })
+                logger.debug(f"👥 Handover ativo para {contact_phone}. O Agente Humano assumiu o chat.")
                 await SessionService.update_session(session)
                 return
 

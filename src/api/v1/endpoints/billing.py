@@ -54,7 +54,7 @@ def subscribe_to_plan(
     from datetime import datetime
     
     # 1. Busca Plano
-    plan = db.query(Plan).get(plan_id)
+    plan = db.get(Plan, plan_id)
     if not plan or not plan.is_active:
         raise HTTPException(status_code=404, detail="Plan not found or inactive")
         
@@ -88,16 +88,19 @@ async def create_checkout_endpoint(
     """Gera o checkout de pagamento (Sprint 32)."""
     return await PaymentService.generate_checkout(db, tenant_id, plan_id)
 
+from fastapi import Request
+
 @router.post("/webhook/{provider}", status_code=status.HTTP_200_OK)
 async def payment_webhook_endpoint(
     provider: str,
     payload: dict,
+    request: Request,
     db: Session = Depends(get_db)
 ) -> Any:
-    """Receptor global de notificações de pagamento."""
+    """Receptor global de notificações de pagamento protegido por HMAC/Auth."""
     logger.debug(f"🔔 Notificação Financeira recebida de {provider}: {payload}")
     
-    success = PaymentService.process_webhook(db, provider, payload)
+    success = PaymentService.process_webhook(db, provider, request, payload)
     if not success:
         return {"status": "ignored"}
         

@@ -62,7 +62,7 @@ class AgentAssignmentService:
     @staticmethod
     def transfer_chat(db: Session, conversation: Conversation, target_agent_id: int) -> bool:
         """Transfere manualmente o chat para outro agente."""
-        new_agent = db.query(User).get(target_agent_id)
+        new_agent = db.get(User, target_agent_id)
         if not new_agent or not new_agent.is_agent:
             return False
             

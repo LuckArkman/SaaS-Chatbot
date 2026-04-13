@@ -37,6 +37,7 @@ class MessageNormalizer:
                     "mimetype": ws_message.get("mimetype"),
                     "isMedia": ws_message.get("isMedia", False)
                 },
+                from_me=ws_message.get("fromMe", False),
                 timestamp=datetime.fromtimestamp(ws_message.get("t", datetime.utcnow().timestamp()))
             )
             

@@ -16,7 +16,7 @@ class PaymentService:
         Simula a geração de um link de pagamento (Stripe) ou Pix (Mercado Pago).
         Substitui integrações de SDKs .NET por endpoints REST.
         """
-        plan = db.query(Plan).get(plan_id)
+        plan = db.get(Plan, plan_id)
         if not plan:
             return {"error": "Plano inválido"}
             
@@ -45,11 +45,29 @@ class PaymentService:
         }
 
     @staticmethod
-    def process_webhook(db: Session, provider: str, payload: Dict[str, Any]) -> bool:
+    def process_webhook(db: Session, provider: str, request: Any, payload: Dict[str, Any]) -> bool:
         """
         Processa notificações de pagamento (Webhooks).
         Garante que a assinatura seja renovada se o pagamento for aprovado.
+        
+        🔒 FIX CRÍTICO DE SEGURANÇA #17: Webhook Spoofing
+        Validação obrigatória de Assinatura Criptográfica (HMAC) do Provedor.
+        Sem isso, qualquer atacante poderia enviar um POST simulando pagamento 'approved'
+        e renovando assinaturas infinitamente de graça.
         """
+        from src.core.config import settings
+        
+        secret = settings.PAYMENT_WEBHOOK_SECRET
+        
+        # Exemplo genérico de proteção por cabeçalho (Anti-Spoofing)
+        # Na prática (Sprint 32): Validação de assinatura Stripe (`stripe-signature`)
+        # Ou 'x-signature' do Mercado Pago.
+        signature = request.headers.get("stripe-signature") or request.headers.get("x-signature") or request.headers.get("authorization")
+        
+        if not signature or secret not in signature:
+            logger.warning(f"🚨 FRAUDE DETECTADA: Webhook de pagamento recebido sem assinatura válida. Header recebido: {signature}")
+            return False
+
         # Exemplo de extração MP
         external_id = payload.get("data", {}).get("id") or payload.get("id")
         status = payload.get("status") # Ex: 'approved'

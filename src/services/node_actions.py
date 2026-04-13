@@ -24,13 +24,23 @@ class NodeActions:
         
         # 🟢 Persistência Postgres + MongoDB (Histórico do Bot)
         with SessionLocal() as db:
-            await MessageHistoryService.record_message(
-                db=db,
-                contact_phone=contact_phone,
-                content=processed_text,
-                side=MessageSide.BOT,
-                session_name=f"tenant_{tenant_id}"
-            )
+            from src.models.whatsapp import WhatsAppInstance
+            # Resolve o nome da sessão real (pode ter UUID) para o MongoDB
+            instance = db.query(WhatsAppInstance).filter(
+                WhatsAppInstance.tenant_id == tenant_id,
+                WhatsAppInstance.is_active == True
+            ).order_by(WhatsAppInstance.id.desc()).execution_options(ignore_tenant=True).first()
+            
+            actual_session = instance.session_name if instance else f"tenant_{tenant_id}"
+
+        # 🟢 Persistência Postgres + MongoDB (Histórico do Bot)
+        # Executada FORA da trasaçao SQLAlchemy local (Problema Arquitetural #13)
+        await MessageHistoryService.record_message(
+            contact_phone=contact_phone,
+            content=processed_text,
+            side=MessageSide.BOT,
+            session_name=actual_session
+        )
 
         # Envia para a fila de saída para que o bot entregue
         await rabbitmq_bus.publish(
@@ -120,12 +130,22 @@ class NodeActions:
         
         # Busca histórico recente para contexto multi-turn (últimas 10 trocas)
         with SessionLocal() as db:
-            recent_messages = MessageHistoryService.get_recent_messages(
+            recent_messages = await MessageHistoryService.get_recent_messages(
                 db, contact_phone=contact_phone, limit=10
             )
         
+        # get_recent_messages retorna List[dict] com chaves "side" (MessageSide Enum) e "content" (str).
+        # CORRECAO BUG #5a: m.side / m.content causavam AttributeError — dicts nao tem atributos.
+        # CORRECAO BUG #5b: converte o Enum MessageSide para string antes de passar ao GeminiService,
+        # pois build_history_from_messages compara side == "client" / "bot" (strings).
         conversation_history = GeminiService.build_history_from_messages(
-            [{"side": m.side, "content": m.content} for m in recent_messages]
+            [
+                {
+                    "side":    m["side"].value if hasattr(m["side"], "value") else str(m["side"]),
+                    "content": m["content"]
+                }
+                for m in recent_messages
+            ]
         )
 
         # Injeta variáveis da sessão no prompt do usuário se aplicável
@@ -139,15 +159,13 @@ class NodeActions:
             conversation_history=conversation_history
         )
 
-        # Persiste a resposta do bot no histórico
-        with SessionLocal() as db:
-            await MessageHistoryService.record_message(
-                db=db,
-                contact_phone=contact_phone,
-                content=ai_reply,
-                side=MessageSide.BOT,
-                session_name=f"tenant_{tenant_id}"
-            )
+        # Persiste a resposta do bot no histórico (transação interna ao metodo)
+        await MessageHistoryService.record_message(
+            contact_phone=contact_phone,
+            content=ai_reply,
+            side=MessageSide.BOT,
+            session_name=f"tenant_{tenant_id}"
+        )
 
         # Publica na fila de saída para o Bridge entregar via WhatsApp
         await rabbitmq_bus.publish(

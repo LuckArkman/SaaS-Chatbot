@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import List, Dict, Optional, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 class NodeType(str, Enum):
     START = "input"
@@ -21,6 +21,15 @@ class FlowNode(BaseModel):
     label: str
     position: Position
     data: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator('data', mode='before')
+    @classmethod
+    def validate_data(cls, v: Any) -> Dict[str, Any]:
+        if isinstance(v, list) and len(v) == 0:
+            return {}
+        if not isinstance(v, dict):
+            raise ValueError('data must be a dictionary')
+        return v
 
 class FlowEdge(BaseModel):
     id: str
