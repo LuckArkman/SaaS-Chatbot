@@ -27,53 +27,115 @@ async def get_bot_qr(
     accept: str = Header(None)
 ) -> Any:
     """
-    Retorna o QR Code para pareamento. 
-    Se o header 'Accept' contiver 'text/event-stream', retorna um StreamingResponse (SSE).
-    Caso contrário, retorna apenas o estado atual em JSON (ideal para chamadas legadas/PHP).
+    Retorna o QR Code para pareamento.
+    
+    Se o header 'Accept' contiver 'text/event-stream', abre um stream SSE que
+    entrega cada novo QR Code diretamente do Bridge Node.js (Baileys), sem depender
+    do banco de dados. Isso garante que o QR entregue ao usuário é sempre o mais
+    recente — o Baileys rotaciona o QR a cada ~18s e qualquer QR mais antigo já
+    estará expirado e irrecognível pelo app WhatsApp.
+    
+    Caso contrário, retorna o estado + QR mais recente em JSON (para clientes legados).
     """
     import asyncio
     import json
-    from fastapi.responses import StreamingResponse, JSONResponse
-    from src.core.database import SessionLocal
+    from fastapi.responses import StreamingResponse
+    from src.services.whatsapp_bridge_service import whatsapp_bridge
 
-    # Lógica de Resposta Única (Fallback para PHP/Clientes Legados)
+    # Resolve a instância do Tenant (apenas para obter o session_name)
+    instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
+    session_name = instance.session_name
+
+    # ── Resposta JSON única (fallback para clientes sem suporte a SSE) ──────
     if not accept or "text/event-stream" not in accept:
-        instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
-        # Sincroniza estado agora para garantir QR fresco (Sprint 27)
-        await WhatsAppManagerService.sync_instance_status(db, instance)
-        
-        status_str = instance.status.value if hasattr(instance.status, "value") else str(instance.status)
+        status_live = await whatsapp_bridge.fetch_status(session_name)
+        status_str  = status_live.value if hasattr(status_live, "value") else str(status_live)
+
+        qrcode = None
+        if status_str == "QRCODE":
+            # Consulta o Bridge diretamente — garante QR fresco, não o do banco
+            qrcode = await whatsapp_bridge.get_qrcode(session_name)
+
         return {
             "status": status_str,
-            "qrcode": instance.qrcode_base64
+            "qrcode": qrcode,
+            "session": session_name
         }
 
-    # Lógica de Streaming (SSE - para a nova UI Vue 3)
+    # ── Streaming SSE — entrega cada rotação do QR em tempo real ────────────
     async def event_generator():
-        last_qr = None
-        while True:
-            with SessionLocal() as db_session:
-                instance = WhatsAppManagerService.get_or_create_instance(db_session, tenant_id)
-                current_qr = instance.qrcode_base64
-                status = instance.status
-                status_str = status.value if hasattr(status, "value") else str(status)
+        """
+        Polling de 3s direto no Bridge Node.js.
+        
+        Por que consultar o Bridge e não o banco?
+        O Baileys mantém `latestQr` em memória e gera um novo QR a cada ~18s.
+        O banco só é atualizado quando o webhook chega (pode ter lag de rede).
+        Lendo do Bridge diretamente, nunca entregamos um QR velho que o WhatsApp
+        vai rejeitar silenciosamente ("QR já foi escaneado" / não reconhece).
+        """
+        last_qr    = None
+        ticks_sent = 0
+        max_ticks  = 120  # 120 × 3s = 6 minutos de limite máximo do stream
 
-                if current_qr != last_qr:
+        while ticks_sent < max_ticks:
+            try:
+                # 1. Verifica status atual diretamente no Bridge
+                live_status = await whatsapp_bridge.fetch_status(session_name)
+                status_str  = live_status.value if hasattr(live_status, "value") else str(live_status)
+
+                # 2. Bot já conectado → encerra SSE com sucesso
+                if status_str == "CONNECTED":
+                    yield f"data: {json.dumps({'status': 'CONNECTED', 'qrcode': None})}\n\n"
+                    return
+
+                # Worker ainda inicializando (Bridge retornou 404 → CONNECTING)
+                # Notifica o frontend e continua aguardando o QR aparecer
+                if status_str == "CONNECTING":
+                    yield f"data: {json.dumps({'status': 'CONNECTING', 'qrcode': None})}\n\n"
+                    ticks_sent += 1
+                    await asyncio.sleep(3)
+                    continue
+
+                # DISCONNECTED definitivo — só encerra depois de várias tentativas
+                # para não fechar prematuramente no boot
+                if status_str == "DISCONNECTED" and ticks_sent > 5:
+                    yield f"data: {json.dumps({'status': 'DISCONNECTED', 'qrcode': None})}\n\n"
+                    return
+
+                # 3. Busca QR fresco diretamente do Bridge (sem cache de banco)
+                current_qr = None
+                if status_str == "QRCODE":
+                    current_qr = await whatsapp_bridge.get_qrcode(session_name)
+
+                # 4. Só envia se o QR mudou (evita re-entregar o mesmo QR)
+                if current_qr and current_qr != last_qr:
                     last_qr = current_qr
-                    data = {
-                        "status": status_str,
-                        "qrcode": current_qr
-                    }
-                    yield f"data: {json.dumps(data)}\n\n"
-                
-                if status_str in ["CONNECTED", "DISCONNECTED"]:
-                    data = {"status": status_str, "qrcode": None}
-                    yield f"data: {json.dumps(data)}\n\n"
-                    break
+                    yield f"data: {json.dumps({'status': status_str, 'qrcode': current_qr})}\n\n"
+                    logger.debug(
+                        f"[QR-SSE] Novo QR entregue via SSE | "
+                        f"tenant='{tenant_id}' | session='{session_name}' | tick={ticks_sent}"
+                    )
 
-            await asyncio.sleep(2)
+            except Exception as e:
+                logger.warning(f"[QR-SSE] Erro ao consultar Bridge: {e}")
+                yield f"data: {json.dumps({'status': 'error', 'detail': str(e)})}\n\n"
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+            ticks_sent += 1
+            await asyncio.sleep(3)
+
+        # Timeout do stream — front-end deve reabrir a conexão SSE se necessário
+        yield f"data: {json.dumps({'status': 'timeout', 'qrcode': None})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no"   # Essencial: desativa buffering do Nginx para SSE
+        }
+    )
+
+
 
 @router.post("/start")
 async def start_bot(

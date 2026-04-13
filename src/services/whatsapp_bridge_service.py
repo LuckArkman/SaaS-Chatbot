@@ -85,16 +85,19 @@ class WhatsAppBridgeService:
                 f"{self.base_url}/instance/connectionState?sessionId={session_id}",
                 headers=self.headers
             )
+            # 404 = worker thread ainda não inicializou (normal no boot)
+            if response.status_code == 404:
+                return WhatsAppStatus.CONNECTING
             if response.status_code != 200:
                 return WhatsAppStatus.DISCONNECTED
 
             state = response.json().get("state", "DISCONNECTED")
             
             mapping = {
-                "CONNECTED": WhatsAppStatus.CONNECTED,
-                "CONNECTING": WhatsAppStatus.CONNECTING,
+                "CONNECTED":    WhatsAppStatus.CONNECTED,
+                "CONNECTING":   WhatsAppStatus.CONNECTING,
                 "DISCONNECTED": WhatsAppStatus.DISCONNECTED,
-                "QRCODE": WhatsAppStatus.QRCODE,
+                "QRCODE":       WhatsAppStatus.QRCODE,
             }
             return mapping.get(state, WhatsAppStatus.DISCONNECTED)
         except Exception as e:
