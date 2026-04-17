@@ -157,17 +157,83 @@ async def incoming_webhook(
             if ws_payload.event == WhatsAppMessageEvent.ON_MESSAGE:
                 msg_body = ws_payload.payload
 
-                # Ignorar mensagens de sistema ou de grupos
-                if msg_body.get("isGroupMsg", False) or msg_body.get("from") == "status@broadcast":
-                    logger.debug(f"🔇 Ignorando mensagem de grupo/status: {msg_body.get('id')}")
+                # 🔧 Proteção Crítica: Ignorar mensagens de sistema, grupos, comunidades e newsletters
+                from_id = msg_body.get("from", "")
+                is_group = bool(msg_body.get("isGroupMsg", False))
+                
+                # JIDs permitidos no SaaS são apenas contatos diretos (terminados em s.whatsapp.net ou c.us, ou números puros)
+                # JIDs do tipo @g.us (grupos), @newsletter (canais), @broadcast (status), @lid, etc. causam ID clash no frontend
+                if is_group or ("@" in from_id and from_id.split("@")[1] not in ["s.whatsapp.net", "c.us"]):
+                    logger.debug(f"🔇 Bloqueando mensagem não suportada de grupo/sistema: {from_id}")
                     return {"success": True, "status": "ignored"}
 
                 # Normalização para UnifiedMessage
                 unified_msg = MessageNormalizer.from_whatsapp(tenant_id, msg_body)
-                logger.info(
-                    f"[Gateway] 📨 Mensagem unificada | id='{unified_msg.message_id}' "
-                    f"| from='{unified_msg.from_id}' | tenant='{tenant_id}'"
-                )
+                logger.info(f"[Gateway] 📨 Mensagem unificada | id='{unified_msg.message_id}' | from='{unified_msg.from_id}' | tenant='{tenant_id}'")
+
+                # --- 🚀 ENTREGA DIRETA AO FRONTEND E BANCO DE DADOS (DB + WS) ---
+                # A mensagem é resolvida e entregue IMEDIATAMENTE, desvinculando o histórico  
+                # de conversas do fluxo de automação dentro das filas do RabbitMQ.
+                from src.services.contact_service import ContactService
+                from src.services.message_history_service import MessageHistoryService
+                from src.models.whatsapp import WhatsAppInstance
+                from src.models.chat import MessageSide
+                from src.core.ws import ws_manager
+                import asyncio
+
+                try:
+                    is_from_me = msg_body.get("fromMe", False)
+                    user_input = unified_msg.content
+                    external_id = unified_msg.message_id
+                    computed_side = MessageSide.AGENT if is_from_me else MessageSide.CLIENT
+                    contact_phone = unified_msg.from_id
+                    if "@" in contact_phone:
+                        contact_phone = contact_phone.split("@")[0]
+                        
+                    with SessionLocal() as db:
+                        instance = db.query(WhatsAppInstance).filter(
+                            WhatsAppInstance.tenant_id == tenant_id,
+                            WhatsAppInstance.is_active == True
+                        ).order_by(WhatsAppInstance.id.desc()).execution_options(ignore_tenant=True).first()
+                        
+                        actual_session = instance.session_name if instance else f"tenant_{tenant_id}"
+                        notify_name = msg_body.get("pushName") or msg_body.get("notifyName") or "Contato S/ Nome"
+                        
+                        # 🔧 Persistência rápida protegida pelo connection pool do FastAPI
+                        contact = ContactService.get_or_create_contact(db, tenant_id, contact_phone, name=notify_name)
+                        
+                        await MessageHistoryService.record_message(
+                            db=db, contact_phone=contact_phone, content=user_input,
+                            side=computed_side, external_id=external_id, session_name=actual_session
+                        )
+                        postgre_conv = MessageHistoryService.get_or_create_conversation(db, contact_phone)
+                        conversation_numeric_id = postgre_conv.id if postgre_conv else contact_phone
+
+                    # WS Real-time Notification instantânea
+                    await ws_manager.publish_event(tenant_id, {
+                        "method": "receive_message",
+                        "params": {
+                            "message_id": external_id,
+                            "conversation_id": str(conversation_numeric_id),
+                            "contact_phone": contact_phone,
+                            "contact": {
+                                "id": contact.id,
+                                "full_name": contact.full_name,
+                                "phone_number": contact.phone_number
+                            },
+                            "content": user_input,
+                            "from_me": is_from_me,
+                            "side": "bot" if is_from_me else "client",
+                            "type": unified_msg.type.value if hasattr(unified_msg.type, 'value') else "text",
+                            "caption": unified_msg.caption,
+                            "timestamp": msg_body.get("timestamp"),
+                            "metadata": unified_msg.metadata
+                        }
+                    })
+                    logger.info(f"[Gateway] 🟢 Entrega DIRETA (Frontend/DB) concluída para {contact_phone}")
+                except Exception as direct_err:
+                    logger.error(f"[Gateway] ❌ Falha na entrega direta para db/ws no Gateway: {direct_err}")
+
 
                 # Publicar para o Barramento de Eventos
                 await rabbitmq_bus.publish(

@@ -221,8 +221,16 @@ async def list_conversations(
         )
 
     chats = result.get("chats", [])
-    # Aplica limite no lado Python
-    chats = chats[:limit]
+    
+    # 🔧 FIX: Filtragem rigorosa para evitar "Contatos S/ Nome" bizarros provenientes de Grupos/Newsletters (IDs com 18 dígitos)
+    # Apenas JIDs terminados com @s.whatsapp.net ou @c.us devem ser exibidos no CRM
+    filtered_chats = []
+    for chat in chats:
+        chat_id = chat.get("id", "")
+        if chat_id.endswith("@s.whatsapp.net") or chat_id.endswith("@c.us") or "@" not in chat_id:
+            filtered_chats.append(chat)
+            
+    chats = filtered_chats[:limit]
 
     return {
         "total": result.get("total", len(chats)),

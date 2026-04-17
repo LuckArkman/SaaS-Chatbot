@@ -10,6 +10,13 @@ from src.core.ws import ws_manager
 from loguru import logger
 import json
 import asyncio
+from typing import Dict
+from collections import defaultdict
+
+# 🔧 Cache local de Locks em memória para mitigar concorrência.
+# Resolve condição de corrida na inserção de MÚLTIPLAS mensagens do mesmo contato simultaneamente (ex: sync de histórico)
+# que geravam duplicação no banco de dados e bugs na UI.
+_processing_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
 class FlowWorker:
     """
@@ -52,59 +59,6 @@ class FlowWorker:
             # as requisições de Histórico do Frontend e o roteamento de Tenancy via WebSocket.
             if contact_phone and "@" in contact_phone:
                 contact_phone = contact_phone.split("@")[0]
-            computed_side = MessageSide.AGENT if is_from_me else MessageSide.CLIENT
-
-            # Resolve o ID relacional da Conversa para o Frontend ancorar a UI
-            with SessionLocal() as db:
-                from src.models.whatsapp import WhatsAppInstance
-                from src.services.contact_service import ContactService
-                
-                # Resolve o nome da sessão real (pode ter UUID) para o MongoDB
-                instance = db.query(WhatsAppInstance).filter(
-                    WhatsAppInstance.tenant_id == tenant_id,
-                    WhatsAppInstance.is_active == True
-                ).order_by(WhatsAppInstance.id.desc()).execution_options(ignore_tenant=True).first()
-                
-                actual_session = instance.session_name if instance else f"tenant_{tenant_id}"
-
-                # 👤 Resolve e Enriquece dados do contato (CRM/Sprint 43)
-                notify_name = data.get("metadata", {}).get("notifyName") or "Contato S/ Nome"
-                contact = ContactService.get_or_create_contact(db, tenant_id, contact_phone, name=notify_name)
-
-                await MessageHistoryService.record_message(
-                    db=db,
-                    contact_phone=contact_phone,
-                    content=user_input,
-                    side=computed_side,
-                    external_id=external_id,
-                    session_name=actual_session
-                )
-                
-                postgre_conv = MessageHistoryService.get_or_create_conversation(db, contact_phone)
-                conversation_numeric_id = postgre_conv.id if postgre_conv else contact_phone
-
-            # 🟢 Notificação Real-time via Bus para a Bridge (Sprint 21 + RPC)
-            # Usamos publish_event para garantir entrega em multi-processo
-            await ws_manager.publish_event(tenant_id, {
-                "method": "receive_message",
-                "params": {
-                    "message_id": external_id,
-                    "conversation_id": str(conversation_numeric_id),
-                    "contact_phone": contact_phone,
-                    "contact": {
-                        "id": contact.id,
-                        "full_name": contact.full_name,
-                        "phone_number": contact.phone_number
-                    },
-                    "content": user_input,
-                    "from_me": is_from_me,
-                    "side": "bot" if is_from_me else "client",
-                    "type": data.get("type", "text"),
-                    "caption": data.get("caption"),
-                    "timestamp": data.get("timestamp"),
-                    "metadata": data.get("metadata", {})
-                }
-            })
 
             # 2. Busca Fluxo Ativo para o Tenant (Regras de Prioridade .NET)
             flow = await FlowDocument.find_one(
