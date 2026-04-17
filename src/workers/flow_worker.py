@@ -26,13 +26,9 @@ class FlowWorker:
     async def start(self):
         logger.info("🤖 Iniciando Flow Engine Worker em Segundo Plano...")
         
-        # Subscreve na fila de mensagens de entrada do Gateway
-        await rabbitmq_bus.subscribe(
-            queue_name="flow_engine_queue",
-            routing_key="message.incoming",
-            exchange_name="messages_exchange",
-            callback=self.handle_incoming_message
-        )
+        # 🚀 DESATIVADO: Ação Corretiva. O Bot agora é processado 100% via BackgroundTask nativa da API.
+        # NENHUMA FILA DE RABBITMQ é usada para tratar mensagens inbound do Baileys para o Python.
+        pass
 
     async def handle_incoming_message(self, payload: dict):
         """

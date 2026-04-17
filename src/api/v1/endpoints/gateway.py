@@ -210,7 +210,9 @@ async def incoming_webhook(
                         conversation_numeric_id = postgre_conv.id if postgre_conv else contact_phone
 
                     # WS Real-time Notification instantânea
-                    await ws_manager.publish_event(tenant_id, {
+                    # 🚀 Ação Corretiva: Bypass absoluto do RabbitMQ exigido. Roteamento direto na memória do Node atual.
+                    # Isso previne que instabilidades no RabbitMQ ("filas fantasmas") causem perda (disappearance) de notificações UI.
+                    socket_payload = {
                         "method": "receive_message",
                         "params": {
                             "message_id": external_id,
@@ -229,26 +231,45 @@ async def incoming_webhook(
                             "timestamp": msg_body.get("timestamp"),
                             "metadata": unified_msg.metadata
                         }
-                    })
+                    }
+                    await ws_manager.broadcast_to_tenant(tenant_id, socket_payload)
                     logger.info(f"[Gateway] 🟢 Entrega DIRETA (Frontend/DB) concluída para {contact_phone}")
                 except Exception as direct_err:
                     logger.error(f"[Gateway] ❌ Falha na entrega direta para db/ws no Gateway: {direct_err}")
 
 
-                # Publicar para o Barramento de Eventos
-                await rabbitmq_bus.publish(
-                    exchange_name="messages_exchange",
-                    routing_key="message.incoming",
-                    message={
-                        "tenant_id": tenant_id,
-                        "session": ws_payload.session,
-                        "data": unified_msg.model_dump(mode='json')
-                    }
-                )
-                logger.info(
-                    f"[Gateway] ✅ Publicado em RabbitMQ (message.incoming) "
-                    f"| msg_id='{unified_msg.message_id}' | tenant='{tenant_id}'"
-                )
+                # 🚀 NOVO FLUXO: Automação Direta (Background Task) sem fila no RabbitMQ!
+                # Cumprindo a requisição estrita: NENHUM TIPO DE FILA dentro do RabbitMQ.
+                async def _run_bot_flow():
+                    try:
+                        from src.models.mongo.flow import FlowDocument
+                        from src.services.session_service import SessionService
+                        from src.services.flow_executor import FlowExecutor
+                        
+                        flow = await FlowDocument.find_one(
+                            FlowDocument.tenant_id == tenant_id,
+                            FlowDocument.is_active == True
+                        )
+                        if not flow:
+                            return
+
+                        session = await SessionService.get_or_create_session(
+                            tenant_id=tenant_id,
+                            contact_phone=contact_phone,
+                            flow_id=str(flow.id)
+                        )
+
+                        if session.is_human_support:
+                            logger.debug(f"👥 Handover ativo para {contact_phone}. Ignorando bot.")
+                            return
+
+                        executor = FlowExecutor(flow)
+                        await executor.run_step(session, user_input=user_input)
+                    except Exception as e:
+                        logger.error(f"❌ Erro na execução direta do Bot: {e}")
+
+                asyncio.create_task(_run_bot_flow())
+                logger.info(f"[Gateway] 🤖 Bot acionado diretamente via BackgroundTask para {contact_phone}")
 
             # ── ACK de entrega ─────────────────────────────────────────────
             elif ws_payload.event == WhatsAppMessageEvent.ON_ACK:
@@ -370,10 +391,10 @@ async def incoming_webhook(
                     socket_payload["method"] = "chat_history_restored"
                     logger.info(f"📚 Histórico restaurado: {len(history_data)} msg(s)")
 
-                # 🟢 Notificação Real-time via Bus (Garante entrega em multi-processo)
-                await ws_manager.publish_event(tenant_id, socket_payload)
+                # 🟢 Notificação Real-time imediata via RAM (Bypass RabbitMQ)
+                await ws_manager.broadcast_to_tenant(tenant_id, socket_payload)
                 logger.debug(
-                    f"[Gateway] Estado '{state}' broadcast via WS | "
+                    f"[Gateway] Estado '{state}' broadcast direto via WS | "
                     f"tenant='{tenant_id}' | history={len(history_data)} msgs"
                 )
 
