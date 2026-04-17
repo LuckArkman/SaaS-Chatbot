@@ -9,15 +9,10 @@ from src.core.database import SessionLocal
 from loguru import logger
 import json
 import asyncio
-from collections import defaultdict
 from src.services.chat_service import chat_service
 from src.models.mongo.chat import MessageSource
 
 router = APIRouter()
-
-# 🔧 FIX CRÍTICO para Race Conditions / Burst:
-# Protege contra inserções simultâneas do mesmo contato (evita perda de mensagens em rafadas)
-_processing_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
 
 # API Key simples para validação de webhooks (Pode ser migrada para DB depois)
@@ -197,87 +192,97 @@ async def incoming_webhook(
                     if "@" in contact_phone:
                         contact_phone = contact_phone.split("@")[0]
                         
-                    async with _processing_locks[contact_phone]:
-                        with SessionLocal() as db:
-                            instance = db.query(WhatsAppInstance).filter(
-                                WhatsAppInstance.tenant_id == tenant_id,
-                                WhatsAppInstance.is_active == True
-                            ).order_by(WhatsAppInstance.id.desc()).execution_options(ignore_tenant=True).first()
-                            
-                            actual_session = instance.session_name if instance else f"tenant_{tenant_id}"
-                            notify_name = msg_body.get("pushName") or msg_body.get("notifyName") or "Contato S/ Nome"
-                            
-                            # 🔧 Persistência rápida protegida pelo connection pool do FastAPI
-                            contact = ContactService.get_or_create_contact(db, tenant_id, contact_phone, name=notify_name)
-                            
-                            await MessageHistoryService.record_message(
-                                db=db, contact_phone=contact_phone, content=user_input,
-                                side=computed_side, external_id=external_id, session_name=actual_session
-                            )
-                            postgre_conv = MessageHistoryService.get_or_create_conversation(db, contact_phone)
-                            conversation_numeric_id = postgre_conv.id if postgre_conv else contact_phone
-
-                        # WS Real-time Notification instantânea
-                        # 🚀 Ação Corretiva: Bypass absoluto do RabbitMQ exigido. Roteamento direto na memória do Node atual.
-                        # Isso previne que instabilidades no RabbitMQ ("filas fantasmas") causem perda (disappearance) de notificações UI.
-                        socket_payload = {
-                            "method": "receive_message",
-                            "params": {
-                                "message_id": external_id,
-                                "conversation_id": str(conversation_numeric_id),
-                                "contact_phone": contact_phone,
-                                "contact": {
-                                    "id": contact.id,
-                                    "full_name": contact.full_name,
-                                    "phone_number": contact.phone_number
-                                },
-                                "content": user_input,
-                                "from_me": is_from_me,
-                                "side": "bot" if is_from_me else "client",
-                                "type": unified_msg.type.value if hasattr(unified_msg.type, 'value') else "text",
-                                "caption": unified_msg.caption,
-                                "timestamp": msg_body.get("timestamp"),
-                                "metadata": unified_msg.metadata
-                            }
+                    # 1. 🚀 ENTREGA IMEDIATA AO FRONTEND (Bypass Total DB/Filas)
+                    # Cumprindo a requisição: UI renderiza instantaneamente
+                    notify_name = msg_body.get("pushName") or msg_body.get("notifyName") or "Contato S/ Nome"
+                    
+                    socket_payload = {
+                        "method": "receive_message",
+                        "params": {
+                            "message_id": external_id,
+                            "conversation_id": contact_phone,  # Use o telefone temporalmente
+                            "contact_phone": contact_phone,
+                            "contact": {
+                                "id": contact_phone,           # Fallback amigável
+                                "full_name": notify_name,
+                                "phone_number": contact_phone
+                            },
+                            "content": user_input,
+                            "from_me": is_from_me,
+                            "side": "bot" if is_from_me else "client",
+                            "type": unified_msg.type.value if hasattr(unified_msg.type, 'value') else "text",
+                            "caption": unified_msg.caption,
+                            "timestamp": msg_body.get("timestamp"),
+                            "metadata": unified_msg.metadata
                         }
-                        await ws_manager.broadcast_to_tenant(tenant_id, socket_payload)
-                        logger.info(f"[Gateway] 🟢 Entrega DIRETA (Frontend/DB) concluída para {contact_phone}")
-                except Exception as direct_err:
-                    logger.error(f"[Gateway] ❌ Falha na entrega direta para db/ws no Gateway: {direct_err}")
+                    }
+                    await ws_manager.broadcast_to_tenant(tenant_id, socket_payload)
+                    logger.info(f"[Gateway] 🟢 FRONTEND PRIMEIRO: Mensagem entregue IMEDIATAMENTE para a UI s/ banco. ({contact_phone})")
 
+                    # 2. 🗃️ ENFILEIRAMENTO PARA REGISTRO NO BANCO E BOT (Background Task)
+                    # Cumprindo a regra: Enfileiramento é somente para gravar os dados
+                    async def _background_persistence_and_bot():
+                        try:
+                            # 2.1 Gravação no Banco Integrada
+                            for attempt in range(3):
+                                try:
+                                    with SessionLocal() as db:
+                                        from src.models.whatsapp import WhatsAppInstance
+                                        from src.services.contact_service import ContactService
+                                        from src.services.message_history_service import MessageHistoryService
+                                        
+                                        instance = db.query(WhatsAppInstance).filter(
+                                            WhatsAppInstance.tenant_id == tenant_id,
+                                            WhatsAppInstance.is_active == True
+                                        ).order_by(WhatsAppInstance.id.desc()).execution_options(ignore_tenant=True).first()
+                                        
+                                        actual_session = instance.session_name if instance else f"tenant_{tenant_id}"
+                                        
+                                        ContactService.get_or_create_contact(db, tenant_id, contact_phone, name=notify_name)
+                                        await MessageHistoryService.record_message(
+                                            db=db, contact_phone=contact_phone, content=user_input,
+                                            side=computed_side, external_id=external_id, session_name=actual_session
+                                        )
+                                        MessageHistoryService.get_or_create_conversation(db, contact_phone)
+                                        break
+                                except Exception as db_err:
+                                    if attempt < 2:
+                                        await asyncio.sleep(0.1)
+                                    else:
+                                        logger.error(f"❌ Erro ao persistir DB na Fila Background: {db_err}")
+                                        raise db_err
 
-                # 🚀 NOVO FLUXO: Automação Direta (Background Task) sem fila no RabbitMQ!
-                # Cumprindo a requisição estrita: NENHUM TIPO DE FILA dentro do RabbitMQ.
-                async def _run_bot_flow():
-                    try:
-                        from src.models.mongo.flow import FlowDocument
-                        from src.services.session_service import SessionService
-                        from src.services.flow_executor import FlowExecutor
-                        
-                        flow = await FlowDocument.find_one(
-                            FlowDocument.tenant_id == tenant_id,
-                            FlowDocument.is_active == True
-                        )
-                        if not flow:
-                            return
+                            # 2.2 Automação (Robô/Fluxo IA)
+                            from src.models.mongo.flow import FlowDocument
+                            from src.services.session_service import SessionService
+                            from src.services.flow_executor import FlowExecutor
+                            
+                            flow = await FlowDocument.find_one(
+                                FlowDocument.tenant_id == tenant_id,
+                                FlowDocument.is_active == True
+                            )
+                            if not flow:
+                                return
 
-                        session = await SessionService.get_or_create_session(
-                            tenant_id=tenant_id,
-                            contact_phone=contact_phone,
-                            flow_id=str(flow.id)
-                        )
+                            session = await SessionService.get_or_create_session(
+                                tenant_id=tenant_id,
+                                contact_phone=contact_phone,
+                                flow_id=str(flow.id)
+                            )
 
-                        if session.is_human_support:
-                            logger.debug(f"👥 Handover ativo para {contact_phone}. Ignorando bot.")
-                            return
+                            if session.is_human_support:
+                                logger.debug(f"👥 Handover ativo para {contact_phone}. Ignorando bot.")
+                                return
 
-                        executor = FlowExecutor(flow)
-                        await executor.run_step(session, user_input=user_input)
-                    except Exception as e:
-                        logger.error(f"❌ Erro na execução direta do Bot: {e}")
+                            executor = FlowExecutor(flow)
+                            await executor.run_step(session, user_input=user_input)
 
-                asyncio.create_task(_run_bot_flow())
-                logger.info(f"[Gateway] 🤖 Bot acionado diretamente via BackgroundTask para {contact_phone}")
+                        except Exception as e:
+                            logger.error(f"❌ Erro no enfileiramento de DB/Automação: {e}")
+
+                    # Aloca na Async Loop (Fila assíncrona) de I/O em background
+                    asyncio.create_task(_background_persistence_and_bot())
+
 
             # ── ACK de entrega ─────────────────────────────────────────────
             elif ws_payload.event == WhatsAppMessageEvent.ON_ACK:
