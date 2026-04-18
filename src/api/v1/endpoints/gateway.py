@@ -310,14 +310,39 @@ async def incoming_webhook(
             f"| status={ack_body.get('status')} | tenant='{tenant_id}'"
         )
         try:
-            await rabbitmq_bus.publish(
-                exchange_name="messages_exchange",
-                routing_key="message.ack",
-                message={"tenant_id": tenant_id, "channel": "whatsapp", "session": ws_payload.session, "ack": ack_body},
-            )
+            # Converte o status do ACK numérico para MessageStatus
+            from src.models.chat import MessageStatus
+            ack_map = {
+                1: MessageStatus.SENT,
+                2: MessageStatus.DELIVERED,
+                3: MessageStatus.READ,
+                4: MessageStatus.ERROR
+            }
+            new_status = ack_map.get(ack_body.get('status', 0))
+            external_id = ack_body.get('id')
+            
+            if new_status and external_id:
+                # Atualiza DB diretamente (Mongo)
+                from src.core.database import SessionLocal
+                from src.services.message_history_service import MessageHistoryService
+                
+                with SessionLocal() as db:
+                    await MessageHistoryService.update_message_status(db, external_id, new_status)
+                    
+                # Broadcast via Websocket para atualizar o Front-End ao vivo
+                socket_payload = {
+                    "method": "message_status_update",
+                    "params": {
+                        "message_id": external_id,
+                        "status": new_status.value
+                    }
+                }
+                await ws_manager.broadcast_to_tenant(tenant_id, socket_payload)
+                
         except Exception as ack_err:
-            logger.warning(f"[Gateway] ⚠️ Falha ao publicar ACK no RabbitMQ: {ack_err}")
-        return {"success": True, "status": "ack_queued"}
+            logger.warning(f"[Gateway] ⚠️ Falha ao processar ACK: {ack_err}")
+            
+        return {"success": True, "status": "ack_processed"}
 
     # ═══════════════════════════════════════════════════════════════════════════
     # CASO 3: MUDANÇA DE ESTADO / QR CODE (ON_STATE_CHANGE)

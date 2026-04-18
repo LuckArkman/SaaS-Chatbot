@@ -94,18 +94,12 @@ class ConnectionManager:
 
     async def publish_event(self, tenant_id: str, payload: dict, user_id: str = None):
         """
-        Publica um evento no RabbitMQ para distribuição cross-process.
-        Usado para sincronização entre workers (ex: PM2 multi-instance).
+        Publica um evento para o tenant. (RabbitMQ removido para evitar bloqueios).
         """
-        from src.core.bus import rabbitmq_bus
         try:
-            await rabbitmq_bus.publish(
-                exchange_name="messages_exchange",
-                routing_key=f"ws.broadcast.{tenant_id}",
-                message={"tenant_id": tenant_id, "user_id": user_id, "data": payload},
-            )
+            await self.broadcast_to_tenant(tenant_id, payload)
         except Exception as e:
-            logger.error(f"[WS] Falha ao publicar evento no bus: {e}")
+            logger.error(f"[WS] Falha ao transmitir evento: {e}")
 
     async def broadcast_to_tenant(self, tenant_id: str, message: dict):
         """
