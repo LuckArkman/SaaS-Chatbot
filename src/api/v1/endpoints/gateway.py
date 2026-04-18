@@ -193,17 +193,17 @@ async def incoming_webhook(
                         contact_phone = contact_phone.split("@")[0]
                         
                     # 1. 🚀 ENTREGA IMEDIATA AO FRONTEND (Bypass Total DB/Filas)
-                    # Cumprindo a requisição: UI renderiza instantaneamente
+                    # A UI renderiza instantaneamente SEM bloquear em banco ou fila
                     notify_name = msg_body.get("pushName") or msg_body.get("notifyName") or "Contato S/ Nome"
                     
                     socket_payload = {
                         "method": "receive_message",
                         "params": {
                             "message_id": external_id,
-                            "conversation_id": contact_phone,  # Use o telefone temporalmente
+                            "conversation_id": contact_phone,
                             "contact_phone": contact_phone,
                             "contact": {
-                                "id": contact_phone,           # Fallback amigável
+                                "id": contact_phone,
                                 "full_name": notify_name,
                                 "phone_number": contact_phone
                             },
@@ -217,13 +217,11 @@ async def incoming_webhook(
                         }
                     }
                     await ws_manager.broadcast_to_tenant(tenant_id, socket_payload)
-                    logger.info(f"[Gateway] 🟢 FRONTEND PRIMEIRO: Mensagem entregue IMEDIATAMENTE para a UI s/ banco. ({contact_phone})")
+                    logger.info(f"[Gateway] 🟢 FRONTEND PRIMEIRO: entregue imediatamente | {contact_phone}")
 
-                    # 2. 🗃️ ENFILEIRAMENTO PARA REGISTRO NO BANCO E BOT (Background Task)
-                    # Cumprindo a regra: Enfileiramento é somente para gravar os dados
+                    # 2. 🗃️ PERSISTÊNCIA + BOT em Background (fila somente para gravar dados)
                     async def _background_persistence_and_bot():
                         try:
-                            # 2.1 Gravação no Banco Integrada
                             for attempt in range(3):
                                 try:
                                     with SessionLocal() as db:
@@ -237,7 +235,6 @@ async def incoming_webhook(
                                         ).order_by(WhatsAppInstance.id.desc()).execution_options(ignore_tenant=True).first()
                                         
                                         actual_session = instance.session_name if instance else f"tenant_{tenant_id}"
-                                        
                                         ContactService.get_or_create_contact(db, tenant_id, contact_phone, name=notify_name)
                                         await MessageHistoryService.record_message(
                                             db=db, contact_phone=contact_phone, content=user_input,
@@ -249,10 +246,9 @@ async def incoming_webhook(
                                     if attempt < 2:
                                         await asyncio.sleep(0.1)
                                     else:
-                                        logger.error(f"❌ Erro ao persistir DB na Fila Background: {db_err}")
-                                        raise db_err
+                                        logger.error(f"❌ Erro ao persistir DB (Background): {db_err}")
 
-                            # 2.2 Automação (Robô/Fluxo IA)
+                            # Execução do Bot/Fluxo IA
                             from src.models.mongo.flow import FlowDocument
                             from src.services.session_service import SessionService
                             from src.services.flow_executor import FlowExecutor
@@ -277,13 +273,13 @@ async def incoming_webhook(
                             executor = FlowExecutor(flow)
                             await executor.run_step(session, user_input=user_input)
 
-                        except Exception as e:
-                            logger.error(f"❌ Erro no enfileiramento de DB/Automação: {e}")
+                        except Exception as bg_err:
+                            logger.error(f"❌ Erro no Background Task (DB/Bot): {bg_err}")
 
-                    # Aloca na Async Loop (Fila assíncrona) de I/O em background
                     asyncio.create_task(_background_persistence_and_bot())
 
-
+                except Exception as direct_err:
+                    logger.error(f"[Gateway] ❌ Falha crítica no processamento da mensagem: {direct_err}")
             # ── ACK de entrega ─────────────────────────────────────────────
             elif ws_payload.event == WhatsAppMessageEvent.ON_ACK:
                 ack_body = ws_payload.payload
