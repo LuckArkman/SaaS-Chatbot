@@ -95,11 +95,10 @@ class ConnectionManager:
     async def publish_event(self, tenant_id: str, payload: dict, user_id: str = None):
         """
         Publica um evento para o tenant. (RabbitMQ removido para evitar bloqueios).
+        NOTA: Desativado temporariamente. O payload não padronizado estava causando
+        crash no front-end web, resultando em mensagens não sendo entregues.
         """
-        try:
-            await self.broadcast_to_tenant(tenant_id, payload)
-        except Exception as e:
-            logger.error(f"[WS] Falha ao transmitir evento: {e}")
+        pass
 
     async def broadcast_to_tenant(self, tenant_id: str, message: dict):
         """
