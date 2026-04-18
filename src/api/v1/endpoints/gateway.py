@@ -252,12 +252,12 @@ async def incoming_webhook(
 
         logger.info(f"[Gateway] 📨 Mensagem recebida | from='{contact_phone}' | fromMe={is_from_me} | id='{external_id}'")
 
-        # ── PASSO 1: ENTREGA AO FRONTEND (SEM banco, SEM fila, SEM RabbitMQ) ──
+        # ── PASSO 1: ENTREGA AO FRONTEND (SEM POSTGRES, 100% MongoDB Architect) ──
         socket_payload = {
             "method": "receive_message",
             "params": {
                 "message_id":      external_id,
-                "conversation_id": contact_phone,
+                "conversation_id": from_id,  # <-- JID exato que o WhatsApp e o Painel usam (ex: 55119999@s.whatsapp.net)
                 "contact_phone":   contact_phone,
                 "contact": {
                     "id":           contact_phone,

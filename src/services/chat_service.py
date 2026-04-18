@@ -245,7 +245,7 @@ class ChatService:
             "params": {
                 "type": "new_message",
                 "agent_id": agent_id,
-                "conversation_id": str(conversation.id),
+                "conversation_id": raw_conversation_id,  # <-- Usa o JID nativo/raw, não o ID do Postgres
                 "contact_phone": phone_to_send,
                 "content": content,
                 "side": "agent",
