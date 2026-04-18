@@ -141,10 +141,10 @@ async def websocket_endpoint(
                     logger.warning(f"⚠️ Mensagem WebSocket inválida (não JSON): {raw_data}")
                     
     except WebSocketDisconnect:
-        ws_manager.disconnect(tenant_id, str(user_id), websocket)
+        await ws_manager.disconnect(tenant_id, str(user_id), websocket)
     except Exception as e:
         logger.error(f"❌ Erro fatal no WebSocket para usuário {user_id}: {e}")
-        ws_manager.disconnect(tenant_id, str(user_id), websocket)
+        await ws_manager.disconnect(tenant_id, str(user_id), websocket)
         try:
             await websocket.close(code=1011)
         except:
