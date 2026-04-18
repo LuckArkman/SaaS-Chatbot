@@ -250,7 +250,7 @@ async def incoming_webhook(
         notify_name   = msg_body.get("pushName") or msg_body.get("notifyName") or "Contato S/ Nome"
         contact_phone = unified_msg.from_id.split("@")[0] if "@" in unified_msg.from_id else unified_msg.from_id
 
-        logger.info(f"[Gateway] 📨 Mensagem recebida | from='{contact_phone}' | id='{external_id}'")
+        logger.info(f"[Gateway] 📨 Mensagem recebida | from='{contact_phone}' | fromMe={is_from_me} | id='{external_id}'")
 
         # ── PASSO 1: ENTREGA AO FRONTEND (SEM banco, SEM fila, SEM RabbitMQ) ──
         socket_payload = {
@@ -278,6 +278,12 @@ async def incoming_webhook(
             logger.info(f"[Gateway] 🟢 Frontend notificado IMEDIATAMENTE | {contact_phone}")
         except Exception as ws_err:
             logger.error(f"[Gateway] ❌ Falha ao notificar Frontend via WS: {ws_err}")
+
+        # 🔕 Mensagens enviadas pelo próprio bot (fromMe=True) não devem alimentar o FluxoBot
+        # Isso evita que a resposta do bot dispare outra execução do FluxoBot, corrompendo o estado da sessão.
+        if is_from_me:
+            logger.debug(f"[Gateway] 🤖 Mensagem própria (fromMe=True) entregue ao front, sem acionar FluxoBot.")
+            return {"success": True, "status": "delivered_from_me"}
 
         # ── PASSO 2: PERSISTÊNCIA + BOT em background (não bloqueia o Frontend) ──
         asyncio.create_task(

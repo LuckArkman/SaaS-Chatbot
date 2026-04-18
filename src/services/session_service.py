@@ -11,14 +11,22 @@ class SessionService:
     """
     @staticmethod
     async def get_or_create_session(tenant_id: str, contact_phone: str, flow_id: str) -> SessionStateDocument:
-        # 1. Tenta buscar no Cache (Redis)
+        # 1. Tenta buscar no Cache (Redis) — usado apenas para verificar se existe, nunca para rehydratar o documento
         cache_key = f"session:{tenant_id}:{contact_phone}"
         cached_data = await CacheService.get_json(cache_key)
         
-        if cached_data:
-            return SessionStateDocument(**cached_data)
+        # Se há cache, usa o _id para buscar o documento vivo no MongoDB (evita rehydration inválida)
+        if cached_data and cached_data.get("_id"):
+            try:
+                from beanie import PydanticObjectId
+                doc_id = PydanticObjectId(str(cached_data["_id"]))
+                session = await SessionStateDocument.get(doc_id)
+                if session and not session.is_completed:
+                    return session
+            except Exception as cache_err:
+                logger.warning(f"[Session] Cache hit inválido para {contact_phone} — fallback para MongoDB: {cache_err}")
             
-        # 2. Busca no MongoDB
+        # 2. Busca no MongoDB (fonte de verdade)
         session = await SessionStateDocument.find_one(
             SessionStateDocument.tenant_id == tenant_id,
             SessionStateDocument.contact_phone == contact_phone,
@@ -37,8 +45,8 @@ class SessionService:
             await session.insert()
             logger.info(f"🆕 Nova sessão de chat iniciada: {contact_phone}")
             
-        # Atualiza Cache
-        await CacheService.set_json(cache_key, session.model_dump(mode='json'), expire=1800) # 30 min
+        # Atualiza Cache com os dados do documento real
+        await CacheService.set_json(cache_key, session.model_dump(mode='json'), expire=1800)  # 30 min
         return session
 
     @staticmethod
