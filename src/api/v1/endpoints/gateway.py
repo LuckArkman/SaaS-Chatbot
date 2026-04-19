@@ -323,7 +323,6 @@ async def incoming_webhook(
             
             if new_status and external_id:
                 # Atualiza DB diretamente (Mongo)
-                from src.core.database import SessionLocal
                 from src.services.message_history_service import MessageHistoryService
                 
                 with SessionLocal() as db:
