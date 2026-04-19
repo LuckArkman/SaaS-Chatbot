@@ -262,42 +262,48 @@ async def get_conversation_history(
     instance = WhatsAppManagerService.get_or_create_instance(db, tenant_id)
     status_str = str(getattr(instance.status, "value", instance.status)).upper()
 
-    # 2. Resolve o ID da conversa -> telefone do contato (fonte: Postgres)
-    try:
-        conversation_id_int = int(conversation_id)
-    except (TypeError, ValueError):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="conversation_id inválido. Esperado um ID numérico de conversa."
-        )
+    # 2. Resolve o ID da conversa -> telefone do contato
+    target_phone = None
+    
+    # 2.1 Verifica se o conversation_id fornecido é um JID do WhatsApp ou um Telefone cru longo
+    if "@" in conversation_id:
+        target_phone = conversation_id.split("@")[0]
+    elif conversation_id.isdigit() and len(conversation_id) > 8:
+        # Assumimos que é um telefone JID cru, como "5511999999999"
+        target_phone = conversation_id
+    else:
+        # 2.2 Tenta resolver como Postgres ID (legado)
+        try:
+            conversation_id_int = int(conversation_id)
+            conversation_detail = await MessageHistoryService.get_conversation_detail(
+                db=db,
+                tenant_id=tenant_id,
+                conversation_id=conversation_id_int,
+                limit=1,
+                offset=0
+            )
+            
+            def extract_contact_phone(detail: Any) -> Optional[str]:
+                if not detail: return None
+                if isinstance(detail, dict):
+                    conv = detail.get("conversation")
+                    if isinstance(conv, dict):
+                        return conv.get("contact_phone") or conv.get("phone") or conv.get("contact")
+                    return detail.get("contact_phone") or detail.get("phone") or detail.get("contact")
+                if hasattr(detail, "contact_phone"):
+                    return getattr(detail, "contact_phone")
+                conv = getattr(detail, "conversation", None)
+                if conv is not None:
+                    if isinstance(conv, dict):
+                        return conv.get("contact_phone") or conv.get("phone") or conv.get("contact")
+                    if hasattr(conv, "contact_phone"):
+                        return getattr(conv, "contact_phone")
+                return None
+                
+            target_phone = extract_contact_phone(conversation_detail)
+        except (TypeError, ValueError):
+            pass
 
-    conversation_detail = await MessageHistoryService.get_conversation_detail(
-        db=db,
-        tenant_id=tenant_id,
-        conversation_id=conversation_id_int,
-        limit=1,
-        offset=0
-    )
-
-    def extract_contact_phone(detail: Any) -> Optional[str]:
-        if not detail:
-            return None
-        if isinstance(detail, dict):
-            conv = detail.get("conversation")
-            if isinstance(conv, dict):
-                return conv.get("contact_phone") or conv.get("phone") or conv.get("contact")
-            return detail.get("contact_phone") or detail.get("phone") or detail.get("contact")
-        if hasattr(detail, "contact_phone"):
-            return getattr(detail, "contact_phone")
-        conv = getattr(detail, "conversation", None)
-        if conv is not None:
-            if isinstance(conv, dict):
-                return conv.get("contact_phone") or conv.get("phone") or conv.get("contact")
-            if hasattr(conv, "contact_phone"):
-                return getattr(conv, "contact_phone")
-        return None
-
-    target_phone = extract_contact_phone(conversation_detail)
     if not target_phone:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
