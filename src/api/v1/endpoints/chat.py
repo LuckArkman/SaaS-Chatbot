@@ -127,7 +127,12 @@ async def list_chat_history(
             "side": side,
             "type": getattr(doc, "message_type", "text"),
             "external_id": doc.external_id,
-            "created_at": doc.timestamp
+            "created_at": doc.timestamp,
+            "contact": {
+                "id": doc.contact_phone,
+                "full_name": doc.contact_name or getattr(doc, "notify_name", doc.contact_phone),
+                "phone_number": doc.contact_phone
+            }
         })
         
     return response_list
@@ -237,6 +242,67 @@ async def list_conversations(
             filtered_chats.append(chat)
             
     chats = filtered_chats[:limit]
+
+    # ── ENRIQUECIMENTO DE NOMES ──────────────────────────────────────────────
+    # Prioridade: Postgres (CRM local) → MongoDB (pushName do WhatsApp) → fallback
+    if chats:
+        # 1. Monta um mapa de telefone → nome a partir do Postgres
+        from src.models.contact import Contact
+        from src.models.mongo.chat import MessageDocument
+        
+        # Extrai os números de telefone limpos de todos os chats
+        phone_set = set()
+        for chat in chats:
+            raw_id = chat.get("id", "")
+            phone = raw_id.split("@")[0] if "@" in raw_id else raw_id
+            phone = "".join(filter(str.isdigit, phone))
+            if phone:
+                phone_set.add(phone)
+
+        # Busca em lote no Postgres
+        postgres_names: Dict[str, str] = {}
+        try:
+            pg_contacts = db.query(Contact).filter(
+                Contact.tenant_id == tenant_id,
+                Contact.phone_number.in_(list(phone_set))
+            ).all()
+            for c in pg_contacts:
+                if c.phone_number and c.full_name:
+                    postgres_names[c.phone_number] = c.full_name
+        except Exception as pg_err:
+            logger.warning(f"[Conversations] Falha ao enriquecer nomes via Postgres: {pg_err}")
+
+        # Busca o pushName mais recente de cada telefone no MongoDB
+        mongo_names: Dict[str, str] = {}
+        try:
+            from beanie.operators import In as MongoIn
+            mongo_docs = await MessageDocument.find(
+                MessageDocument.tenant_id == tenant_id,
+                MongoIn(MessageDocument.contact_phone, list(phone_set)),
+                MessageDocument.contact_name != None,
+            ).sort("-timestamp").to_list()
+            for doc in mongo_docs:
+                if doc.contact_phone not in mongo_names and doc.contact_name:
+                    mongo_names[doc.contact_phone] = doc.contact_name
+        except Exception as mongo_err:
+            logger.warning(f"[Conversations] Falha ao enriquecer nomes via MongoDB: {mongo_err}")
+
+        # Aplica o enriquecimento em cada chat da lista
+        enriched = []
+        for chat in chats:
+            raw_id = chat.get("id", "")
+            phone = raw_id.split("@")[0] if "@" in raw_id else raw_id
+            phone = "".join(filter(str.isdigit, phone))
+
+            resolved_name = (
+                postgres_names.get(phone)
+                or mongo_names.get(phone)
+                or chat.get("name")
+                or chat.get("pushName")
+                or (f"...{phone[-4:]}" if len(phone) >= 4 else phone)
+            )
+            enriched.append({**chat, "name": resolved_name, "phone": phone})
+        chats = enriched
 
     return {
         "total": result.get("total", len(chats)),

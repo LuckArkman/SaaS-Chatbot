@@ -85,6 +85,7 @@ async def _persist_and_run_bot(
             side=computed_side,
             external_id=external_id,
             session_name=actual_session,
+            contact_name=notify_name,
         )
     except Exception as mongo_err:
         logger.error(f"[BG] Falha MongoDB: {mongo_err}")

@@ -33,6 +33,7 @@ class MessageHistoryService:
         external_id: Optional[str] = None,
         status: MessageStatus = MessageStatus.SENT,
         session_name: Optional[str] = None,
+        contact_name: Optional[str] = None,
         # db mantido como parâmetro opcional para compatibilidade com chamadores antigos
         db=None,
     ) -> dict:
@@ -53,6 +54,7 @@ class MessageHistoryService:
             tenant_id=tenant_id,
             session_name=session_name or f"tenant_{tenant_id}",
             contact_phone=contact_phone,
+            contact_name=contact_name,
             content=content,
             source=source_map.get(side, MessageSource.SYSTEM),
             message_type=msg_type,
