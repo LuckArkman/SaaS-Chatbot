@@ -48,65 +48,7 @@ def normalize_webhook_payload(raw: dict) -> dict:
 
     return {"event": event_enum.value, "session": session, "payload": msg_payload}
 
-# ─── BACKGROUND TASK: Persistência e IA ─────────────────────────────
-async def _persist_and_run_bot(
-    tenant_id: str,
-    contact_phone: str,
-    notify_name: str,
-    user_input: str,
-    external_id: str,
-    computed_side: MessageSide,
-):
-    """Executado em background após a entrega ao Frontend via WS."""
-    from src.models.whatsapp import WhatsAppInstance
-    from src.services.contact_service import ContactService
-    from src.services.message_history_service import MessageHistoryService
-
-    actual_session = f"tenant_{tenant_id}"
-    try:
-        with SessionLocal() as db:
-            instance = db.query(WhatsAppInstance).filter(
-                WhatsAppInstance.tenant_id == tenant_id,
-                WhatsAppInstance.is_active == True
-            ).first()
-            if instance:
-                actual_session = instance.session_name
-
-            # Upsert do contato
-            ContactService.get_or_create_contact(db, tenant_id, contact_phone, name=notify_name)
-    except Exception as pg_err:
-        logger.warning(f"[BG] Falha infra Postgres: {pg_err}")
-
-    # Persistência MongoDB
-    try:
-        await MessageHistoryService.record_message(
-            contact_phone=contact_phone,
-            content=user_input,
-            side=computed_side,
-            external_id=external_id,
-            session_name=actual_session,
-            contact_name=notify_name,
-        )
-    except Exception as mongo_err:
-        logger.error(f"[BG] Falha MongoDB: {mongo_err}")
-
-    # Execução do Fluxo/Bot
-    try:
-        from src.models.mongo.flow import FlowDocument
-        from src.services.session_service import SessionService
-        from src.services.flow_executor import FlowExecutor
-
-        flow = await FlowDocument.find_one(FlowDocument.tenant_id == tenant_id, FlowDocument.is_active == True)
-        if flow:
-            session = await SessionService.get_or_create_session(tenant_id, contact_phone, str(flow.id))
-            if not session.is_human_support:
-                executor = FlowExecutor(flow)
-                await executor.run_step(session, user_input=user_input)
-    except Exception as bot_err:
-        logger.error(f"[BG] Erro FluxoBot: {bot_err}")
-
-
-# ─── ENDPOINT PRINCIPAL ─────────────────────────────────────────────
+# O fluxo de persistência assíncrona foi movido para o loop de resposta do socket.# ─── ENDPOINT PRINCIPAL ─────────────────────────────────────────────
 @router.post("/webhook/{channel_type}", status_code=status.HTTP_202_ACCEPTED)
 async def incoming_webhook(
     channel_type: str,
@@ -188,16 +130,49 @@ async def incoming_webhook(
             logger.error(f"Erro normalização: {norm_err}")
             return {"success": False, "status": "normalization_error"}
 
-        # ── PASSO 1: ENTREGA AO FRONTEND COM O NÚMERO CORRETO ──
+        # ── PASSO 1: RESOLUÇÃO SÍNCRONA DO CRM (POSTGRES) ──
+        # Devemos tratar a mensagem e descobrir/registrar quem enviou no Banco de Dados
+        # ANTES de disparar o websocket, para que o Frontend mostre o nome correto.
+        notify_name = msg_body.get("pushName") or msg_body.get("notifyName") or f"ID {contact_phone[-4:]}"
+        
+        db_contact_name = notify_name # Fallback
+        
+        from src.core.database import SessionLocal
+        from src.services.contact_service import ContactService
+        from src.models.whatsapp import WhatsAppInstance
+        from src.services.message_history_service import MessageHistoryService
+        
+        actual_session = f"tenant_{resolved_tenant_id}"
+        
+        try:
+            with SessionLocal() as db:
+                instance = db.query(WhatsAppInstance).filter(
+                    WhatsAppInstance.tenant_id == resolved_tenant_id,
+                    WhatsAppInstance.is_active == True
+                ).first()
+                if instance:
+                    actual_session = instance.session_name
+
+                # Busca o contato já cadastrado ou cria novo.
+                db_contact = ContactService.get_or_create_contact(
+                    db, resolved_tenant_id, contact_phone, name=notify_name
+                )
+                
+                # Aproveita o nome rico consolidado do CRM para a UI
+                db_contact_name = db_contact.full_name
+        except Exception as pg_err:
+            logger.error(f"[Gateway] Erro ao sincronizar CRM antes do Socket: {pg_err}")
+
+        # ── PASSO 2: ENTREGA AO FRONTEND COM DADOS 100% TRATADOS ──
         socket_payload = {
             "method": "receive_message",
             "params": {
                 "message_id": unified_msg.message_id,
-                "conversation_id": contact_phone, # A mensagem agora cai na aba do próprio contato
-                "contact_phone": contact_phone, # Enviamos o número limpo para exibição
+                "conversation_id": contact_phone, # Aba do contato direto
+                "contact_phone": contact_phone, 
                 "contact": {
                     "id": contact_phone,
-                    "full_name": msg_body.get("pushName") or msg_body.get("notifyName") or f"ID {contact_phone[-4:]}",
+                    "full_name": db_contact_name, # Agora utiliza o nome Oficial do CRM resolvido no passo 1!
                     "phone_number": contact_phone,
                 },
                 "content": unified_msg.content,
@@ -212,21 +187,42 @@ async def incoming_webhook(
         ws_delivered = await ws_manager.broadcast_to_tenant(resolved_tenant_id, socket_payload)
 
         if ws_delivered > 0:
-            logger.info(f"[Gateway] ✅ Entregue ao Front-End | Contato: {contact_phone} | Sockets: {ws_delivered}")
+            logger.info(f"[Gateway] ✅ Entregue ao Front-End | {db_contact_name} ({contact_phone}) | Sockets: {ws_delivered}")
 
-        # ── PASSO 2: PERSISTÊNCIA EM BACKGROUND ──
+        # ── PASSO 3: PERSISTÊNCIA EM BACKGROUND ──
         # (Somente se não for mensagem minha para não duplicar no banco)
         if not is_from_me:
-            asyncio.create_task(
-                _persist_and_run_bot(
-                    tenant_id=resolved_tenant_id,
-                    contact_phone=contact_phone,
-                    notify_name=msg_body.get("pushName", "Contato"),
-                    user_input=unified_msg.content,
-                    external_id=unified_msg.message_id,
-                    computed_side=MessageSide.CLIENT,
-                )
-            )
+            # Separamos as partes assíncronas puras daqui em diante
+            async def _bg_tasks():
+                # Persistência MongoDB
+                try:
+                    await MessageHistoryService.record_message(
+                        contact_phone=contact_phone,
+                        content=unified_msg.content,
+                        side=MessageSide.CLIENT,
+                        external_id=unified_msg.message_id,
+                        session_name=actual_session,
+                        contact_name=db_contact_name,
+                    )
+                except Exception as mongo_err:
+                    logger.error(f"[BG] Falha MongoDB: {mongo_err}")
+
+                # Execução do Fluxo/Bot
+                try:
+                    from src.models.mongo.flow import FlowDocument
+                    from src.services.session_service import SessionService
+                    from src.services.flow_executor import FlowExecutor
+
+                    flow = await FlowDocument.find_one(FlowDocument.tenant_id == resolved_tenant_id, FlowDocument.is_active == True)
+                    if flow:
+                        session = await SessionService.get_or_create_session(resolved_tenant_id, contact_phone, str(flow.id))
+                        if not session.is_human_support:
+                            executor = FlowExecutor(flow)
+                            await executor.run_step(session, user_input=unified_msg.content)
+                except Exception as bot_err:
+                    logger.error(f"[BG] Erro FluxoBot: {bot_err}")
+
+            asyncio.create_task(_bg_tasks())
 
         return {"success": True, "status": "processed"}
 
