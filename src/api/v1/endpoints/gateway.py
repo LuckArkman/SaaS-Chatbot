@@ -151,9 +151,36 @@ async def incoming_webhook(
     if ws_payload.event == WhatsAppMessageEvent.ON_MESSAGE:
         msg_body = ws_payload.payload
 
-        # Ignora grupos/broadcasts
-        if bool(msg_body.get("isGroupMsg", False)):
-            return {"success": True, "status": "ignored_group"}
+        # 1. Identifica IDs e Metadados
+        is_from_me = msg_body.get("fromMe", False)
+        raw_remote_jid = msg_body.get("from", "")  # JID da conversa (pode ser grupo ou pessoa)
+        raw_participant = msg_body.get("participant", "") # JID de quem enviou (em caso de grupo)
+
+        # 2. RESOLUÇÃO DO NÚMERO REAL (Phone Number vs Group ID)
+        # Se eu enviei, o "contato" é quem recebeu (campo 'to')
+        # Se eu recebi, o "contato" é quem enviou (campo 'from')
+        if is_from_me:
+            target_jid = msg_body.get("to", "")
+        else:
+            target_jid = raw_remote_jid
+
+        # 3. FILTRO DE SEGURANÇA: Extrair apenas números (ignora @s.whatsapp.net, @g.us, etc)
+        # Se for um grupo, o 'raw_remote_jid' terá @g.us.
+        # Para o CRM, geralmente queremos o telefone da pessoa, mesmo em grupos.
+        if "@g.us" in target_jid and raw_participant:
+            # Em grupos, o participante é o telefone real
+            contact_phone = raw_participant.split("@")[0]
+        else:
+            contact_phone = target_jid.split("@")[0]
+
+        # 4. Normalização Final (Remove caracteres não numéricos de segurança)
+        contact_phone = "".join(filter(str.isdigit, contact_phone))
+
+        # 5. Validação: Se o ID resultante for bizarro (vazio ou ID de sistema muito longo)
+        if not contact_phone or len(contact_phone) > 15:
+            # Tenta um fallback para o notifyName se o número falhar
+            logger.warning(f"[Gateway] ID de contato suspeito: {contact_phone}. Ignorando entrega visual.")
+            # return {"success": True, "status": "ignored_system_id"} # Opcional: silenciar se não for número real
 
         try:
             unified_msg = MessageNormalizer.from_whatsapp(resolved_tenant_id, msg_body)
@@ -161,22 +188,18 @@ async def incoming_webhook(
             logger.error(f"Erro normalização: {norm_err}")
             return {"success": False, "status": "normalization_error"}
 
-        is_from_me = msg_body.get("fromMe", False)
-        contact_phone = unified_msg.from_id.split("@")[0] if "@" in unified_msg.from_id else unified_msg.from_id
-
-        # Resolve JID da conversa
-        to_id = msg_body.get("to", "")
-        from_id = msg_body.get("from", "")
-        conv_jid = to_id if is_from_me else from_id
-        conv_phone = conv_jid.split("@")[0] if "@" in conv_jid else conv_jid
-
-        # ── PASSO 1: ENTREGA IMEDIATA AO FRONTEND (Via Dicionário WS) ──
+        # ── PASSO 1: ENTREGA AO FRONTEND COM O NÚMERO CORRETO ──
         socket_payload = {
             "method": "receive_message",
             "params": {
                 "message_id": unified_msg.message_id,
-                "conversation_id": conv_jid,
-                "contact_phone": conv_phone,
+                "conversation_id": target_jid, # Mantemos o JID original para o socket saber a aba
+                "contact_phone": contact_phone, # Enviamos o número limpo para exibição
+                "contact": {
+                    "id": contact_phone,
+                    "full_name": msg_body.get("pushName") or msg_body.get("notifyName") or f"ID {contact_phone[-4:]}",
+                    "phone_number": contact_phone,
+                },
                 "content": unified_msg.content,
                 "from_me": is_from_me,
                 "side": "bot" if is_from_me else "client",
@@ -185,20 +208,19 @@ async def incoming_webhook(
             },
         }
 
-        # Busca a referência do WebSocket no dicionário usando a chave resolvida
+        # Busca a referência do WebSocket e entrega
         ws_delivered = await ws_manager.broadcast_to_tenant(resolved_tenant_id, socket_payload)
 
         if ws_delivered > 0:
-            logger.info(f"[Gateway] ✅ Entregue ao Front-End ({resolved_tenant_id}) | Sockets: {ws_delivered}")
-        else:
-            logger.warning(f"[Gateway] ⚠️ Mensagem recebida mas nenhum Front-End ativo para o Tenant '{resolved_tenant_id}' no dicionário.")
+            logger.info(f"[Gateway] ✅ Entregue ao Front-End | Contato: {contact_phone} | Sockets: {ws_delivered}")
 
         # ── PASSO 2: PERSISTÊNCIA EM BACKGROUND ──
+        # (Somente se não for mensagem minha para não duplicar no banco)
         if not is_from_me:
             asyncio.create_task(
                 _persist_and_run_bot(
                     tenant_id=resolved_tenant_id,
-                    contact_phone=conv_phone,
+                    contact_phone=contact_phone,
                     notify_name=msg_body.get("pushName", "Contato"),
                     user_input=unified_msg.content,
                     external_id=unified_msg.message_id,
@@ -207,6 +229,7 @@ async def incoming_webhook(
             )
 
         return {"success": True, "status": "processed"}
+
 
     # ═════════════════════════════════════════════════════════════════
     # CASO 2: ACKS E ESTADO
