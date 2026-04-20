@@ -107,6 +107,28 @@ class ConnectionManager:
         (O RabbitMQ foi removido e a função substitui o pass por uma entrega local direta).
         """
         tenant_id = tenant_id.upper()
+        
+        # 🛡️ NORMALIZAÇÃO: O frontend trava completamente a UI se receber um payload 
+        # sem a estrutura RPC padrão {"method": "...", "params": {...}}. 
+        # O congelamento da UI impedia novas mensagens de serem renderizadas.
+        if "type" in payload and "method" not in payload:
+            evt_type = payload.pop("type")
+            if evt_type == "bot_status_update":
+                payload = {
+                    "method": "bot_system_event",
+                    "params": {"event": payload.get("status", "DISCONNECTED"), "battery": "100%", "session": payload.get("session", "")}
+                }
+            elif evt_type == "bot_qrcode_update":
+                payload = {
+                    "method": "update_bot_qr",
+                    "params": {"qrcode": payload.get("qrcode", ""), "session": payload.get("session", "")}
+                }
+            else:
+                payload = {
+                    "method": evt_type,
+                    "params": payload
+                }
+
         if user_id:
             await self.send_personal_message(tenant_id, user_id, payload)
         else:
