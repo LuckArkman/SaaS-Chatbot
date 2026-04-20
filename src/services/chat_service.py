@@ -87,9 +87,11 @@ class ChatService:
             logger.debug(f"📱 [Resolver] Destinatário via JID: {phone}")
             return phone
 
-        # ── Estratégia 2: Número de telefone longo (10+ dígitos) ─────────────
+        # ── Estratégia 2: Número de telefone longo (8+ dígitos) ─────────────
+        # Números brasileiros sem DDI (ex: 33333333 = 8 dígitos) são válidos.
+        # O threshold era 10 e deixava números de 8 dígitos cair no path de ID Postgres.
         digits = "".join(filter(str.isdigit, conversation_id))
-        if len(digits) >= 10:
+        if len(digits) >= 8:
             logger.debug(f"📱 [Resolver] Destinatário via número direto: {digits}")
             return digits
 

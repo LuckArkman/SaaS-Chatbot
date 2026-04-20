@@ -195,9 +195,10 @@ async def incoming_webhook(
         if not tenant_id:
             session_str = str(payload.get("session", ""))
             if session_str.startswith("tenant_"):
-                # split("_", 1) garante que tenant_ids com "_" dentro sejam preservados.
-                # Ex: "tenant_A3F9_B21C" → parts = ["tenant", "A3F9_B21C"] → tenant_id = "A3F9_B21C"
-                parts = session_str.split("_", 1)
+                # session_name é do formato "tenant_{TENANT_ID}_{SESSION_SUFFIX}"
+                # Ex: "tenant_0C37EFCB_00a5fe70" → split → ["tenant", "0C37EFCB", "00a5fe70"]
+                # parts[1] extrai o tenant_id base sem o sufixo de sessão.
+                parts = session_str.split("_")
                 tenant_id = parts[1] if len(parts) >= 2 else ""
         if tenant_id:
             set_current_tenant_id(tenant_id)

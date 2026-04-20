@@ -100,19 +100,41 @@ async def websocket_endpoint(
                     
                     elif method == "send_message":
                         # Params esperado: { "conversation_id": "...", "content": "..." }
+                        # Nota: o front pode enviar "content" ou "message" — aceitamos ambos.
                         try:
-                            with SessionLocal() as db:
-                                # Resolvido via ChatService (enfileira no RabbitMQ)
-                                await ChatService.send_agent_message(
-                                    db=db, 
-                                    tenant_id=tenant_id, 
-                                    agent_id=str(user_id), 
-                                    payload=params
-                                )
-                                result = {"success": True, "status": "queued"}
+                            conv_id_raw = params.get("conversation_id") or params.get("conversation") or ""
+                            msg_content = (
+                                params.get("content")
+                                or params.get("message")
+                                or params.get("text")
+                                or ""
+                            ).strip()
+
+                            logger.debug(
+                                f"🔌 RPC send_message | tenant={tenant_id} "
+                                f"| conv_id='{conv_id_raw}' | content='{msg_content[:80]}'"
+                            )
+
+                            if not conv_id_raw or not msg_content:
+                                error = "Campos 'conversation_id' e 'content' são obrigatórios."
+                            else:
+                                # Normaliza o params para o formato canônico esperado pelo ChatService
+                                canonical_params = {
+                                    "conversation_id": conv_id_raw,
+                                    "content": msg_content,
+                                }
+                                with SessionLocal() as db:
+                                    await ChatService.send_agent_message(
+                                        db=db,
+                                        tenant_id=tenant_id,
+                                        agent_id=str(user_id),
+                                        payload=canonical_params
+                                    )
+                                    result = {"success": True, "status": "queued"}
                         except Exception as e:
                             logger.error(f"❌ Erro no RPC send_message: {e}")
                             error = str(e)
+
 
                     elif method == "set_typing":
                         # Params esperado: { "conversation_id": "...", "is_typing": bool }
