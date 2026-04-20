@@ -40,8 +40,11 @@ class ConnectionManager:
 
         self.active_connections[tenant_id][user_id].append(websocket)
 
-        # Registra presença no Redis
-        await redis_client.set(f"presence:{tenant_id}:{user_id}", "online", expire=3600)
+        # Registra presença no Redis (best-effort — falha não deve matar o WebSocket)
+        try:
+            await redis_client.set(f"presence:{tenant_id}:{user_id}", "online", expire=3600)
+        except Exception as redis_err:
+            logger.warning(f"[WS] Redis presença indisponível (conexão mantida): {redis_err}")
 
         logger.info(f"[WS] 🔌 Conectado | tenant='{tenant_id}' | user='{user_id}' "
                     f"| sockets_ativos={len(self.active_connections[tenant_id][user_id])}")
@@ -61,7 +64,10 @@ class ConnectionManager:
                     # Remove a entrada do usuário se não tiver mais sockets
                     if not connections:
                         del self.active_connections[tenant_id][user_id]
-                        await redis_client.delete(f"presence:{tenant_id}:{user_id}")
+                        try:
+                            await redis_client.delete(f"presence:{tenant_id}:{user_id}")
+                        except Exception as redis_err:
+                            logger.warning(f"[WS] Redis presence delete falhou (ignorado): {redis_err}")
 
                     # Remove a entrada do tenant se não tiver mais usuários
                     if not self.active_connections[tenant_id]:

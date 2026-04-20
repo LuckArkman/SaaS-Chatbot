@@ -79,12 +79,11 @@ async def list_chat_history(
                 jid=normalized_jid, 
                 limit=limit
             )
-            # A sync pro Postgres via MessageHistoryService continua ocorrendo silenciosamente 
-            # para fins de relatorios antigos caso precise, mas nao atrapalha a consulta MongoDB
+            # Sincroniza histórico bridge exclusivamente no MongoDB
             if history_response.get("success"):
                 msgs = history_response.get("messages", [])
                 if msgs:
-                    await MessageHistoryService.sync_bridge_history(db, target_phone, msgs)
+                    await MessageHistoryService.sync_bridge_history(target_phone, msgs)
     except Exception as e:
         logger.warning(f"Não foi possível sincronizar o histórico pré-cadastro com o WhatsApp: {e}")
 
@@ -142,8 +141,8 @@ async def transfer_chat_endpoint(
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """Transfere uma conversa para outro agente."""
-    conversation = MessageHistoryService.get_or_create_conversation(db, conversation_id)
-    success = AgentAssignmentService.transfer_chat(db, conversation, target_agent_id)
+    # conversation_id é o telefone do contato (MongoDB-first, sem Postgres Conversation)
+    success = AgentAssignmentService.transfer_chat_by_phone(db, conversation_id, target_agent_id)
     
     if not success:
         return {"error": "Agente alvo não encontrado ou indisponível"}
@@ -272,37 +271,9 @@ async def get_conversation_history(
         # Assumimos que é um telefone JID cru, como "5511999999999"
         target_phone = conversation_id
     else:
-        # 2.2 Tenta resolver como Postgres ID (legado)
-        try:
-            conversation_id_int = int(conversation_id)
-            conversation_detail = await MessageHistoryService.get_conversation_detail(
-                db=db,
-                tenant_id=tenant_id,
-                conversation_id=conversation_id_int,
-                limit=1,
-                offset=0
-            )
-            
-            def extract_contact_phone(detail: Any) -> Optional[str]:
-                if not detail: return None
-                if isinstance(detail, dict):
-                    conv = detail.get("conversation")
-                    if isinstance(conv, dict):
-                        return conv.get("contact_phone") or conv.get("phone") or conv.get("contact")
-                    return detail.get("contact_phone") or detail.get("phone") or detail.get("contact")
-                if hasattr(detail, "contact_phone"):
-                    return getattr(detail, "contact_phone")
-                conv = getattr(detail, "conversation", None)
-                if conv is not None:
-                    if isinstance(conv, dict):
-                        return conv.get("contact_phone") or conv.get("phone") or conv.get("contact")
-                    if hasattr(conv, "contact_phone"):
-                        return getattr(conv, "contact_phone")
-                return None
-                
-            target_phone = extract_contact_phone(conversation_detail)
-        except (TypeError, ValueError):
-            pass
+        # Resolução por ID Postgres (Conversation table) foi removida.
+        # O frontend deve passar o contact_phone ou JID WhatsApp como conversation_id.
+        target_phone = None
 
     if not target_phone:
         raise HTTPException(
@@ -362,7 +333,7 @@ async def get_conversation_history(
             if result.get("success"):
                 bridge_messages = result.get("messages", [])
                 if bridge_messages:
-                    await MessageHistoryService.sync_bridge_history(db, target_phone, bridge_messages)
+                    await MessageHistoryService.sync_bridge_history(target_phone, bridge_messages)
                     mongo_history = await load_mongo_history(target_phone)
         except Exception as e:
             logger.warning(f"Falha ao fazer backfill via Bridge para {normalized_jid}: {e}")

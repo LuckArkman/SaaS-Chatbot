@@ -98,47 +98,53 @@ async def _persist_and_run_bot(
     """
     Executado como asyncio.create_task — completamente desacoplado da entrega ao Frontend.
     Responsabilidades:
-      1. Persistir a mensagem no MongoDB (histórico)
-      2. Atualizar metadados da conversa no Postgres
-      3. Acionar o FluxoBot/IA (se o atendimento não for humano)
+      1. Resolver a session_name via Postgres (WhatsAppInstance — dado infra, não histórico)
+      2. Fazer upsert do contato no Postgres (contatos são domínio do Postgres)
+      3. Persistir a mensagem NO MONGODB exclusivamente (histórico é domínio do MongoDB)
+      4. Acionar o FluxoBot/IA (se o atendimento não for humano)
     """
-    # ── 1. Persistência ──────────────────────────────────────────────────────
+    from src.models.whatsapp import WhatsAppInstance
+    from src.services.contact_service import ContactService
+    from src.services.message_history_service import MessageHistoryService
+
+    # ── 1a. Resolve session_name + upsert contato via Postgres (infra / cadastro) ──────────
+    actual_session = f"tenant_{tenant_id}"  # fallback seguro
+    try:
+        with SessionLocal() as db:
+            instance = (
+                db.query(WhatsAppInstance)
+                .filter(WhatsAppInstance.tenant_id == tenant_id, WhatsAppInstance.is_active == True)
+                .order_by(WhatsAppInstance.id.desc())
+                .execution_options(ignore_tenant=True)
+                .first()
+            )
+            if instance:
+                actual_session = instance.session_name
+
+            # Upsert de contato — domínio legítimo do Postgres
+            ContactService.get_or_create_contact(db, tenant_id, contact_phone, name=notify_name)
+    except Exception as pg_err:
+        logger.warning(f"[BG] ⚠️ Postgres infra indisponível (session/contato): {pg_err} — prosseguindo com MongoDB")
+
+    # ── 1b. Persistência da mensagem — EXCLUSIVAMENTE no MongoDB ─────────────────────
     for attempt in range(3):
         try:
-            from src.models.whatsapp import WhatsAppInstance
-            from src.services.contact_service import ContactService
-            from src.services.message_history_service import MessageHistoryService
+            await MessageHistoryService.record_message(
+                contact_phone=contact_phone,
+                content=user_input,
+                side=computed_side,
+                external_id=external_id,
+                session_name=actual_session,
+            )
+            logger.debug(f"[BG] ✅ Persistência MongoDB concluída para {contact_phone} (tentativa {attempt + 1})")
+            break
 
-            with SessionLocal() as db:
-                instance = (
-                    db.query(WhatsAppInstance)
-                    .filter(WhatsAppInstance.tenant_id == tenant_id, WhatsAppInstance.is_active == True)
-                    .order_by(WhatsAppInstance.id.desc())
-                    .execution_options(ignore_tenant=True)
-                    .first()
-                )
-                actual_session = instance.session_name if instance else f"tenant_{tenant_id}"
-
-                ContactService.get_or_create_contact(db, tenant_id, contact_phone, name=notify_name)
-                await MessageHistoryService.record_message(
-                    db=db,
-                    contact_phone=contact_phone,
-                    content=user_input,
-                    side=computed_side,
-                    external_id=external_id,
-                    session_name=actual_session,
-                )
-                MessageHistoryService.get_or_create_conversation(db, contact_phone)
-
-            logger.debug(f"[BG] ✅ Persistência concluída para {contact_phone} (tentativa {attempt + 1})")
-            break  # Sucesso — sai do loop de retry
-
-        except Exception as db_err:
+        except Exception as mongo_err:
             if attempt < 2:
-                logger.warning(f"[BG] ⚠️ Retry {attempt + 1}/3 ao persistir para {contact_phone}: {db_err}")
-                await asyncio.sleep(0.15 * (attempt + 1))  # Backoff crescente: 150ms, 300ms
+                logger.warning(f"[BG] ⚠️ Retry {attempt + 1}/3 ao persistir MongoDB para {contact_phone}: {mongo_err}")
+                await asyncio.sleep(0.15 * (attempt + 1))
             else:
-                logger.error(f"[BG] ❌ Falha definitiva ao persistir para {contact_phone}: {db_err}")
+                logger.error(f"[BG] ❌ Falha definitiva ao persistir MongoDB para {contact_phone}: {mongo_err}")
 
     # ── 2. FluxoBot / IA ──────────────────────────────────────────────────────
     try:
@@ -352,11 +358,9 @@ async def incoming_webhook(
             external_id = ack_body.get('id')
             
             if new_status and external_id:
-                # Atualiza DB diretamente (Mongo)
+                # Atualiza status exclusivamente no MongoDB
                 from src.services.message_history_service import MessageHistoryService
-                
-                with SessionLocal() as db:
-                    await MessageHistoryService.update_message_status(db, external_id, new_status)
+                await MessageHistoryService.update_message_status(external_id, new_status)
                     
                 # Broadcast via Websocket para atualizar o Front-End ao vivo
                 socket_payload = {

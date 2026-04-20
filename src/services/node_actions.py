@@ -98,13 +98,12 @@ class NodeActions:
             )
             actual_session = instance.session_name if instance else f"tenant_{tenant_id}"
 
-            await MessageHistoryService.record_message(
-                db=db,
-                contact_phone=contact_phone,
-                content=processed_text,
-                side=MessageSide.BOT,
-                session_name=actual_session,
-            )
+        await MessageHistoryService.record_message(
+            contact_phone=contact_phone,
+            content=processed_text,
+            side=MessageSide.BOT,
+            session_name=actual_session,
+        )
 
         # Entrega direta via Bridge (sem RabbitMQ — elimina gargalo de mensagens perdidas)
         await _send_via_bridge(tenant_id, contact_phone, processed_text)
@@ -142,9 +141,10 @@ class NodeActions:
         from src.services.agent_assignment_service import AgentAssignmentService
         from src.core.bus import rabbitmq_bus
 
-        with SessionLocal() as db:
-            conversation = MessageHistoryService.get_or_create_conversation(db, contact_phone)
-            agent = await AgentAssignmentService.assign_agent(db, conversation)
+    with SessionLocal() as db:
+            from src.services.agent_assignment_service import AgentAssignmentService
+            # Passa None como conversation para o AgentAssignmentService trabalhar por phone
+            agent = await AgentAssignmentService.assign_agent_by_phone(db, contact_phone)
 
             # Notificação de handover via RabbitMQ (baixa frequência, aceitável aqui)
             try:
@@ -187,11 +187,10 @@ class NodeActions:
             "system_prompt", "Você é um assistente virtual prestativo e simpático."
         )
 
-        # Busca histórico recente para contexto multi-turn (últimas 10 trocas)
-        with SessionLocal() as db:
-            recent_messages = await MessageHistoryService.get_recent_messages(
-                db, contact_phone=contact_phone, limit=10
-            )
+        # Busca histórico recente para contexto multi-turn (MongoDB — sem Postgres)
+        recent_messages = await MessageHistoryService.get_recent_messages(
+            contact_phone=contact_phone, limit=10
+        )
 
         conversation_history = GeminiService.build_history_from_messages(
             [{"side": m.side, "content": m.content} for m in recent_messages]
@@ -210,15 +209,13 @@ class NodeActions:
             conversation_history=conversation_history,
         )
 
-        # Persiste a resposta do bot no histórico
-        with SessionLocal() as db:
-            await MessageHistoryService.record_message(
-                db=db,
-                contact_phone=contact_phone,
-                content=ai_reply,
-                side=MessageSide.BOT,
-                session_name=f"tenant_{tenant_id}",
-            )
+        # Persiste a resposta do bot no histórico exclusivamente no MongoDB
+        await MessageHistoryService.record_message(
+            contact_phone=contact_phone,
+            content=ai_reply,
+            side=MessageSide.BOT,
+            session_name=f"tenant_{tenant_id}",
+        )
 
         # Entrega direta via Bridge (sem RabbitMQ — mesmo padrão do execute_message_node)
         await _send_via_bridge(tenant_id, contact_phone, ai_reply)

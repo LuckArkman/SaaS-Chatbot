@@ -50,34 +50,24 @@ class AckWorker:
             
         # 2. Persistência de status exclusivamente no MongoDB
         from src.models.mongo.chat import MessageDocument
-        from src.models.chat import Conversation
-        
-        mongo_msg = await MessageDocument.find_one(MessageDocument.external_id == external_id)
-        numeric_id = "unknown"
-        
-        if mongo_msg:
-            # Resolve o ID numérico da conversa via Postgres (usando contact_phone do Mongo)
-            with SessionLocal() as db:
-                conv = db.query(Conversation).filter(
-                    Conversation.contact_phone == mongo_msg.contact_phone,
-                    Conversation.tenant_id == tenant_id
-                ).first()
-                if conv:
-                    numeric_id = str(conv.id)
 
-        updated = await MessageHistoryService.update_message_status(None, external_id, new_status)
+        mongo_msg = await MessageDocument.find_one(MessageDocument.external_id == external_id)
+        # conversation_id = contact_phone do MongoDB (sem consulta ao Postgres)
+        conversation_ref = mongo_msg.contact_phone if mongo_msg else external_id
+
+        updated = await MessageHistoryService.update_message_status(external_id, new_status)
         
         if updated:
-            # 3. Notificação RPC via Bus (Garante entrega em cenários distribuídos)
+            # 3. Notificação RPC via WebSocket
             await ws_manager.publish_event(tenant_id, {
                 "method": "update_message_status",
                 "params": {
                     "external_id": external_id,
-                    "conversation_id": numeric_id,
+                    "conversation_id": conversation_ref,
                     "status": new_status,
                     "timestamp": ack_data.get("t")
                 }
             })
-            logger.debug(f"🔔 Evento de Status publicado no Bus: Msg {external_id} Status {new_status}")
+            logger.debug(f"🔔 ACK publicado: Msg {external_id} → {new_status}")
 
 ack_worker = AckWorker()

@@ -204,21 +204,14 @@ class ChatService:
         # 🔍 Resolve o número de telefone do destinatário via cascata multi-fonte
         contact_phone = await ChatService._resolve_recipient_phone(db, tenant_id, raw_conversation_id)
 
-        # 1. Persistência Dual (Postgres + MongoDB via MessageHistoryService)
+        # 1. Persistência exclusiva no MongoDB
         await MessageHistoryService.record_message(
-            db=db,
             contact_phone=contact_phone,
             content=content,
             side=MessageSide.AGENT,
             agent_id=int(agent_id),
             session_name=f"tenant_{tenant_id}"
         )
-
-        # 🟢 Atualiza SLA de Primeira Resposta (Sprint 25)
-        conversation = MessageHistoryService.get_or_create_conversation(db, contact_phone)
-        if not conversation.first_response_at:
-            conversation.first_response_at = datetime.utcnow()
-            db.commit()
 
         # 2. Dispatch para o Canal (via RabbitMQ → OutgoingMessageWorker → Bridge)
         # Normaliza o número garantindo que o DDI está presente antes de publicar
@@ -263,20 +256,26 @@ class ChatService:
     async def set_typing_status(tenant_id: str, conversation_id: str, is_typing: bool):
         """Define o status de 'digitando' no Redis e notifica via barramento distribuído."""
         key = f"typing:{tenant_id}:{conversation_id}"
-        if is_typing:
-            # TTL de 5s para não prender o status se travar
-            await redis_client.set(key, "typing", expire=5)
-        else:
-            await redis_client.delete(key)
+        try:
+            if is_typing:
+                # TTL de 5s para não prender o status se travar
+                await redis_client.set(key, "typing", expire=5)
+            else:
+                await redis_client.delete(key)
+        except Exception as redis_err:
+            logger.warning(f"[Typing] Redis indisponível (ignorado): {redis_err}")
 
-        await ws_manager.publish_event(tenant_id, {
-            "method": "typing_update",
-            "params": {
-                "type": "typing_update",
-                "is_typing": is_typing,
-                "conversation_id": conversation_id
-            }
-        })
+        try:
+            await ws_manager.publish_event(tenant_id, {
+                "method": "typing_update",
+                "params": {
+                    "type": "typing_update",
+                    "is_typing": is_typing,
+                    "conversation_id": conversation_id
+                }
+            })
+        except Exception as ws_err:
+            logger.warning(f"[Typing] Falha ao publicar evento typing (ignorado): {ws_err}")
 
     # --- 🔵 Lógica Nova de Histórico (MongoDB) ---
 
