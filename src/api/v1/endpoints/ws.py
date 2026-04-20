@@ -57,16 +57,21 @@ async def websocket_endpoint(
         # 🛡️ Validação de Segurança (Handshake)
         payload = security.decode_token(token)
         user_id = payload.get("sub")
-        # Em produção, poderíamos buscar tenant_id no payload
-        tenant_id = payload.get("tenant_id", "DEFAULT_TENANT") 
-        
+        tenant_id = payload.get("tenant_id")
+
         if not user_id:
             logger.warning("🔒 Tentativa de conexão WebSocket sem UserID no token.")
             await websocket.close(code=1008)
             return
 
+        if not tenant_id:
+            logger.warning(f"🔒 Tentativa de conexão WebSocket sem tenant_id no token (user={user_id}).")
+            await websocket.close(code=1008)
+            return
+
         # Conectar ao gerenciador
         await ws_manager.connect(tenant_id, str(user_id), websocket)
+
         
         # Loop de recepção (Mantém a conexão viva e responde RPC/Heartbeats)
         while True:

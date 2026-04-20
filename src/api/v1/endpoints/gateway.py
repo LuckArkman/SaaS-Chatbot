@@ -195,13 +195,16 @@ async def incoming_webhook(
         if not tenant_id:
             session_str = str(payload.get("session", ""))
             if session_str.startswith("tenant_"):
-                parts = session_str.split("_")
+                # split("_", 1) garante que tenant_ids com "_" dentro sejam preservados.
+                # Ex: "tenant_A3F9_B21C" → parts = ["tenant", "A3F9_B21C"] → tenant_id = "A3F9_B21C"
+                parts = session_str.split("_", 1)
                 tenant_id = parts[1] if len(parts) >= 2 else ""
         if tenant_id:
             set_current_tenant_id(tenant_id)
             logger.info(f"[Gateway] tenant_id resolvido: '{tenant_id}'")
         else:
             logger.warning("[Gateway] tenant_id ausente — evento processado com contexto potencialmente falho.")
+
 
     logger.info(
         f"[Gateway] ▶ Webhook recebido | channel='{channel_type}' "
@@ -273,11 +276,25 @@ async def incoming_webhook(
                 "metadata":  unified_msg.metadata,
             },
         }
+
+        # broadcast_to_tenant agora retorna int: número de conexões que receberam a mensagem.
+        # Se retornar 0, significa que NENHUM frontend estava conectado — não há agente online.
+        ws_delivered = 0
         try:
-            await ws_manager.broadcast_to_tenant(tenant_id, socket_payload)
-            logger.info(f"[Gateway] 🟢 Frontend notificado IMEDIATAMENTE | {contact_phone}")
+            ws_delivered = await ws_manager.broadcast_to_tenant(tenant_id, socket_payload)
         except Exception as ws_err:
-            logger.error(f"[Gateway] ❌ Falha ao notificar Frontend via WS: {ws_err}")
+            logger.error(f"[Gateway] ❌ Exceção ao notificar Frontend via WS: {ws_err}")
+
+        if ws_delivered > 0:
+            logger.info(f"[Gateway] 🟢 Frontend notificado IMEDIATAMENTE | {contact_phone} | conexões={ws_delivered}")
+        else:
+            # Nenhum agente conectado — mensagem NÃO será persistida agora.
+            # O histórico será preenchido via backfill quando o agente se reconectar.
+            logger.warning(
+                f"[Gateway] ⚠️ Nenhum agente conectado para tenant='{tenant_id}' | "
+                f"Mensagem de '{contact_phone}' NÃO persistida (sem confirmação de entrega ao frontend)."
+            )
+            return {"success": True, "status": "no_agents_online"}
 
         # 🔕 Mensagens enviadas pelo próprio bot (fromMe=True) não devem alimentar o FluxoBot
         # Isso evita que a resposta do bot dispare outra execução do FluxoBot, corrompendo o estado da sessão.
@@ -285,7 +302,8 @@ async def incoming_webhook(
             logger.debug(f"[Gateway] 🤖 Mensagem própria (fromMe=True) entregue ao front, sem acionar FluxoBot.")
             return {"success": True, "status": "delivered_from_me"}
 
-        # ── PASSO 2: PERSISTÊNCIA + BOT em background (não bloqueia o Frontend) ──
+        # ── PASSO 2: PERSISTÊNCIA + BOT em background ──
+        # Só executado APÓS confirmação de entrega ao frontend (ws_delivered > 0)
         asyncio.create_task(
             _persist_and_run_bot(
                 tenant_id=tenant_id,

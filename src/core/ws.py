@@ -100,9 +100,10 @@ class ConnectionManager:
         """
         pass
 
-    async def broadcast_to_tenant(self, tenant_id: str, message: dict):
+    async def broadcast_to_tenant(self, tenant_id: str, message: dict) -> int:
         """
         Envia mensagem para todos os usuários online de um Tenant neste processo.
+        Retorna o número de conexões que receberam a mensagem com sucesso.
 
         ─── REGRA ARQUITETURAL INVIOLÁVEL ────────────────────────────────────────
         Esta função NUNCA remove, fecha ou invalida conexões WebSocket,
@@ -122,7 +123,7 @@ class ConnectionManager:
         """
         if tenant_id not in self.active_connections:
             logger.warning(f"[WS] Nenhuma conexão ativa para tenant='{tenant_id}' — RPC não entregue.")
-            return
+            return 0
 
         delivered = 0
         failed = 0
@@ -144,6 +145,7 @@ class ConnectionManager:
             f"[WS] broadcast_to_tenant concluído | tenant='{tenant_id}' "
             f"| entregues={delivered} | falhas_transitórias={failed}"
         )
+        return delivered
 
 
 ws_manager = ConnectionManager()
