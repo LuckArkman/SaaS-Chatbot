@@ -31,6 +31,7 @@ class ConnectionManager:
     async def connect(self, tenant_id: str, user_id: str, websocket: WebSocket):
         """Aceita a conexão e registra no mapa de conexões ativas."""
         await websocket.accept()
+        tenant_id = tenant_id.upper()
 
         if tenant_id not in self.active_connections:
             self.active_connections[tenant_id] = {}
@@ -54,6 +55,7 @@ class ConnectionManager:
         Remove a conexão encerrada do mapa de conexões ativas.
         Deve ser chamado EXCLUSIVAMENTE pelo handler `WebSocketDisconnect` do endpoint.
         """
+        tenant_id = tenant_id.upper()
         try:
             if tenant_id in self.active_connections:
                 if user_id in self.active_connections[tenant_id]:
@@ -79,6 +81,7 @@ class ConnectionManager:
 
     async def send_personal_message(self, tenant_id: str, user_id: str, message: dict):
         """Envia mensagem para todas as sessões abertas de um usuário específico."""
+        tenant_id = tenant_id.upper()
         if tenant_id not in self.active_connections:
             return
         if user_id not in self.active_connections[tenant_id]:
@@ -110,25 +113,12 @@ class ConnectionManager:
         """
         Envia mensagem para todos os usuários online de um Tenant neste processo.
         Retorna o número de conexões que receberam a mensagem com sucesso.
-
-        ─── REGRA ARQUITETURAL INVIOLÁVEL ────────────────────────────────────────
-        Esta função NUNCA remove, fecha ou invalida conexões WebSocket,
-        mesmo que send_json lance uma exceção.
-
-        Razão: Uma falha de envio é um evento transitório — o socket pode estar
-        momentaneamente sobrecarregado ou em backpressure. A conexão WebSocket
-        ainda está viva do ponto de vista do protocolo.
-
-        O único lugar autorizado a remover conexões é o método `disconnect()`,
-        chamado pelo handler `WebSocketDisconnect` no endpoint ws.py, que reflete
-        o encerramento real do protocolo WebSocket.
-
-        Remover conexões aqui causaria desconexão silenciosa do frontend durante
-        sessões de chat ativas — falha crítica de RPC.
-        ──────────────────────────────────────────────────────────────────────────
         """
+        tenant_id = tenant_id.upper()
         if tenant_id not in self.active_connections:
-            logger.warning(f"[WS] Nenhuma conexão ativa para tenant='{tenant_id}' — RPC não entregue.")
+            # Fallback debug
+            connected_tenants = list(self.active_connections.keys())
+            logger.warning(f"[WS] Nenhuma conexão ativa para tenant='{tenant_id}'. Tenants conectados em memória: {connected_tenants}")
             return 0
 
         delivered = 0
