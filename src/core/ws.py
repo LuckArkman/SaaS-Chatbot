@@ -103,11 +103,14 @@ class ConnectionManager:
 
     async def publish_event(self, tenant_id: str, payload: dict, user_id: str = None):
         """
-        Publica um evento para o tenant. (RabbitMQ removido para evitar bloqueios).
-        NOTA: Desativado temporariamente. O payload não padronizado estava causando
-        crash no front-end web, resultando em mensagens não sendo entregues.
+        Publica um evento para o tenant. Roteado para chamadas em memória via broadcast_to_tenant.
+        (O RabbitMQ foi removido e a função substitui o pass por uma entrega local direta).
         """
-        pass
+        tenant_id = tenant_id.upper()
+        if user_id:
+            await self.send_personal_message(tenant_id, user_id, payload)
+        else:
+            await self.broadcast_to_tenant(tenant_id, payload)
 
     async def broadcast_to_tenant(self, tenant_id: str, message: dict) -> int:
         """
