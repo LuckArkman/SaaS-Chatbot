@@ -1,178 +1,161 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, Depends
-from src.core.ws import ws_manager
-from src.api import deps
-from src.core import security
-import json
-from src.services.chat_service import ChatService
-from src.core.database import SessionLocal
+"""
+Gerenciador de Conexões WebSocket (ConnectionManager)
+
+PRINCÍPIO ARQUITETURAL:
+  Gerencia um dicionário global de conexões ativas indexado por Tenancy ID.
+  Garante a entrega de mensagens em tempo real (RPC) associando eventos
+  do Baileys ao socket correto do Front-End.
+"""
+
+from typing import Dict, List
+from fastapi import WebSocket
+from src.core.redis import redis_client
 from loguru import logger
 
-router = APIRouter()
-@router.get("/", tags=["RPC-WebSocket"], summary="Documentação da Interface RPC via WebSocket")
-async def websocket_docs():
-    """
-    ### Interface de Comunicação Real-time (RPC)
-    Este endpoint não é uma rota HTTP comum. Ele deve ser acessado via protocolo **WebSocket (ws/wss)**.
-    
-    **Conectividade:**
-    * **URL:** `ws://{host}:{port}/api/v1/ws?token={JWT_TOKEN}`
-    
-    **Estrutura de Requisição (RPC Request):**
-    ```json
-    {
-      "method": "string",
-      "params": "object",
-      "id": "string (opcional para notificações)"
-    }
-    ```
-    
-    **Métodos Suportados:**
-    * `send_message`: { conversation_id, content }
-    * `set_typing`: { conversation_id, is_typing: bool }
-    * `ping`: Sem parâmetros.
-    
-    **Estrutura de Resposta (RPC Response):**
-    ```json
-    {
-      "type": "rpc_response",
-      "id": "string",
-      "result": "any",
-      "error": "string"
-    }
-    ```
-    """
-    return {"detail": "Conecte-se via protocolo WebSocket para utilizar esta interface RPC."}
 
-
-@router.websocket("/ws")
-async def websocket_endpoint(
-    websocket: WebSocket,
-    token: str = Query(...)
-):
+class ConnectionManager:
     """
-    Endpoint WebSocket seguro. Exige Token JWT via Query Parameter.
-    Responsável por manter a bridge de eventos Real-time com o Frontend.
+    Gerencia referências de WebSockets em memória usando um dicionário hierárquico.
+    Estrutura: { "TENANCY_ID": { "USER_ID": [WebSocket_Sessao_1, WebSocket_Sessao_2] } }
     """
-    try:
-        # 🛡️ Validação de Segurança (Handshake)
-        payload = security.decode_token(token)
-        user_id = payload.get("sub")
-        tenant_id = payload.get("tenant_id")
 
-        if not user_id:
-            logger.warning("🔒 Tentativa de conexão WebSocket sem UserID no token.")
+    def __init__(self):
+        # O dicionário principal que mantém as referências vivas
+        self.active_connections: Dict[str, Dict[str, List[WebSocket]]] = {}
+
+    def _normalize_id(self, identity: str) -> str:
+        """
+        Normaliza IDs para evitar falhas de busca por diferença de Case (Upper/Lower)
+        ou espaços em branco acidentais.
+        """
+        return str(identity).strip().upper() if identity else ""
+
+    async def connect(self, tenant_id: str, user_id: str, websocket: WebSocket):
+        """
+        Registra uma nova conexão no dicionário de Tenancy.
+        Chamado durante o Handshake inicial do WebSocket.
+        """
+        await websocket.accept()
+
+        t_id = self._normalize_id(tenant_id)
+        u_id = self._normalize_id(user_id)
+
+        if not t_id or not u_id:
+            logger.error(f"[WS] Tentativa de conexão com IDs inválidos. Tenant: {tenant_id}, User: {user_id}")
             await websocket.close(code=1008)
             return
 
-        if not tenant_id:
-            logger.warning(f"🔒 Tentativa de conexão WebSocket sem tenant_id no token (user={user_id}).")
-            await websocket.close(code=1008)
-            return
+        # Inicializa a árvore do dicionário para o Tenant
+        if t_id not in self.active_connections:
+            self.active_connections[t_id] = {}
 
-        # Conectar ao gerenciador
-        await ws_manager.connect(tenant_id, str(user_id), websocket)
+        # Inicializa a lista de conexões para o Usuário (suporta múltiplas abas abertas)
+        if u_id not in self.active_connections[t_id]:
+            self.active_connections[t_id][u_id] = []
 
-        
-        # Loop de recepção (Mantém a conexão viva e responde RPC/Heartbeats)
-        while True:
-            raw_data = await websocket.receive_text()
-            
-            try:
-                data = json.loads(raw_data)
-                
-                # ─── Estrutura de RPC ──────────────────────────────────────────
-                # O Frontend envia: { "method": "...", "params": {...}, "id": "req_123" }
-                # O Backend responde: { "type": "rpc_response", "id": "req_123", "result": ... }
-                # ──────────────────────────────────────────────────────────────
-                
-                if isinstance(data, dict) and "method" in data:
-                    method = data.get("method")
-                    params = data.get("params", {})
-                    rpc_id = data.get("id")
-                    
-                    logger.debug(f"🔌 RPC Request: {method} (id={rpc_id}) | Tenant {tenant_id}")
-                    
-                    result = None
-                    error = None
-                    
-                    if method == "ping":
-                        result = "pong"
-                    
-                    elif method == "send_message":
-                        # Params esperado: { "conversation_id": "...", "content": "..." }
-                        # Nota: o front pode enviar "content" ou "message" — aceitamos ambos.
-                        try:
-                            conv_id_raw = params.get("conversation_id") or params.get("conversation") or ""
-                            msg_content = (
-                                params.get("content")
-                                or params.get("message")
-                                or params.get("text")
-                                or ""
-                            ).strip()
+        self.active_connections[t_id][u_id].append(websocket)
 
-                            logger.debug(
-                                f"🔌 RPC send_message | tenant={tenant_id} "
-                                f"| conv_id='{conv_id_raw}' | content='{msg_content[:80]}'"
-                            )
-
-                            if not conv_id_raw or not msg_content:
-                                error = "Campos 'conversation_id' e 'content' são obrigatórios."
-                            else:
-                                # Normaliza o params para o formato canônico esperado pelo ChatService
-                                canonical_params = {
-                                    "conversation_id": conv_id_raw,
-                                    "content": msg_content,
-                                }
-                                with SessionLocal() as db:
-                                    await ChatService.send_agent_message(
-                                        db=db,
-                                        tenant_id=tenant_id,
-                                        agent_id=str(user_id),
-                                        payload=canonical_params
-                                    )
-                                    result = {"success": True, "status": "queued"}
-                        except Exception as e:
-                            logger.error(f"❌ Erro no RPC send_message: {e}")
-                            error = str(e)
-
-
-                    elif method == "set_typing":
-                        # Params esperado: { "conversation_id": "...", "is_typing": bool }
-                        try:
-                            conv_id = params.get("conversation_id")
-                            is_typing = params.get("is_typing", False)
-                            await ChatService.set_typing_status(tenant_id, conv_id, is_typing)
-                            result = {"success": True}
-                        except Exception as e:
-                            logger.error(f"❌ Erro no RPC set_typing: {e}")
-                            error = str(e)
-                    
-                    # ─── Resposta de RPC ─────────
-                    if rpc_id:
-                        response = {
-                            "type": "rpc_response",
-                            "id": rpc_id,
-                            "result": result,
-                            "error": error
-                        }
-                        await websocket.send_json(response)
-                
-                elif raw_data == "ping":
-                    await websocket.send_text("pong")
-                    
-            except json.JSONDecodeError:
-                # Trata strings puras se não for JSON
-                if raw_data == "ping":
-                    await websocket.send_text("pong")
-                else:
-                    logger.warning(f"⚠️ Mensagem WebSocket inválida (não JSON): {raw_data}")
-                    
-    except WebSocketDisconnect:
-        await ws_manager.disconnect(tenant_id, str(user_id), websocket)
-    except Exception as e:
-        logger.error(f"❌ Erro fatal no WebSocket para usuário {user_id}: {e}")
-        await ws_manager.disconnect(tenant_id, str(user_id), websocket)
+        # Registro de presença opcional no Redis
         try:
-            await websocket.close(code=1011)
-        except:
-            pass
+            await redis_client.set(f"presence:{t_id}:{u_id}", "online", expire=3600)
+        except Exception as e:
+            logger.warning(f"[WS] Falha ao registrar presença no Redis: {e}")
+
+        logger.info(
+            f"[WS] 🟢 Conexão registrada no dicionário: Tenant={t_id} | User={u_id} | Sockets={len(self.active_connections[t_id][u_id])}")
+
+    async def disconnect(self, tenant_id: str, user_id: str, websocket: WebSocket):
+        """
+        Remove a referência do WebSocket do dicionário.
+        Libera memória e evita tentativas de envio para conexões mortas.
+        """
+        t_id = self._normalize_id(tenant_id)
+        u_id = self._normalize_id(user_id)
+
+        try:
+            if t_id in self.active_connections:
+                if u_id in self.active_connections[t_id]:
+                    # Remove o socket específico da lista
+                    if websocket in self.active_connections[t_id][u_id]:
+                        self.active_connections[t_id][u_id].remove(websocket)
+
+                    # Se o usuário não tem mais sockets ativos, limpa a chave do usuário
+                    if not self.active_connections[t_id][u_id]:
+                        del self.active_connections[t_id][u_id]
+                        try:
+                            await redis_client.delete(f"presence:{t_id}:{u_id}")
+                        except:
+                            pass
+
+                # Se o Tenant não tem mais nenhum usuário online, limpa a chave do Tenant
+                if not self.active_connections[t_id]:
+                    del self.active_connections[t_id]
+
+            logger.info(f"[WS] 🔴 Conexão removida do dicionário: Tenant={t_id} | User={u_id}")
+        except Exception as e:
+            logger.error(f"[WS] Erro ao processar desconexão: {e}")
+
+    async def broadcast_to_tenant(self, tenant_id: str, message: dict) -> int:
+        """
+        Localiza o Tenancy ID no dicionário e transmite a mensagem para todos os
+        agentes conectados daquele cliente.
+        """
+        t_id = self._normalize_id(tenant_id)
+
+        if t_id not in self.active_connections:
+            logger.warning(
+                f"[WS] Broadcast falhou: Tenancy ID '{t_id}' não localizado no dicionário de conexões ativas.")
+            return 0
+
+        delivered = 0
+        stale_connections = []
+
+        # Itera sobre todos os usuários e sockets vinculados ao Tenant no dicionário
+        for user_id, sockets in self.active_connections[t_id].items():
+            for ws in list(sockets):  # Usa list() para permitir remoção segura durante a iteração
+                try:
+                    await ws.send_json(message)
+                    delivered += 1
+                except Exception as e:
+                    logger.error(f"[WS] Falha ao enviar para socket do usuário {user_id}: {e}")
+                    stale_connections.append((user_id, ws))
+
+        # Limpeza automática de "Zombies" (Sockets que caíram mas não dispararam disconnect)
+        for u_id, ws in stale_connections:
+            await self.disconnect(t_id, u_id, ws)
+
+        return delivered
+
+    async def send_personal_message(self, tenant_id: str, user_id: str, message: dict):
+        """Entrega uma mensagem RPC para um usuário específico (Direct Message)."""
+        t_id = self._normalize_id(tenant_id)
+        u_id = self._normalize_id(user_id)
+
+        if t_id in self.active_connections and u_id in self.active_connections[t_id]:
+            for ws in list(self.active_connections[t_id][u_id]):
+                try:
+                    await ws.send_json(message)
+                except:
+                    await self.disconnect(t_id, u_id, ws)
+
+    async def publish_event(self, tenant_id: str, payload: dict, user_id: str = None):
+        """
+        Interface de alto nível para publicação de eventos do sistema.
+        Normaliza o payload para o formato RPC padrão: { method, params }.
+        """
+        # Se o payload vier com 'type', converte para 'method' (Padrão RPC do Front)
+        if "type" in payload and "method" not in payload:
+            method_name = payload.pop("type")
+            payload = {
+                "method": method_name,
+                "params": payload
+            }
+
+        if user_id:
+            await self.send_personal_message(tenant_id, user_id, payload)
+        else:
+            await self.broadcast_to_tenant(tenant_id, payload)
+
+
+# Instância Singleton para importação global
+ws_manager = ConnectionManager()
