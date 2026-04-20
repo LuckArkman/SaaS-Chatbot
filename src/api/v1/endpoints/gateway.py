@@ -255,17 +255,23 @@ async def incoming_webhook(
 
         logger.info(f"[Gateway] 📨 Mensagem recebida | from='{contact_phone}' | fromMe={is_from_me} | id='{external_id}'")
 
+        # Para fromMe=True, o "from" é o próprio número do bot — o contato real está em "to"
+        # Para fromMe=False, o "from" é o contato (comportamento padrão)
+        to_id        = msg_body.get("to", "")
+        conv_jid     = to_id if is_from_me else from_id  # JID correto para identificar a conversa
+        conv_phone   = conv_jid.split("@")[0] if "@" in conv_jid else conv_jid
+
         # ── PASSO 1: ENTREGA AO FRONTEND (SEM POSTGRES, 100% MongoDB Architect) ──
         socket_payload = {
             "method": "receive_message",
             "params": {
                 "message_id":      external_id,
-                "conversation_id": from_id,  # <-- JID exato que o WhatsApp e o Painel usam (ex: 55119999@s.whatsapp.net)
-                "contact_phone":   contact_phone,
+                "conversation_id": conv_jid,    # JID do CONTATO — sempre, independente de fromMe
+                "contact_phone":   conv_phone,
                 "contact": {
-                    "id":           contact_phone,
+                    "id":           conv_phone,
                     "full_name":    notify_name,
-                    "phone_number": contact_phone,
+                    "phone_number": conv_phone,
                 },
                 "content":   user_input,
                 "from_me":   is_from_me,
@@ -276,6 +282,7 @@ async def incoming_webhook(
                 "metadata":  unified_msg.metadata,
             },
         }
+
 
         # broadcast_to_tenant agora retorna int: número de conexões que receberam a mensagem.
         # Se retornar 0, significa que NENHUM frontend estava conectado — não há agente online.
@@ -307,7 +314,7 @@ async def incoming_webhook(
         asyncio.create_task(
             _persist_and_run_bot(
                 tenant_id=tenant_id,
-                contact_phone=contact_phone,
+                contact_phone=conv_phone,   # Usa o telefone do contato (corrigido para fromMe)
                 notify_name=notify_name,
                 user_input=user_input,
                 external_id=external_id,
@@ -316,6 +323,7 @@ async def incoming_webhook(
         )
 
         return {"success": True, "status": "delivered"}
+
 
     # ═══════════════════════════════════════════════════════════════════════════
     # CASO 2: ACK DE ENTREGA (ON_ACK)
