@@ -285,8 +285,8 @@ async def incoming_webhook(
         }
 
 
-        # broadcast_to_tenant agora retorna int: número de conexões que receberam a mensagem.
-        # Se retornar 0, significa que NENHUM frontend estava conectado — não há agente online.
+        # broadcast_to_tenant retorna int: número de conexões que receberam a mensagem.
+        # O resultado é usado apenas para observabilidade — NÃO condiciona a persistência.
         ws_delivered = 0
         try:
             ws_delivered = await ws_manager.broadcast_to_tenant(tenant_id, socket_payload)
@@ -294,24 +294,27 @@ async def incoming_webhook(
             logger.error(f"[Gateway] ❌ Exceção ao notificar Frontend via WS: {ws_err}")
 
         if ws_delivered > 0:
-            logger.info(f"[Gateway] 🟢 Frontend notificado IMEDIATAMENTE | {contact_phone} | conexões={ws_delivered}")
-        else:
-            # Nenhum agente conectado — mensagem NÃO será persistida agora.
-            # O histórico será preenchido via backfill quando o agente se reconectar.
-            logger.warning(
-                f"[Gateway] ⚠️ Nenhum agente conectado para tenant='{tenant_id}' | "
-                f"Mensagem de '{contact_phone}' NÃO persistida (sem confirmação de entrega ao frontend)."
+            logger.info(
+                f"[Gateway] 🟢 Frontend notificado | {conv_phone} | conexões={ws_delivered}"
             )
-            return {"success": True, "status": "no_agents_online"}
+        else:
+            # Nenhum agente conectado no momento — mas a mensagem AINDA SERÁ persistida.
+            # A persistência via asyncio.create_task é o único mecanismo durável pós-entrega.
+            # Bloquear a persistência aqui causaria perda permanente de mensagens.
+            logger.warning(
+                f"[Gateway] ⚠️ Nenhum agente conectado para tenant='{tenant_id}' "
+                f"| Mensagem de '{conv_phone}' será persistida mesmo sem entrega ao frontend."
+            )
 
         # 🔕 Mensagens enviadas pelo próprio bot (fromMe=True) não devem alimentar o FluxoBot
         # Isso evita que a resposta do bot dispare outra execução do FluxoBot, corrompendo o estado da sessão.
         if is_from_me:
-            logger.debug(f"[Gateway] 🤖 Mensagem própria (fromMe=True) entregue ao front, sem acionar FluxoBot.")
+            logger.debug(f"[Gateway] 🤖 Mensagem própria (fromMe=True) — broadcast feito, sem acionar FluxoBot.")
             return {"success": True, "status": "delivered_from_me"}
 
         # ── PASSO 2: PERSISTÊNCIA + BOT em background ──
-        # Só executado APÓS confirmação de entrega ao frontend (ws_delivered > 0)
+        # Disparado SEMPRE — independente de ws_delivered.
+        # A persistência não depende da presença de um agente online.
         asyncio.create_task(
             _persist_and_run_bot(
                 tenant_id=tenant_id,
@@ -323,7 +326,7 @@ async def incoming_webhook(
             )
         )
 
-        return {"success": True, "status": "delivered"}
+        return {"success": True, "status": "delivered" if ws_delivered > 0 else "persisted_no_agent"}
 
 
     # ═══════════════════════════════════════════════════════════════════════════
