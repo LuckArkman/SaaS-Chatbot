@@ -1,161 +1,109 @@
-"""
-Gerenciador de Conexões WebSocket (ConnectionManager)
-
-PRINCÍPIO ARQUITETURAL:
-  Gerencia um dicionário global de conexões ativas indexado por Tenancy ID.
-  Garante a entrega de mensagens em tempo real (RPC) associando eventos
-  do Baileys ao socket correto do Front-End.
-"""
-
-from typing import Dict, List
-from fastapi import WebSocket
-from src.core.redis import redis_client
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from src.core.ws import ws_manager
+from src.core import security
+from src.core.database import SessionLocal
+from src.services.chat_service import ChatService
 from loguru import logger
+import json
 
+# Define o router que o api.py está procurando
+router = APIRouter()
 
-class ConnectionManager:
+@router.get("/", tags=["RPC-WebSocket"])
+async def websocket_docs():
+    """Documentação simplificada da interface RPC."""
+    return {"detail": "Conecte-se via protocolo WebSocket em /api/v1/ws/ws"}
+
+@router.websocket("/ws")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    token: str = Query(...)
+):
     """
-    Gerencia referências de WebSockets em memória usando um dicionário hierárquico.
-    Estrutura: { "TENANCY_ID": { "USER_ID": [WebSocket_Sessao_1, WebSocket_Sessao_2] } }
+    Endpoint WebSocket seguro. 
+    Mantém a conexão viva e processa comandos RPC vindos do Front-end.
     """
+    user_id = None
+    tenant_id = None
+    
+    try:
+        # 1. Validação de Segurança
+        payload = security.decode_token(token)
+        user_id = str(payload.get("sub"))
+        tenant_id = str(payload.get("tenant_id"))
 
-    def __init__(self):
-        # O dicionário principal que mantém as referências vivas
-        self.active_connections: Dict[str, Dict[str, List[WebSocket]]] = {}
-
-    def _normalize_id(self, identity: str) -> str:
-        """
-        Normaliza IDs para evitar falhas de busca por diferença de Case (Upper/Lower)
-        ou espaços em branco acidentais.
-        """
-        return str(identity).strip().upper() if identity else ""
-
-    async def connect(self, tenant_id: str, user_id: str, websocket: WebSocket):
-        """
-        Registra uma nova conexão no dicionário de Tenancy.
-        Chamado durante o Handshake inicial do WebSocket.
-        """
-        await websocket.accept()
-
-        t_id = self._normalize_id(tenant_id)
-        u_id = self._normalize_id(user_id)
-
-        if not t_id or not u_id:
-            logger.error(f"[WS] Tentativa de conexão com IDs inválidos. Tenant: {tenant_id}, User: {user_id}")
+        if not user_id or not tenant_id:
+            logger.warning("🔒 Conexão recusada: Token inválido ou sem Tenancy ID.")
             await websocket.close(code=1008)
             return
 
-        # Inicializa a árvore do dicionário para o Tenant
-        if t_id not in self.active_connections:
-            self.active_connections[t_id] = {}
-
-        # Inicializa a lista de conexões para o Usuário (suporta múltiplas abas abertas)
-        if u_id not in self.active_connections[t_id]:
-            self.active_connections[t_id][u_id] = []
-
-        self.active_connections[t_id][u_id].append(websocket)
-
-        # Registro de presença opcional no Redis
-        try:
-            await redis_client.set(f"presence:{t_id}:{u_id}", "online", expire=3600)
-        except Exception as e:
-            logger.warning(f"[WS] Falha ao registrar presença no Redis: {e}")
-
-        logger.info(
-            f"[WS] 🟢 Conexão registrada no dicionário: Tenant={t_id} | User={u_id} | Sockets={len(self.active_connections[t_id][u_id])}")
-
-    async def disconnect(self, tenant_id: str, user_id: str, websocket: WebSocket):
-        """
-        Remove a referência do WebSocket do dicionário.
-        Libera memória e evita tentativas de envio para conexões mortas.
-        """
-        t_id = self._normalize_id(tenant_id)
-        u_id = self._normalize_id(user_id)
-
-        try:
-            if t_id in self.active_connections:
-                if u_id in self.active_connections[t_id]:
-                    # Remove o socket específico da lista
-                    if websocket in self.active_connections[t_id][u_id]:
-                        self.active_connections[t_id][u_id].remove(websocket)
-
-                    # Se o usuário não tem mais sockets ativos, limpa a chave do usuário
-                    if not self.active_connections[t_id][u_id]:
-                        del self.active_connections[t_id][u_id]
+        # 2. Registro no Dicionário Global (Core WS)
+        await ws_manager.connect(tenant_id, user_id, websocket)
+        
+        # 3. Loop de Escuta (Comandos vindos do Agente/Front-end)
+        while True:
+            raw_data = await websocket.receive_text()
+            
+            try:
+                data = json.loads(raw_data)
+                
+                # Processamento de Chamadas RPC
+                if isinstance(data, dict) and "method" in data:
+                    method = data.get("method")
+                    params = data.get("params", {})
+                    rpc_id = data.get("id")
+                    
+                    result = None
+                    error = None
+                    
+                    if method == "ping":
+                        result = "pong"
+                    
+                    elif method == "send_message":
+                        # Encaminha para o ChatService para envio via WhatsApp
                         try:
-                            await redis_client.delete(f"presence:{t_id}:{u_id}")
-                        except:
-                            pass
+                            with SessionLocal() as db:
+                                await ChatService.send_agent_message(
+                                    db=db,
+                                    tenant_id=tenant_id,
+                                    agent_id=user_id,
+                                    payload=params
+                                )
+                                result = {"success": True, "status": "sent"}
+                        except Exception as e:
+                            error = str(e)
 
-                # Se o Tenant não tem mais nenhum usuário online, limpa a chave do Tenant
-                if not self.active_connections[t_id]:
-                    del self.active_connections[t_id]
+                    elif method == "set_typing":
+                        conv_id = params.get("conversation_id")
+                        is_typing = params.get("is_typing", False)
+                        await ChatService.set_typing_status(tenant_id, conv_id, is_typing)
+                        result = {"success": True}
 
-            logger.info(f"[WS] 🔴 Conexão removida do dicionário: Tenant={t_id} | User={u_id}")
-        except Exception as e:
-            logger.error(f"[WS] Erro ao processar desconexão: {e}")
+                    # Envia Resposta do RPC se houver ID
+                    if rpc_id:
+                        await websocket.send_json({
+                            "type": "rpc_response",
+                            "id": rpc_id,
+                            "result": result,
+                            "error": error
+                        })
+                
+                elif raw_data == "ping":
+                    await websocket.send_text("pong")
 
-    async def broadcast_to_tenant(self, tenant_id: str, message: dict) -> int:
-        """
-        Localiza o Tenancy ID no dicionário e transmite a mensagem para todos os
-        agentes conectados daquele cliente.
-        """
-        t_id = self._normalize_id(tenant_id)
+            except json.JSONDecodeError:
+                if raw_data == "ping":
+                    await websocket.send_text("pong")
 
-        if t_id not in self.active_connections:
-            logger.warning(
-                f"[WS] Broadcast falhou: Tenancy ID '{t_id}' não localizado no dicionário de conexões ativas.")
-            return 0
-
-        delivered = 0
-        stale_connections = []
-
-        # Itera sobre todos os usuários e sockets vinculados ao Tenant no dicionário
-        for user_id, sockets in self.active_connections[t_id].items():
-            for ws in list(sockets):  # Usa list() para permitir remoção segura durante a iteração
-                try:
-                    await ws.send_json(message)
-                    delivered += 1
-                except Exception as e:
-                    logger.error(f"[WS] Falha ao enviar para socket do usuário {user_id}: {e}")
-                    stale_connections.append((user_id, ws))
-
-        # Limpeza automática de "Zombies" (Sockets que caíram mas não dispararam disconnect)
-        for u_id, ws in stale_connections:
-            await self.disconnect(t_id, u_id, ws)
-
-        return delivered
-
-    async def send_personal_message(self, tenant_id: str, user_id: str, message: dict):
-        """Entrega uma mensagem RPC para um usuário específico (Direct Message)."""
-        t_id = self._normalize_id(tenant_id)
-        u_id = self._normalize_id(user_id)
-
-        if t_id in self.active_connections and u_id in self.active_connections[t_id]:
-            for ws in list(self.active_connections[t_id][u_id]):
-                try:
-                    await ws.send_json(message)
-                except:
-                    await self.disconnect(t_id, u_id, ws)
-
-    async def publish_event(self, tenant_id: str, payload: dict, user_id: str = None):
-        """
-        Interface de alto nível para publicação de eventos do sistema.
-        Normaliza o payload para o formato RPC padrão: { method, params }.
-        """
-        # Se o payload vier com 'type', converte para 'method' (Padrão RPC do Front)
-        if "type" in payload and "method" not in payload:
-            method_name = payload.pop("type")
-            payload = {
-                "method": method_name,
-                "params": payload
-            }
-
-        if user_id:
-            await self.send_personal_message(tenant_id, user_id, payload)
-        else:
-            await self.broadcast_to_tenant(tenant_id, payload)
-
-
-# Instância Singleton para importação global
-ws_manager = ConnectionManager()
+    except WebSocketDisconnect:
+        if tenant_id and user_id:
+            await ws_manager.disconnect(tenant_id, user_id, websocket)
+            
+    except Exception as e:
+        logger.error(f"❌ Erro fatal no WebSocket (Tenant: {tenant_id}): {e}")
+        if tenant_id and user_id:
+            await ws_manager.disconnect(tenant_id, user_id, websocket)
+        try:
+            await websocket.close(code=1011)
+        except:
+            pass
