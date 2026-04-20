@@ -358,6 +358,7 @@ async function connectToWhatsApp(sessionId) {
             const payload = {
                 id:         msg.key.id,
                 from:       msg.key.remoteJid,
+                participant: msg.key.participant || msg.participant || null,
                 body:       content,
                 type:       'chat',
                 isGroupMsg: msg.key.remoteJid?.endsWith('@g.us') || false,

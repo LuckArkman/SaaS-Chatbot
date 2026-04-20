@@ -166,10 +166,9 @@ async def incoming_webhook(
             target_jid = raw_remote_jid
 
         # 3. FILTRO DE SEGURANÇA: Extrair apenas números (ignora @s.whatsapp.net, @g.us, etc)
-        # Se for um grupo, o 'raw_remote_jid' terá @g.us.
-        # Para o CRM, geralmente queremos o telefone da pessoa, mesmo em grupos.
-        if "@g.us" in target_jid and raw_participant:
-            # Em grupos, o participante é o telefone real
+        # Se houver um 'participant' explícito (quem realmente enviou no caso de grupos ou threads), usamos ele.
+        # Caso contrário, usamos o target_jid diretamentre.
+        if raw_participant:
             contact_phone = raw_participant.split("@")[0]
         else:
             contact_phone = target_jid.split("@")[0]
@@ -194,7 +193,7 @@ async def incoming_webhook(
             "method": "receive_message",
             "params": {
                 "message_id": unified_msg.message_id,
-                "conversation_id": target_jid, # Mantemos o JID original para o socket saber a aba
+                "conversation_id": contact_phone, # A mensagem agora cai na aba do próprio contato
                 "contact_phone": contact_phone, # Enviamos o número limpo para exibição
                 "contact": {
                     "id": contact_phone,
