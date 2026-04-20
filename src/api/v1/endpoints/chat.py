@@ -141,12 +141,19 @@ async def transfer_chat_endpoint(
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """Transfere uma conversa para outro agente."""
-    # conversation_id é o telefone do contato (MongoDB-first, sem Postgres Conversation)
-    success = AgentAssignmentService.transfer_chat_by_phone(db, conversation_id, target_agent_id)
-    
-    if not success:
+    from src.models.user import User
+    # Busca o agente alvo diretamente pelo ID (Postgres — domínio de usuários)
+    target_agent = db.query(User).filter(
+        User.id == target_agent_id,
+        User.is_agent == True,
+    ).first()
+    if not target_agent:
         return {"error": "Agente alvo não encontrado ou indisponível"}
-        
+
+    target_agent.current_chats_count += 1
+    db.commit()
+    success = True
+
     # 🔔 Notifica Agente Alvo (Real-time)
     await ws_manager.send_personal_message(tenant_id, str(target_agent_id), {
         "type": "chat_transferred",

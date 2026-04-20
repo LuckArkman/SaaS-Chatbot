@@ -138,31 +138,46 @@ class NodeActions:
     @staticmethod
     async def execute_handover_node(tenant_id: str, contact_phone: str):
         """Transfere o atendimento para um agente humano."""
-        from src.services.agent_assignment_service import AgentAssignmentService
         from src.core.bus import rabbitmq_bus
+        from src.core.ws import ws_manager
+        from src.models.user import User
+        from src.core.redis import redis_client
 
-    with SessionLocal() as db:
-            from src.services.agent_assignment_service import AgentAssignmentService
-            # Passa None como conversation para o AgentAssignmentService trabalhar por phone
-            agent = await AgentAssignmentService.assign_agent_by_phone(db, contact_phone)
+        # Busca agente disponível pelo tenant (sem precisar de objeto Conversation)
+        agent = None
+        try:
+            with SessionLocal() as db:
+                agents = db.query(User).filter(
+                    User.tenant_id == tenant_id,
+                    User.is_agent == True,
+                    User.is_active == True,
+                ).all()
+                for candidate in agents:
+                    is_online = await redis_client.get(f"presence:{tenant_id}:{candidate.id}")
+                    if is_online and candidate.current_chats_count < candidate.max_concurrent_chats:
+                        candidate.current_chats_count += 1
+                        db.commit()
+                        agent = candidate
+                        break
+        except Exception as pg_err:
+            logger.warning(f"[NodeActions] ⚠️ Falha ao buscar agente no Postgres: {pg_err}")
 
-            # Notificação de handover via RabbitMQ (baixa frequência, aceitável aqui)
-            try:
-                await rabbitmq_bus.publish(
-                    exchange_name="messages_exchange",
-                    routing_key="chat.handover",
-                    message={
-                        "tenant_id": tenant_id,
-                        "contact_phone": contact_phone,
-                        "assigned_agent_id": agent.id if agent else None,
-                        "timestamp": str(datetime.utcnow()),
-                    },
-                )
-            except Exception as rmq_err:
-                logger.warning(f"[NodeActions] ⚠️ Falha ao publicar handover no RabbitMQ (não crítico): {rmq_err}")
+        # Notificação de handover via RabbitMQ (baixa frequência, aceitável aqui)
+        try:
+            await rabbitmq_bus.publish(
+                exchange_name="messages_exchange",
+                routing_key="chat.handover",
+                message={
+                    "tenant_id": tenant_id,
+                    "contact_phone": contact_phone,
+                    "assigned_agent_id": agent.id if agent else None,
+                    "timestamp": str(datetime.utcnow()),
+                },
+            )
+        except Exception as rmq_err:
+            logger.warning(f"[NodeActions] ⚠️ Falha ao publicar handover no RabbitMQ (não crítico): {rmq_err}")
 
         # Notifica Front-end via WebSocket
-        from src.core.ws import ws_manager
         await ws_manager.broadcast_to_tenant(tenant_id, {
             "type": "chat_assigned",
             "contact_phone": contact_phone,
