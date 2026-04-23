@@ -68,3 +68,35 @@ def toggle_maintenance_mode(
     """Simula a ativação do modo de manutenção global."""
     logger.warning(f"🛠️ Modo de Manutenção alterado para: {enabled} por {current_superuser.email}")
     return {"maintenance_mode": enabled}
+
+
+@router.get("/ws/connections")
+def inspect_ws_connections(
+    current_superuser: Any = Depends(deps.get_current_active_superuser)
+) -> Any:
+    """
+    Diagnóstico em tempo real das conexões WebSocket ativas.
+
+    Retorna o estado do buffer/transport interno de cada socket por Tenant,
+    sem realizar nenhuma operação de I/O na conexão.
+
+    Campos por socket:
+      - alive:             resultado combinado das 3 camadas de inspeção
+      - client_state:      estado Starlette (CONNECTING/CONNECTED/DISCONNECTED)
+      - app_state:         estado da aplicação Starlette
+      - transport_closing: resultado de asyncio transport.is_closing()
+    """
+    from src.core.ws import ws_manager
+
+    summary = {}
+    for tenant_id, users in ws_manager.active_connections.items():
+        total_sockets = sum(len(v) for v in users.values())
+        summary[tenant_id] = {
+            "total_sockets": total_sockets,
+            "users": ws_manager.get_connection_info(tenant_id),
+        }
+
+    return {
+        "total_tenants_connected": len(summary),
+        "connections": summary,
+    }
