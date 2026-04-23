@@ -39,12 +39,41 @@ class WebhookQueue {
         this.isProcessing = false;
         this.webhookUrl = process.env.WEBHOOK_URL || 'http://127.0.0.1:8001/api/v1/gateway/webhook/whatsapp';
         this.headers = { 'x-api-key': 'SaaS_Secret_Gateway_Key_2026' };
+
+        // Extrai o tenant_id do sessionId (formato: "tenant_{tenant_id}_{uuid8}")
+        // Algoritmo: remove prefixo "tenant_" e corta o sufixo "_{uuid8}" pelo último underscore.
+        // Suporta tenant_ids com underscores: "tenant_my_id_a1b2c3d4" → "my_id"
+        this.tenantId = '';
+        if (sessionId && sessionId.startsWith('tenant_')) {
+            const withoutPrefix = sessionId.slice('tenant_'.length); // "7_a3f2c1d4" ou "my_id_a3f2c1d4"
+            const lastUnder = withoutPrefix.lastIndexOf('_');
+            if (lastUnder !== -1 && withoutPrefix.length - lastUnder - 1 === 8) {
+                // O sufixo tem exatamente 8 chars (uuid hex[:8]) → remove
+                this.tenantId = withoutPrefix.slice(0, lastUnder);
+            } else {
+                // Sem sufixo uuid → usa tudo após "tenant_"
+                this.tenantId = withoutPrefix;
+            }
+        }
+
+        if (this.tenantId) {
+            console.log(`[WebhookQueue] Sessão '${sessionId}' → tenant_id extraído: '${this.tenantId}'`);
+        } else {
+            console.warn(`[WebhookQueue] ⚠️ Não foi possível extrair tenant_id de '${sessionId}'. Verifique o formato.`);
+        }
     }
 
-    // Enfileira um evento (mensagens, ACKs, status)
+    // Enfileira um evento — inclui tenant_id explicitamente no payload
     enqueue(event, payload) {
-        this.queue.push({ event, session: this.sessionId, payload });
-        console.debug(`[${this.sessionId}] [Queue] + Enfileirado (${event}) | Itens: ${this.queue.length}`);
+        // tenant_id incluído diretamente para garantir roteamento correto no gateway Python
+        // sem depender de parsing frágil do campo 'session'
+        this.queue.push({
+            event,
+            session:   this.sessionId,
+            tenant_id: this.tenantId,   // ← campo explícito: elimina ambiguidade de roteamento
+            payload
+        });
+        console.debug(`[${this.sessionId}] [Queue] + Enfileirado (${event}) | tenant=${this.tenantId} | Itens: ${this.queue.length}`);
         if (!this.isProcessing) {
             this.process();
         }
@@ -61,12 +90,12 @@ class WebhookQueue {
                 // Awaiting garante que não disparamos 50 requests paralelos no loopback
                 await axios.post(this.webhookUrl, item, { 
                     headers: this.headers,
-                    timeout: 20000 // Ttimeout generoso para cenários de carga
+                    timeout: 20000 // Timeout generoso para cenários de carga
                 });
-                console.log(`[${this.sessionId}] ✅ [Queue] Webhook entregue: ${item.event} | ID: ${item.payload.id || 'N/A'}`);
+                console.log(`[${this.sessionId}] ✅ [Queue] Webhook entregue: ${item.event} | tenant=${item.tenant_id} | ID: ${item.payload.id || 'N/A'}`);
             } catch (e) {
                 const status = e.response ? e.response.status : 'SEM_RESPOSTA';
-                console.error(`[${this.sessionId}] ❌ [Queue] Falha Webhook (${item.event}) | Status: ${status} | Erro: ${e.message}`);
+                console.error(`[${this.sessionId}] ❌ [Queue] Falha Webhook (${item.event}) | tenant=${item.tenant_id} | Status: ${status} | Erro: ${e.message}`);
                 
                 // Se for erro de rate-limit (429) ou sobrecarga (503), aguarda 2s antes de tentar o próximo
                 if (status === 429 || status === 503) {
@@ -78,7 +107,6 @@ class WebhookQueue {
             this.queue.shift(); // Remove o primeiro (já processado)
             
             // 🔥 Backpressure safe: Intervalo de 20ms entre cada entrega 
-            // para permitir que o Event Loop do Python (que é async mas usa pydantic/ORM lento) respire.
             await new Promise(r => setTimeout(r, 20));
         }
 
