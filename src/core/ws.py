@@ -137,34 +137,64 @@ class ConnectionManager:
     async def broadcast_to_tenant(self, tenant_id: str, message: dict) -> int:
         """
         Envia mensagem para todos os usuários online de um Tenant neste processo.
+
+        Remoção de Zumbis:
+          Se send_json() falhar, o socket é marcado para remoção imediata.
+          Conexões legítimas que falharam temporariamente reconectam e se
+          re-registram automaticamente via WebSocketDisconnect → endpoint ws.py.
+
         Retorna o número de conexões que receberam a mensagem com sucesso.
         """
         tenant_id = tenant_id.upper()
         if tenant_id not in self.active_connections:
-            # Fallback debug
             connected_tenants = list(self.active_connections.keys())
-            logger.warning(f"[WS] Nenhuma conexão ativa para tenant='{tenant_id}'. Tenants conectados em memória: {connected_tenants}")
+            logger.warning(
+                f"[WS] Nenhuma conexão ativa para tenant='{tenant_id}'. "
+                f"Tenants em memória: {connected_tenants}"
+            )
             return 0
 
-        delivered = 0
-        failed = 0
+        delivered  = 0
+        to_remove: list[tuple[str, WebSocket]] = []   # (user_id, websocket) a eliminar
 
         for user_id, connections in self.active_connections.get(tenant_id, {}).items():
-            for connection in list(connections):  # list() para snapshot seguro — sem modificar durante o loop
+            for connection in list(connections):
                 try:
                     await connection.send_json(message)
                     delivered += 1
                 except Exception as e:
-                    failed += 1
                     logger.warning(
-                        f"[WS] Falha transitória ao enviar RPC | tenant='{tenant_id}' user='{user_id}' "
-                        f"| A conexão permanece ativa. Erro: {e}"
+                        f"[WS] ☠️  Falha ao enviar para user='{user_id}' | tenant='{tenant_id}' "
+                        f"| Socket marcado para remoção. Erro: {e}"
                     )
-                    # ← Nenhuma remoção aqui. O endpoint limpará via WebSocketDisconnect.
+                    # Marca para remoção — conexão TCP está morta (zumbi silencioso)
+                    to_remove.append((user_id, connection))
+
+        # Remove todos os sockets mortos detectados nesta rodada
+        for user_id, dead_socket in to_remove:
+            try:
+                if tenant_id in self.active_connections:
+                    if user_id in self.active_connections[tenant_id]:
+                        conns = self.active_connections[tenant_id][user_id]
+                        if dead_socket in conns:
+                            conns.remove(dead_socket)
+                            logger.info(
+                                f"[WS] 🧹 Socket zumbi removido | tenant='{tenant_id}' | user='{user_id}'"
+                            )
+                        if not conns:
+                            del self.active_connections[tenant_id][user_id]
+                            try:
+                                await redis_client.delete(f"presence:{tenant_id}:{user_id}")
+                            except Exception:
+                                pass
+                    if not self.active_connections.get(tenant_id):
+                        self.active_connections.pop(tenant_id, None)
+            except Exception as cleanup_err:
+                logger.warning(f"[WS] Erro na limpeza do socket zumbi: {cleanup_err}")
 
         logger.debug(
-            f"[WS] broadcast_to_tenant concluído | tenant='{tenant_id}' "
-            f"| entregues={delivered} | falhas_transitórias={failed}"
+            f"[WS] broadcast concluído | tenant='{tenant_id}' "
+            f"| entregues={delivered} | zumbis_removidos={len(to_remove)}"
         )
         return delivered
 
