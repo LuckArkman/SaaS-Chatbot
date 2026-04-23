@@ -1,18 +1,28 @@
 """
-Endpoint WebSocket com Heartbeat (Ping/Pong) e Limpeza de Conexões Zumbi.
+Endpoint WebSocket com Keepalive Server-Side e Limpeza de Conexões Zumbi.
 
-PROBLEMA RESOLVIDO:
-  Proxies reversos (Nginx, CDN, firewalls) cortam conexões TCP silenciosamente
-  após ~60s de inatividade. O servidor mantinha objetos WebSocket "zumbi" no
-  dicionário que pareciam válidos mas lançavam exceção silenciosa no send().
+CAUSA RAIZ DO PROBLEMA (resolvida aqui):
+  A versão anterior exigia que o frontend respondesse com "pong" a cada "ping".
+  Se o frontend não implementasse essa resposta, o heartbeat_task disparava um
+  TimeoutError após (PING_INTERVAL + PONG_TIMEOUT) segundos e fechava o socket
+  forçosamente — removendo-o do dicionário. Mensagens subsequentes falhavam
+  pois o dicionário estava vazio.
 
-SOLUÇÃO — Três camadas de proteção:
-  1. Heartbeat Task: coroutine paralela que envia "ping" a cada PING_INTERVAL
-     e aguarda "pong". Se não chegar, marca o socket como morto e encerra.
-  2. Semáforo de Pong: `asyncio.Event()` por conexão — evita race conditions
-     entre a task de heartbeat e o loop de receive.
-  3. Remoção Imediata: quando send_json() falha N vezes consecutivas no
-     broadcast, a conexão é removida do dicionário em vez de ser preservada.
+NOVA ESTRATÉGIA — Keepalive Unidirecional:
+  1. O servidor envia "ping" a cada PING_INTERVAL segundos como keepalive.
+     Se send_text("ping") FALHAR → conexão TCP está morta → fecha.
+     Se send_text("ping") PASSAR → conexão está viva → continua.
+     Nenhuma resposta "pong" é exigida do cliente para manter o socket.
+
+  2. Se o cliente QUISER responder "pong" (boa prática), o loop de receive aceita
+     e processa normalmente — não faz nada além de logar.
+
+  3. Zombie removal via broadcast_to_tenant (core/ws.py) garante que sockets
+     que falham durante um envio de mensagem real sejam removidos imediatamente.
+
+COMPATIBILIDADE COM FRONTEND:
+  O cliente NÃO precisa implementar nenhuma lógica de pong para funcionar.
+  Mas se implementar, funciona normalmente (o "pong" é silenciosamente descartado).
 """
 
 import asyncio
@@ -26,10 +36,11 @@ from loguru import logger
 
 router = APIRouter()
 
-# ─── Constantes de Heartbeat ────────────────────────────────────────────────
-PING_INTERVAL   = 25   # Intervalo entre pings (segundos) — abaixo do timeout padrão do Nginx (60s)
-PONG_TIMEOUT    = 12   # Tempo máximo de espera pelo pong após enviar ping
-RPC_RECV_TIMEOUT = 5   # Timeout de receive_text (retorna ao heartbeat a cada X segundos)
+# ─── Constantes de Keepalive ─────────────────────────────────────────────────
+# 25s < 60s (timeout padrão do Nginx proxy_read_timeout)
+# Garante que o proxy nunca considera a conexão "inativa"
+PING_INTERVAL    = 25   # Intervalo entre pings de keepalive (segundos)
+RECV_TIMEOUT     = 5    # Timeout no receive_text — cede controle ao heartbeat regularmente
 
 
 @router.get("/", tags=["RPC-WebSocket"])
@@ -44,21 +55,26 @@ async def websocket_endpoint(
     token: str = Query(...),
 ):
     """
-    Endpoint WebSocket seguro com Heartbeat e limpeza de conexões zumbi.
+    Endpoint WebSocket seguro com keepalive server-side.
 
-    Protocolo de comunicação:
-      ← servidor envia: JSON {"method": "...", "params": {...}}
-      ← servidor envia: texto "ping"
-      → cliente responde: texto "pong"
-      → cliente envia: JSON {"method": "send_message"|"set_typing", "params": {...}, "id": "..."}
+    Protocolo de Mensagens (servidor → cliente):
+      ← "ping"                                   (keepalive, texto simples)
+      ← {"method": "receive_message", "params":{}} (nova mensagem)
+      ← {"method": "incoming_call",   "params":{}} (chamada recebida)
+      ← {"method": "message_status_update", ...}   (ACK de entrega)
+      ← {"type": "rpc_response", "id":..., ...}    (resposta de chamada RPC)
+
+    Protocolo de Mensagens (cliente → servidor):
+      → {"method": "send_message", "params":{...}, "id":"..."} (enviar msg)
+      → {"method": "set_typing",   "params":{...}}              (status digitando)
+      → "pong"  (OPCIONAL — resposta ao ping, não obrigatória)
     """
-    user_id    = None
-    tenant_id  = None
-    pong_event = asyncio.Event()   # Sinaliza que um pong foi recebido
+    user_id   = None
+    tenant_id = None
 
     try:
         # ── 1. Autenticação via JWT ─────────────────────────────────────────
-        payload = security.decode_token(token)
+        payload   = security.decode_token(token)
         user_id   = str(payload.get("sub"))
         tenant_id = str(payload.get("tenant_id"))
 
@@ -71,70 +87,57 @@ async def websocket_endpoint(
         await ws_manager.connect(tenant_id, user_id, websocket)
         logger.info(f"[WS] ✅ Conectado | tenant={tenant_id} | user={user_id}")
 
-        # ── 3. Task paralela de Heartbeat ──────────────────────────────────
-        async def heartbeat_task():
-            """
-            Envia 'ping' periodicamente. Se o pong não chegar em PONG_TIMEOUT
-            segundos, considera a conexão morta e a fecha à força.
-            """
+        # ── 3. Task de Keepalive (Server-side Ping) ────────────────────────
+        # Envia "ping" periodicamente para evitar que proxies derrubem
+        # a conexão por inatividade. Não exige pong do cliente.
+        async def keepalive_task():
             while True:
                 await asyncio.sleep(PING_INTERVAL)
                 try:
-                    pong_event.clear()
                     await websocket.send_text("ping")
-                    logger.debug(f"[WS] 💓 Ping enviado | tenant={tenant_id} | user={user_id}")
-
-                    # Aguarda pong com timeout
-                    got_pong = await asyncio.wait_for(
-                        pong_event.wait(),
-                        timeout=PONG_TIMEOUT
-                    )
-                    logger.debug(f"[WS] 💓 Pong recebido | tenant={tenant_id} | user={user_id}")
-
-                except asyncio.TimeoutError:
+                    logger.debug(f"[WS] 💓 Keepalive ping | tenant={tenant_id} | user={user_id}")
+                except Exception as e:
+                    # Se send_text falhar, a conexão TCP está morta.
+                    # Encerrar a task; o socket será removido pelo broadcast_to_tenant
+                    # na próxima mensagem que tentar ser entregue.
                     logger.warning(
-                        f"[WS] ☠️  Conexão zumbi detectada (sem pong em {PONG_TIMEOUT}s) "
-                        f"| tenant={tenant_id} | user={user_id}. Encerrando."
+                        f"[WS] 💔 Keepalive falhou (conexão morta) | "
+                        f"tenant={tenant_id} | user={user_id} | {e}"
                     )
-                    # Fecha forçado — dispara WebSocketDisconnect no loop principal
+                    # Tenta forçar o WebSocketDisconnect no loop principal
                     try:
-                        await websocket.close(code=1001)   # 1001 = Going Away
+                        await websocket.close(code=1001)
                     except Exception:
                         pass
-                    return   # Encerra a task de heartbeat
+                    return  # Encerra a keepalive_task
 
-                except Exception as e:
-                    logger.warning(f"[WS] Heartbeat encerrado por exceção: {e}")
-                    return
+        hb_task = asyncio.create_task(keepalive_task())
 
-        # Inicia heartbeat em background, vinculado ao ciclo de vida desta conexão
-        hb_task = asyncio.create_task(heartbeat_task())
-
-        # ── 4. Loop principal de recebimento de mensagens ──────────────────
+        # ── 4. Loop principal de recebimento ───────────────────────────────
         try:
             while True:
                 try:
-                    # receive com timeout curto para não bloquear para sempre
                     raw_data = await asyncio.wait_for(
                         websocket.receive_text(),
-                        timeout=RPC_RECV_TIMEOUT
+                        timeout=RECV_TIMEOUT,
                     )
                 except asyncio.TimeoutError:
-                    # Sem mensagem do cliente — normal, apenas continua o loop
-                    # O heartbeat_task cuidará de verificar a vitalidade da conexão
+                    # Sem mensagem do cliente neste tick — normal.
+                    # O keepalive_task cuida de manter a conexão viva.
                     continue
 
-                # ── Protocolo de Pong ──────────────────────────────────────
-                if raw_data == "pong":
-                    pong_event.set()    # Sinaliza ao heartbeat_task que o cliente está vivo
+                # ── Protocolo: pong (resposta opcional ao keepalive) ───────
+                if raw_data in ("pong", "ping"):
+                    # "ping" do cliente → responde com "pong"
+                    if raw_data == "ping":
+                        try:
+                            await websocket.send_text("pong")
+                        except Exception:
+                            pass
+                    # "pong" do cliente → simplesmente ignora (já funcionamos sem ele)
                     continue
 
-                # ── Protocolo de Ping enviado pelo cliente (compatibilidade) ──
-                if raw_data == "ping":
-                    await websocket.send_text("pong")
-                    continue
-
-                # ── Processamento RPC ──────────────────────────────────────
+                # ── Protocolo: RPC JSON ────────────────────────────────────
                 try:
                     data = json.loads(raw_data)
                 except json.JSONDecodeError:
@@ -150,7 +153,7 @@ async def websocket_endpoint(
                 result = None
                 error  = None
 
-                # ── Handlers RPC ───────────────────────────────────────────
+                # ── RPC: send_message ──────────────────────────────────────
                 if method == "send_message":
                     try:
                         with SessionLocal() as db:
@@ -160,25 +163,28 @@ async def websocket_endpoint(
                                 agent_id=user_id,
                                 payload=params,
                             )
-                            result = {"success": True, "status": "sent"}
+                        result = {"success": True, "status": "sent"}
                     except Exception as e:
                         error = str(e)
                         logger.error(f"[WS] Erro em send_message RPC: {e}")
 
+                # ── RPC: set_typing ────────────────────────────────────────
                 elif method == "set_typing":
-                    conv_id   = params.get("conversation_id")
-                    is_typing = params.get("is_typing", False)
                     try:
-                        await ChatService.set_typing_status(tenant_id, conv_id, is_typing)
+                        await ChatService.set_typing_status(
+                            tenant_id,
+                            params.get("conversation_id"),
+                            params.get("is_typing", False),
+                        )
                         result = {"success": True}
                     except Exception as e:
                         error = str(e)
 
+                # ── RPC: ping (JSON version) ───────────────────────────────
                 elif method == "ping":
-                    # Ping via RPC JSON (compatibilidade com clientes mais antigos)
                     result = "pong"
 
-                # Resposta RPC (somente se o cliente enviou um ID)
+                # ── Resposta RPC (somente se cliente enviou um ID) ─────────
                 if rpc_id:
                     try:
                         await websocket.send_json({
@@ -188,10 +194,11 @@ async def websocket_endpoint(
                             "error":  error,
                         })
                     except Exception as send_err:
-                        logger.warning(f"[WS] Falha ao enviar rpc_response (id={rpc_id}): {send_err}")
+                        logger.warning(
+                            f"[WS] Falha ao enviar rpc_response (id={rpc_id}): {send_err}"
+                        )
 
         finally:
-            # Cancela a task de heartbeat ao sair do loop (por qualquer motivo)
             hb_task.cancel()
             try:
                 await hb_task
@@ -199,17 +206,24 @@ async def websocket_endpoint(
                 pass
 
     except WebSocketDisconnect as e:
-        logger.info(f"[WS] 🔌 Desconexão normal | tenant={tenant_id} | user={user_id} | code={e.code}")
+        logger.info(
+            f"[WS] 🔌 Desconexão | tenant={tenant_id} | user={user_id} | code={e.code}"
+        )
 
     except Exception as e:
-        logger.error(f"[WS] ❌ Erro fatal | tenant={tenant_id} | user={user_id} | {type(e).__name__}: {e}")
+        logger.error(
+            f"[WS] ❌ Erro fatal | tenant={tenant_id} | user={user_id} | "
+            f"{type(e).__name__}: {e}"
+        )
         try:
             await websocket.close(code=1011)
         except Exception:
             pass
 
     finally:
-        # SEMPRE limpa o dicionário — independente da causa da desconexão
+        # SEMPRE limpa o dicionário — qualquer causa de encerramento
         if tenant_id and user_id:
             await ws_manager.disconnect(tenant_id, user_id, websocket)
-            logger.info(f"[WS] 🧹 Conexão removida do mapa | tenant={tenant_id} | user={user_id}")
+            logger.info(
+                f"[WS] 🧹 Referência removida do mapa | tenant={tenant_id} | user={user_id}"
+            )
