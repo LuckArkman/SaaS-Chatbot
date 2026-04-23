@@ -31,6 +31,10 @@ _EVENT_ALIAS_MAP = {
     "messages.upsert":   WhatsAppMessageEvent.ON_MESSAGE,
     "messages.update":   WhatsAppMessageEvent.ON_ACK,
     "connection.update": WhatsAppMessageEvent.ON_STATE_CHANGE,
+    "on_message":        WhatsAppMessageEvent.ON_MESSAGE,
+    "on_ack":            WhatsAppMessageEvent.ON_ACK,
+    "on_state_change":   WhatsAppMessageEvent.ON_STATE_CHANGE,
+    "on_incoming_call":  WhatsAppMessageEvent.ON_INCOMING_CALL,
 }
 
 def verify_gateway_key(x_api_key: str = Header(...)):
@@ -170,5 +174,49 @@ async def incoming_webhook(
             "params": {"qrcode": qr, "event": state, "session": ws_payload.session}
         })
         return {"success": True, "status": "state_notified"}
+
+    # ═════════════════════════════════════════════════════════════════
+    # CASO 3: CHAMADA RECEBIDA (ON_INCOMING_CALL)
+    # ═════════════════════════════════════════════════════════════════
+    elif ws_payload.event == WhatsAppMessageEvent.ON_INCOMING_CALL:
+        call_body = ws_payload.payload
+        caller_jid = call_body.get("from", "")
+        caller_phone = caller_jid.split("@")[0] if "@" in caller_jid else caller_jid
+        caller_phone = "".join(filter(str.isdigit, caller_phone))
+
+        # Enriquece com nome do Postgres; fallback para últimos 4 dígitos
+        caller_name = f"Contato {caller_phone[-4:]}" if len(caller_phone) >= 4 else caller_phone
+        try:
+            with SessionLocal() as db:
+                from src.models.contact import Contact
+                local_contact = db.query(Contact).filter_by(
+                    tenant_id=resolved_tenant_id,
+                    phone_number=caller_phone
+                ).first()
+                if local_contact and local_contact.full_name:
+                    caller_name = local_contact.full_name
+        except Exception as e:
+            logger.error(f"[Gateway] Falha ao enriquecer nome do autor da chamada: {e}")
+
+        logger.info(
+            f"📞 [Gateway] Chamada recebida de {caller_name} ({caller_phone}) "
+            f"→ Notificando Tenant {resolved_tenant_id} via WebSocket"
+        )
+
+        # Notifica TODOS os agentes online do Tenant (broadcast RPC)
+        await ws_manager.broadcast_to_tenant(resolved_tenant_id, {
+            "method": "incoming_call",
+            "params": {
+                "call_id":   call_body.get("call_id"),
+                "from": {
+                    "jid":   caller_jid,
+                    "phone": caller_phone,
+                    "name":  caller_name,
+                },
+                "is_video":  call_body.get("is_video", False),
+                "timestamp": call_body.get("timestamp"),
+            },
+        })
+        return {"success": True, "status": "call_notified"}
 
     return {"success": True, "status": "ignored_event"}

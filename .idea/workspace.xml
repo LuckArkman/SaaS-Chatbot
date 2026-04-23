@@ -4,7 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="1b8efb0b-354b-49b8-ae39-f0bc5a1fb44e" name="Changes" comment="" />
+    <list default="true" id="1b8efb0b-354b-49b8-ae39-f0bc5a1fb44e" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/sprints/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/sprints/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sprints/sprint_13_message_normalization.md" beforeDir="false" afterPath="$PROJECT_DIR$/sprints/sprint_13_message_normalization.md" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />

@@ -332,5 +332,57 @@ class WhatsAppBridgeService:
             logger.error(f"❌ Falha de rede ao buscar histórico de {jid}: {e}")
             return {"success": False, "error": str(e)}
 
+    async def initiate_call(self, session_id: str, phone: str) -> Dict[str, Any]:
+        """
+        Solicita ao Bridge Node.js que inicie uma chamada de voz via Baileys.
+        O Bridge usa sock.call(jid, 'voice') para enviar o sinal de oferta real.
+
+        Retorna dict com: success, status, call_id, to, phone ou error.
+        """
+        try:
+            normalized = "".join(filter(str.isdigit, phone))
+            logger.info(f"[Bridge] 📞 Iniciando chamada de voz para {normalized} na sessão {session_id}")
+            response = await self.client.post(
+                f"{self.base_url}/instance/makeCall",
+                json={"sessionId": session_id, "to": normalized},
+                headers=self.headers,
+                timeout=20.0,
+            )
+            data = response.json()
+            if response.status_code == 200:
+                logger.info(f"✅ Chamada iniciada para {normalized} | call_id={data.get('call_id')}")
+                return {"success": True, **data}
+            logger.error(f"❌ Bridge retornou {response.status_code} ao iniciar chamada para {normalized}: {data}")
+            return {"success": False, "error": data.get("error", "Erro inesperado no Bridge.")}
+        except Exception as e:
+            logger.error(f"❌ Falha de rede ao iniciar chamada para {phone}: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def reject_call(self, session_id: str, call_id: str, caller_jid: str) -> Dict[str, Any]:
+        """
+        Solicita ao Bridge Node.js que rejeite uma chamada recebida via Baileys.
+        O Bridge usa sock.rejectCall(call_id, callerJid).
+
+        Retorna dict com: success, status ou error.
+        """
+        try:
+            logger.info(f"[Bridge] 📵 Rejeitando chamada {call_id} de {caller_jid} na sessão {session_id}")
+            response = await self.client.post(
+                f"{self.base_url}/instance/rejectCall",
+                json={"sessionId": session_id, "call_id": call_id, "from": caller_jid},
+                headers=self.headers,
+                timeout=10.0,
+            )
+            data = response.json()
+            if response.status_code == 200:
+                logger.info(f"✅ Chamada {call_id} rejeitada com sucesso.")
+                return {"success": True, "status": "rejected", "call_id": call_id}
+            logger.error(f"❌ Bridge retornou {response.status_code} ao rejeitar chamada {call_id}: {data}")
+            return {"success": False, "error": data.get("error", "Erro inesperado no Bridge.")}
+        except Exception as e:
+            logger.error(f"❌ Falha de rede ao rejeitar chamada {call_id}: {e}")
+            return {"success": False, "error": str(e)}
+
+
 # Instância Global
 whatsapp_bridge = WhatsAppBridgeService()

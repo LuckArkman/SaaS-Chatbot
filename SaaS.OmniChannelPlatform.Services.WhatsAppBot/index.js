@@ -377,6 +377,22 @@ async function connectToWhatsApp(sessionId) {
             getWebhookQueue(sessionId).enqueue('on_message', payload);
         }
     });
+    sock.ev.on('call', async (calls) => {
+    // O evento de chamada pode vir em um array
+        for (const call of calls) {
+            // Nos interessa a notificação de "oferta" de chamada (quando está tocando)
+            if (call.status === 'offer') {
+                const payload = {
+                    call_id: call.id,
+                    from: call.from,
+                    is_video: call.isVideo,
+                    timestamp: call.date,
+                };
+                console.log(`[${sessionId}] 📞 Chamada recebida de ${call.from}. Enviando para o Gateway...`);
+                getWebhookQueue(sessionId).enqueue('on_incoming_call', payload);
+            }
+        }
+    });
 
     // ✅ Monitora ACKs de entrega E repassa ao Python (AckWorker) de forma sequencial
     sock.ev.on('messages.update', async (updates) => {
@@ -889,6 +905,89 @@ app.delete('/contacts/delete', async (req, res) => {
 });
 
 const PORT = 4000;
+
+/**
+ * POST /instance/makeCall
+ * Body: { sessionId, to }
+ * Inicia uma chamada de voz via Baileys usando relay de sinalização WebRTC.
+ * NOTA: A API de chamadas Baileys envia um "offer" de mídia real ao destinatário
+ * mas não garante estabelecimento completo (depende do aparelho do destinatário).
+ */
+app.post('/instance/makeCall', async (req, res) => {
+    const { sessionId, to } = req.body;
+
+    if (!sessionId || !to) {
+        return res.status(400).json({ success: false, error: 'sessionId e to são obrigatórios' });
+    }
+
+    const sock = sockets[sessionId];
+    if (!sock) {
+        return res.status(404).json({ success: false, error: `Instância '${sessionId}' não encontrada.` });
+    }
+
+    if (sessionStatuses[sessionId] !== 'CONNECTED') {
+        return res.status(409).json({ success: false, error: 'Instância não está conectada.', state: sessionStatuses[sessionId] });
+    }
+
+    try {
+        const normalizedPhone = to.replace(/[^0-9+]/g, '');
+        const jid = normalizedPhone.includes('@') ? normalizedPhone : `${normalizedPhone}@s.whatsapp.net`;
+
+        console.log(`[${sessionId}] 📞 Iniciando chamada de voz para: ${jid}`);
+
+        // Baileys suporta chamada de voz via relay usando sock.call()
+        // Isso envia o sinal "offer" de chamada real ao destinatário
+        const callResult = await sock.call(jid, 'voice');
+        const callId = callResult?.id || null;
+
+        console.log(`[${sessionId}] ✅ Sinal de chamada enviado para ${jid} | call_id=${callId}`);
+
+        return res.json({
+            success: true,
+            status: 'calling',
+            call_id: callId,
+            to: jid,
+            phone: normalizedPhone,
+        });
+
+    } catch (err) {
+        console.error(`[${sessionId}] ❌ Erro ao iniciar chamada para ${to}:`, err.message);
+        return res.status(500).json({
+            success: false,
+            error: 'Erro interno ao iniciar a chamada.',
+            detail: err.message
+        });
+    }
+});
+
+/**
+ * POST /instance/rejectCall
+ * Body: { sessionId, call_id, from }
+ * Rejeita/recusa uma chamada recebida via Baileys.
+ */
+app.post('/instance/rejectCall', async (req, res) => {
+    const { sessionId, call_id, from: callerJid } = req.body;
+
+    if (!sessionId || !call_id || !callerJid) {
+        return res.status(400).json({ success: false, error: 'sessionId, call_id e from são obrigatórios' });
+    }
+
+    const sock = sockets[sessionId];
+    if (!sock || sessionStatuses[sessionId] !== 'CONNECTED') {
+        return res.status(409).json({ success: false, error: 'Instância não conectada.' });
+    }
+
+    try {
+        console.log(`[${sessionId}] 📵 Rejeitando chamada ${call_id} de ${callerJid}`);
+        await sock.rejectCall(call_id, callerJid);
+        console.log(`[${sessionId}] ✅ Chamada ${call_id} rejeitada.`);
+        return res.json({ success: true, status: 'rejected', call_id });
+    } catch (err) {
+        console.error(`[${sessionId}] ❌ Erro ao rejeitar chamada ${call_id}:`, err.message);
+        return res.status(500).json({ success: false, error: 'Erro ao rejeitar chamada.', detail: err.message });
+    }
+});
+
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`WhatsApp Bridge (Baileys) listening on port ${PORT}`);
 });
