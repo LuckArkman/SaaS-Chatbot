@@ -10,15 +10,21 @@ class RabbitMQBus:
         self.channel: aio_pika.RobustChannel = None
         self.url = settings.RABBITMQ_URL
 
-    async def connect(self):
+    async def connect(self, retries=10, delay=5):
         """Estabelece conexão robusta com RabbitMQ (Auto-reconnect nativo)."""
-        try:
-            self.connection = await aio_pika.connect_robust(self.url)
-            self.channel = await self.connection.channel()
-            logger.info(f"🐰 Conectado ao RabbitMQ em {self.url}")
-        except Exception as e:
-            logger.error(f"❌ Erro ao conectar no RabbitMQ: {e}")
-            raise
+        for attempt in range(retries):
+            try:
+                self.connection = await aio_pika.connect_robust(self.url)
+                self.channel = await self.connection.channel()
+                logger.info(f"🐰 Conectado ao RabbitMQ em {self.url}")
+                return
+            except Exception as e:
+                logger.warning(f"⏳ Tentativa {attempt + 1}/{retries} falhou ao conectar no RabbitMQ: {e}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error("❌ Erro fatal: Limite de tentativas de conexão ao RabbitMQ excedido.")
+                    raise
 
     async def disconnect(self):
         """Fecha a conexão com o RabbitMQ."""
