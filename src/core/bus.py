@@ -1,5 +1,6 @@
 import aio_pika
 import json
+import asyncio
 from src.core.config import settings
 from loguru import logger
 from typing import Any, Callable, Awaitable
