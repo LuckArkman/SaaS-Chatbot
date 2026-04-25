@@ -33,9 +33,6 @@ services:
   saas_mongo:
     image: mongo:7
     container_name: saas_mongo
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=saas_chatbot
-      - MONGO_INITDB_ROOT_PASSWORD=3702959
     ports:
       - "27017:27017"
     volumes:
@@ -59,7 +56,7 @@ services:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=password123
       - POSTGRES_DB=saas_omnichannel
-      - MONGODB_URL=mongodb://saas_chatbot:3702959@saas_mongo:27017/SaaS_Chatbot?authSource=admin
+      - MONGODB_URL=mongodb://saas_mongo:27017/SaaS_Chatbot
       - REDIS_URL=redis://saas_redis:6379/0
       - RABBITMQ_URL=amqp://admin:password123@saas_rabbitmq/
       - WHATSAPP_BRIDGE_URL=http://172.18.0.1:4000
