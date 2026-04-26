@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Variáveis de ambiente — NUNCA commitar segredos de produção
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Logs
+logs/
+*.log
+logs.txt
+
+# Uploads de usuários
+uploads/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Tokens Baileys (dados de sessão WhatsApp — contêm credenciais)
+SaaS.OmniChannelPlatform.Services.WhatsAppBot/tokens/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker volumes (gerados em runtime)
+postgres_data/
+mongo_data/
+
+# Certificados SSL locais
+nginx/ssl/*.crt
+nginx/ssl/*.key
+nginx/ssl/*.pem
+
+# Build outputs
+build_output.txt
+qrcode_test.log

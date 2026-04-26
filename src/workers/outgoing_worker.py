@@ -95,24 +95,28 @@ class OutgoingMessageWorker:
 
             # 🎯 Pós-processamento do resultado do Bridge
             if response_bridge.get("success"):
-                # Callback de sucesso via WebSocket (RPC Pattern)
-                await ws_manager.send_to_conversation(
-                    tenant_id=tenant_id,
-                    conversation_id=to,
-                    message={
-                        "method": "update_message_status",
-                        "params": {
-                            "status": "sent",
-                            "message_id": response_bridge.get("message_id"),
-                            "external_id": response_bridge.get("message_id")
-                        }
-                    }
+                # Notifica o frontend via WebSocket RPC — método padronizado
+                # publish_event roteia diretamente para broadcast_to_tenant(tenant_id)
+                # garantindo que APENAS os agentes deste tenant recebam o status.
+                await ws_manager.publish_event(tenant_id, {
+                    "method": "message_status_update",
+                    "params": {
+                        "status":      "sent",
+                        "to":          to,
+                        "message_id":  response_bridge.get("message_id"),
+                        "external_id": response_bridge.get("message_id"),
+                        "tenant_id":   tenant_id,
+                    },
+                })
+                logger.info(
+                    f"✅ Mensagem enviada ao Bridge | tenant='{tenant_id}' | "
+                    f"para='{to}' | msg_id='{response_bridge.get('message_id')}'"
                 )
-                logger.info(f"✅ Mensagem entregue ao Bridge para '{to}' (ID: {response_bridge.get('message_id')})")
             else:
                 logger.error(
-                    f"❌ FALHA TOTAL após {max_retries} tentativas para '{instance.session_name}'. "
-                    f"Erro: {response_bridge.get('error')}"
+                    f"❌ FALHA TOTAL após {max_retries} tentativas | "
+                    f"tenant='{tenant_id}' | sessão='{instance.session_name}' | "
+                    f"erro='{response_bridge.get('error')}'"
                 )
 
 outgoing_worker = OutgoingMessageWorker()
