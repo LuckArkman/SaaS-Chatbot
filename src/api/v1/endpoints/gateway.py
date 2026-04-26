@@ -31,7 +31,7 @@ from src.services.message_normalizer import MessageNormalizer
 from src.core.tenancy import get_current_tenant_id, set_current_tenant_id
 from src.core.database import SessionLocal
 from src.core.ws import ws_manager
-from src.services.chat_service import ChatService
+from src.workers.flow_worker import flow_worker
 from src.models.chat import MessageSide
 from loguru import logger
 import asyncio
@@ -219,15 +219,19 @@ async def incoming_webhook(
 
         # ── PERSISTÊNCIA E BOT EM BACKGROUND (não bloqueia a resposta) ───────
         if not is_from_me:
-            asyncio.create_task(
-                ChatService.handle_incoming_message(
-                    tenant_id=resolved_tenant_id,
-                    contact_phone=contact_phone,
-                    notify_name=contact_display_name,
-                    user_input=unified_msg.content,
-                    external_id=unified_msg.message_id,
-                )
-            )
+            worker_payload = {
+                "tenant_id": resolved_tenant_id,
+                "data": {
+                    "from_id": contact_phone,
+                    "content": unified_msg.content,
+                    "message_id": unified_msg.message_id,
+                    "from_me": is_from_me,
+                    "notify_name": contact_display_name,
+                    "type": unified_msg.type.value
+                }
+            }
+            asyncio.create_task(flow_worker.handle_incoming_message(worker_payload))
+            
         return {"success": True, "status": "processed"}
 
     # ═════════════════════════════════════════════════════════════════════════

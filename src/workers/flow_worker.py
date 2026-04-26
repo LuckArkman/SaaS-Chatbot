@@ -56,6 +56,21 @@ class FlowWorker:
             if contact_phone and "@" in contact_phone:
                 contact_phone = contact_phone.split("@")[0]
 
+            # 2. Persiste a mensagem no Histórico (MongoDB) IMEDIATAMENTE
+            from src.services.message_history_service import MessageHistoryService
+            
+            session_name = f"tenant_{tenant_id}"
+            await MessageHistoryService.record_message(
+                contact_phone=contact_phone,
+                content=user_input,
+                side=MessageSide.CLIENT,
+                agent_id=None,
+                session_name=session_name,
+                msg_type=data.get("type", "text"),
+                external_id=external_id
+            )
+            logger.debug(f"📥 [FlowWorker] Mensagem de '{contact_phone}' persistida no MongoDB.")
+
             # 2. Busca Fluxo Ativo para o Tenant (Regras de Prioridade .NET)
             flow = await FlowDocument.find_one(
                 FlowDocument.tenant_id == tenant_id,
