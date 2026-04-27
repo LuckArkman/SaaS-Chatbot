@@ -42,17 +42,16 @@ services:
       - mongo_data:/data/db
     restart: always
 
-  saas_api:
+  saas_node_api:
     build:
-      context: .
-      dockerfile: Dockerfile.python
-    container_name: saas_api
+      context: ./node-version
+      dockerfile: Dockerfile
+    container_name: saas_node_api
     depends_on:
       - saas_postgres
       - saas_redis
       - saas_rabbitmq
       - saas_mongo
-      - saas_whatsapp_bridge
     environment:
       - DOCKER_CONTAINER=true
       - POSTGRES_SERVER=saas_postgres
@@ -62,22 +61,12 @@ services:
       - MONGODB_URL=mongodb://saas_chatbot:3702959@saas_mongo:27017/SaaS_Chatbot?authSource=admin
       - REDIS_URL=redis://saas_redis:6379/0
       - RABBITMQ_URL=amqp://admin:password123@saas_rabbitmq/
-      - WHATSAPP_BRIDGE_URL=http://172.18.0.1:4000
+      - GEMINI_API_KEY=sua_api_key_aqui
     ports:
       - "8001:8000"
     volumes:
-      - ./uploads:/app/uploads
-    restart: always
-
-  saas_whatsapp_bridge:
-    build:
-      context: ./SaaS.OmniChannelPlatform.Services.WhatsAppBot
-    container_name: saas_whatsapp_bridge
-    network_mode: host
-    environment:
-      - WEBHOOK_URL=http://127.0.0.1:8001/api/v1/gateway/webhook/whatsapp
-    volumes:
-      - ./SaaS.OmniChannelPlatform.Services.WhatsAppBot/tokens:/app/tokens
+      - ./node-version/uploads:/app/uploads
+      - ./node-version/src/config:/app/src/config # Mapeamento opcional
     restart: always
 
 volumes:
