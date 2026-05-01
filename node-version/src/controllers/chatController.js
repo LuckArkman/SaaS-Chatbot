@@ -17,10 +17,32 @@ const getChatHistory = async (req, res) => {
     
     const total = await Message.countDocuments({ contact_phone: cleanPhone, tenant_id: req.tenantId });
 
+    const serializedData = messages.reverse().map(doc => {
+      const isFromMe = ['agent', 'bot', 'human', 'system'].includes(doc.source);
+      return {
+        id: doc._id.toString(),
+        conversation_id: phone,
+        is_read: doc.ack === 3,
+        agent_id: null,
+        status: ['PENDING', 'SENT', 'DELIVERED', 'READ'][doc.ack] || 'SENT',
+        content: doc.content,
+        side: isFromMe ? 'bot' : 'client',
+        from_me: isFromMe,
+        type: doc.message_type || 'text',
+        external_id: doc.external_id,
+        created_at: doc.timestamp,
+        contact: {
+          id: doc.contact_phone,
+          full_name: doc.contact_name || doc.contact_phone,
+          phone_number: doc.contact_phone
+        }
+      };
+    });
+
     return res.json({
       total,
       has_more: total > skip + parseInt(limit),
-      data: messages.reverse() // Retorna na ordem cronológica de exibição UI
+      data: serializedData
     });
   } catch (e) {
     logger.error(`[Chat] Erro ao buscar histórico: ${e.message}`);
@@ -129,12 +151,27 @@ const getConversation = async (req, res) => {
                                   .sort({ timestamp: -1 })
                                   .limit(limit);
     
+    // Serialização rigorosa para o formato esperado pelo Front-end legado
+    const serializedMessages = messages.reverse().map(doc => {
+      const isFromMe = ['agent', 'bot', 'human', 'system'].includes(doc.source);
+      return {
+        message_id: doc.external_id || doc._id.toString(),
+        from_me: isFromMe,
+        side: isFromMe ? 'bot' : 'client',
+        sender: isFromMe ? doc.session_name : doc.contact_phone,
+        content: doc.content,
+        type: doc.message_type || 'text',
+        timestamp: new Date(doc.timestamp).getTime() / 1000,
+        status: doc.ack || 0
+      };
+    });
+
     return res.json({
       jid: `${cleanPhone}@s.whatsapp.net`,
       phone: cleanPhone,
-      total_messages: messages.length,
+      total_messages: serializedMessages.length,
       has_more: false,
-      messages: messages.reverse()
+      messages: serializedMessages
     });
   } catch (e) {
     logger.error(`[Chat] Erro ao recuperar histórico específico do DB: ${e.message}`);

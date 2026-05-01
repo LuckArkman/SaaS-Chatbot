@@ -243,6 +243,8 @@ class WhatsAppService {
               content: textContent,
               message_type: 'text',
               source: isFromMe ? 'agent' : 'user',
+              from_me: isFromMe,
+              side: isFromMe ? 'bot' : 'client',
               timestamp: new Date().toISOString()
             }
           };
