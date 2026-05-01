@@ -12,7 +12,7 @@ const { Boom } = require('@hapi/boom');
 const qrcodeLib = require('qrcode');
 
 const logger = require('../utils/logger');
-const { Message } = require('../models/nosql/Message');
+const Message = require('../models/nosql/Message');
 const { WhatsAppInstance, Contact } = require('../models/sql/models');
 const rabbitmqBus = require('../config/rabbitmq');
 const connectionManager = require('../websockets/connectionManager');

@@ -27,10 +27,11 @@ const getChatHistory = async (req, res) => {
 };
 
 const sendManualMessage = async (req, res) => {
-  const { to, content, type = 'text' } = req.body;
+  let { to, conversation_id, content, type = 'text' } = req.body;
+  to = to || conversation_id;
 
   if (!to || !content) {
-    return res.status(400).json({ detail: 'Destinatário e conteúdo são obrigatórios.' });
+    return res.status(400).json({ error: 'Destinatário e conteúdo são obrigatórios.' });
   }
 
   try {
