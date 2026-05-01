@@ -1,6 +1,6 @@
 const axios = require('axios');
 const logger = require('../../utils/logger');
-const { Message } = require('../../models/nosql/Message');
+const Message = require('../../models/nosql/Message');
 const { User } = require('../../models/sql/models');
 const redisService = require('../../config/redis');
 const connectionManager = require('../../websockets/connectionManager');

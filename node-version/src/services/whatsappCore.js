@@ -176,18 +176,49 @@ class WhatsAppService {
 
         logger.info(`[${sessionId}] 📩 Mensagem Recebida de ${phone}: ${textContent.substring(0,30)}`);
 
-        // GRAVAÇÃO DIRETA NO MONGOOSE (Zero Latência de Rede)
+        // GRAVAÇÃO NO MONGOOSE COM PROTEÇÃO CONTRA DUPLICATAS OTIMISTAS
         try {
-          await Message.create({
-            tenant_id: tenantId,
-            session_name: sessionId,
-            contact_phone: phone,
-            contact_name: pushName,
-            content: textContent,
-            source: isFromMe ? 'agent' : 'user',
-            message_type: 'text',
-            external_id: msg.key.id
-          });
+          if (isFromMe) {
+            // Se foi enviada via API/Bot, a mensagem "otimista" já existe sem external_id
+            const existingMsg = await Message.findOne({
+              tenant_id: tenantId,
+              contact_phone: phone,
+              content: textContent,
+              source: 'agent',
+              external_id: null
+            }).sort({ timestamp: -1 });
+
+            if (existingMsg) {
+              existingMsg.external_id = msg.key.id;
+              existingMsg.ack = 1; // Enviado
+              await existingMsg.save();
+            } else {
+              // Enviado direto do celular do usuário
+              await Message.create({
+                tenant_id: tenantId,
+                session_name: sessionId,
+                contact_phone: phone,
+                contact_name: pushName,
+                content: textContent,
+                source: 'agent',
+                message_type: 'text',
+                external_id: msg.key.id,
+                ack: 1
+              });
+            }
+          } else {
+            // Mensagem incoming de um usuário
+            await Message.create({
+              tenant_id: tenantId,
+              session_name: sessionId,
+              contact_phone: phone,
+              contact_name: pushName,
+              content: textContent,
+              source: 'user',
+              message_type: 'text',
+              external_id: msg.key.id
+            });
+          }
 
           // BROADCAST WS EM TEMPO REAL PARA O FRONTEND
           let contactDisplayName = pushName;
@@ -249,7 +280,7 @@ class WhatsAppService {
     logger.info(`[${sessionId}] 📤 Enviando nativamente para ${jid}`);
     
     const result = await sock.sendMessage(jid, { text: content });
-    return { success: true, message_id: result.key.id };
+    return { success: !!result, message_id: result?.key?.id };
   }
 
   async listContacts(sessionId) {

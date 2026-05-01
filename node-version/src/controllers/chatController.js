@@ -8,12 +8,12 @@ const getChatHistory = async (req, res) => {
   const skip = (page - 1) * limit;
 
   try {
-    const messages = await Message.find({ contact_phone: phone })
+    const messages = await Message.find({ contact_phone: phone, tenant_id: req.tenantId })
                                   .sort({ timestamp: -1 })
                                   .skip(parseInt(skip))
                                   .limit(parseInt(limit));
     
-    const total = await Message.countDocuments({ contact_phone: phone });
+    const total = await Message.countDocuments({ contact_phone: phone, tenant_id: req.tenantId });
 
     return res.json({
       total,
