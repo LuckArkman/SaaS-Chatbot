@@ -99,6 +99,10 @@ const bootstrap = async () => {
     await campaignWorker.start();
     logger.info('⚙️ Workers assíncronos carregados no Event Loop.');
 
+    // 4.5. Restaura Sessões do WhatsApp ativas
+    const whatsappService = require('./src/services/whatsappCore');
+    await whatsappService.initializeActiveSessions();
+
     // 5. Cron Jobs
     const BillingNotificationService = require('./src/services/billing/billingNotificationService');
     setInterval(async () => {

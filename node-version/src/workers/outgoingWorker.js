@@ -31,9 +31,8 @@ class OutgoingMessageWorker {
     // 🔧 FIX CRÍTICO #1: Aplica o contexto de Tenancy para garantir queries seguras
     await tenancyContext.run({ tenantId: tenant_id.toUpperCase() }, async () => {
       
-      // Busca instância ativa do tenant
       const instance = await WhatsAppInstance.findOne({
-        where: { is_active: true },
+        where: { tenant_id: tenant_id.toUpperCase(), is_active: true },
         order: [['id', 'DESC']]
       });
 

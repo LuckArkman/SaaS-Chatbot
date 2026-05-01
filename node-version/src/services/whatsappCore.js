@@ -284,6 +284,34 @@ class WhatsAppService {
     // Retorna as últimas N mensagens
     return messages.slice(-limit);
   }
+
+  /**
+   * Restaura todas as sessões que estavam marcadas como CONNECTED no banco ao reiniciar o servidor
+   */
+  async initializeActiveSessions() {
+    logger.info('🔄 Procurando sessões do WhatsApp para restaurar...');
+    try {
+      const activeInstances = await WhatsAppInstance.findAll({
+        where: {
+          is_active: true,
+          status: ['CONNECTED', 'QRCODE', 'CONNECTING']
+        }
+      });
+
+      for (const instance of activeInstances) {
+        logger.info(`🔄 Restaurando sessão do tenant '${instance.tenant_id}' (${instance.session_name})...`);
+        
+        // Coloca como conectando para evitar inconsistências
+        await instance.update({ status: 'CONNECTING' });
+        
+        // Inicia
+        this.initializeSession(instance.tenant_id, instance.session_name);
+      }
+      logger.info(`✅ ${activeInstances.length} sessões enviadas para inicialização.`);
+    } catch (e) {
+      logger.error(`❌ Erro ao restaurar sessões: ${e.message}`);
+    }
+  }
 }
 
 const whatsappService = new WhatsAppService();
