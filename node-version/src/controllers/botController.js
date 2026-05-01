@@ -6,7 +6,10 @@ const path = require('path');
 
 // Helper interno (Substitui WhatsAppManagerService.get_or_create_instance)
 const getOrCreateInstance = async (tenantId) => {
-  let instance = await WhatsAppInstance.findOne({ where: { tenant_id: tenantId } });
+  let instance = await WhatsAppInstance.findOne({ 
+    where: { tenant_id: tenantId },
+    order: [['id', 'DESC']]
+  });
   if (!instance) {
     const sessionName = `tenant_${tenantId}`;
     instance = await WhatsAppInstance.create({
@@ -50,7 +53,10 @@ const getQrStream = async (req, res) => {
     // Em Node.js usamos um intervalo que checa o DB, ou escuta os eventos do WhatsappCore
     const intervalId = setInterval(async () => {
       try {
-        const currentInstance = await WhatsAppInstance.findOne({ where: { tenant_id: req.tenantId } });
+        const currentInstance = await WhatsAppInstance.findOne({ 
+          where: { tenant_id: req.tenantId },
+          order: [['id', 'DESC']]
+        });
         if (!currentInstance) return;
 
         if (currentInstance.qrcode_base64 !== lastQr) {

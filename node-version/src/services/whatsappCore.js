@@ -274,7 +274,8 @@ class WhatsAppService {
    */
   async sendMessage(sessionId, to, content) {
     const sock = this.sockets[sessionId];
-    if (!sock) throw new Error(`Sessão ${sessionId} não está ativa.`);
+    if (!sock) throw new Error(`Sessão ${sessionId} não está ativa na memória.`);
+    if (!sock.user) throw new Error(`Sessão ${sessionId} não está autenticada (Aguardando QR Code).`);
     
     const jid = normalizeToJid(to);
     logger.info(`[${sessionId}] 📤 Enviando nativamente para ${jid}`);

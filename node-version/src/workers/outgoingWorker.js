@@ -41,8 +41,8 @@ class OutgoingMessageWorker {
         return;
       }
 
-      if (instance.status === 'disconnected') {
-        logger.warn(`⚠️ Instância '${instance.session_name}' desconectada. Mensagem para '${to}' abortada.`);
+      if (instance.status !== 'CONNECTED') {
+        logger.warn(`⚠️ Instância '${instance.session_name}' não está conectada (Status atual: ${instance.status}). Mensagem para '${to}' abortada.`);
         return;
       }
 
