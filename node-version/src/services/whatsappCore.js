@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const pino = require('pino');
 const { Boom } = require('@hapi/boom');
+const qrcodeLib = require('qrcode');
 
 const logger = require('../utils/logger');
 const { Message } = require('../models/nosql/Message');
@@ -107,10 +108,15 @@ class WhatsAppService {
 
       if (qr) {
         logger.info(`[${sessionId}] 🟢 Novo QR Code gerado.`);
-        await WhatsAppInstance.update(
-          { status: 'QRCODE', qrcode_base64: qr },
-          { where: { session_name: sessionId }, ignoreTenant: true }
-        );
+        try {
+          const qrBase64 = await qrcodeLib.toDataURL(qr);
+          await WhatsAppInstance.update(
+            { status: 'QRCODE', qrcode_base64: qrBase64 },
+            { where: { session_name: sessionId }, ignoreTenant: true }
+          );
+        } catch (e) {
+          logger.error(`[${sessionId}] Erro ao converter QR para base64: ${e.message}`);
+        }
         // Em um sistema real, dispararíamos um Socket.io broadcast aqui
       }
 
