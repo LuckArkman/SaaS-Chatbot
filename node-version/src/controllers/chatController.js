@@ -3,7 +3,8 @@ const rabbitmqBus = require('../config/rabbitmq');
 const logger = require('../utils/logger');
 
 const getChatHistory = async (req, res) => {
-  const { phone } = req.params;
+  const phone = req.params.conversation_id || req.params.phone;
+  if (!phone) return res.status(400).json({ detail: 'Phone is required' });
   const cleanPhone = phone.split('@')[0]; // Previne vazamento do JID
   const { limit = 50, page = 1 } = req.query;
   const skip = (page - 1) * limit;
@@ -118,7 +119,8 @@ const listConversations = async (req, res) => {
 };
 
 const getConversation = async (req, res) => {
-  const { phone } = req.params;
+  const phone = req.params.conversation_id || req.params.phone;
+  if (!phone) return res.status(400).json({ detail: 'Phone is required' });
   const cleanPhone = phone.split('@')[0];
   const limit = parseInt(req.query.limit || 50);
   
