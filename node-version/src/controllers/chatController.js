@@ -4,16 +4,17 @@ const logger = require('../utils/logger');
 
 const getChatHistory = async (req, res) => {
   const { phone } = req.params;
+  const cleanPhone = phone.split('@')[0]; // Previne vazamento do JID
   const { limit = 50, page = 1 } = req.query;
   const skip = (page - 1) * limit;
 
   try {
-    const messages = await Message.find({ contact_phone: phone, tenant_id: req.tenantId })
+    const messages = await Message.find({ contact_phone: cleanPhone, tenant_id: req.tenantId })
                                   .sort({ timestamp: -1 })
                                   .skip(parseInt(skip))
                                   .limit(parseInt(limit));
     
-    const total = await Message.countDocuments({ contact_phone: phone, tenant_id: req.tenantId });
+    const total = await Message.countDocuments({ contact_phone: cleanPhone, tenant_id: req.tenantId });
 
     return res.json({
       total,
@@ -74,52 +75,67 @@ const getActiveSessionName = async (tenantId) => {
 
 const listConversations = async (req, res) => {
   try {
-    const sessionName = await getActiveSessionName(req.tenantId);
-    let chats = await whatsappCore.listChats(sessionName);
-    
-    // Filtra apenas contatos diretos e remove broadcasts/newsletters
-    chats = chats.filter(chat => {
-      const id = chat.id || '';
-      return id.endsWith('@s.whatsapp.net') || id.endsWith('@c.us') || !id.includes('@');
-    });
+    const limit = parseInt(req.query.limit || 50);
 
-    // Ordena do mais recente para o mais antigo
-    chats.sort((a, b) => (b.conversationTimestamp || 0) - (a.conversationTimestamp || 0));
+    // Agregação no MongoDB para pegar o último diálogo de cada contato do Tenant
+    const conversations = await Message.aggregate([
+      { $match: { tenant_id: req.tenantId } },
+      { $sort: { timestamp: -1 } },
+      {
+        $group: {
+          _id: "$contact_phone",
+          contact_phone: { $first: "$contact_phone" },
+          contact_name: { $first: "$contact_name" },
+          last_message: { $first: "$content" },
+          timestamp: { $first: "$timestamp" },
+          unread_count: {
+            $sum: { $cond: [{ $eq: ["$ack", 0] }, 1, 0] } // Exemplo simples
+          }
+        }
+      },
+      { $sort: { timestamp: -1 } },
+      { $limit: limit }
+    ]);
+
+    // Formata pro formato que o Front-end espera
+    const formattedConversations = conversations.map(c => ({
+      id: c.contact_phone,
+      contact_name: c.contact_name || 'Desconhecido',
+      contact_phone: c.contact_phone,
+      last_message: c.last_message,
+      timestamp: c.timestamp,
+      unread_count: c.unread_count
+    }));
 
     return res.json({
-      total: chats.length,
-      session_id: sessionName,
-      conversations: chats.slice(0, parseInt(req.query.limit || 50))
+      total: formattedConversations.length,
+      conversations: formattedConversations
     });
   } catch (e) {
-    logger.error(`[Chat] Erro ao listar conversas: ${e.message}`);
+    logger.error(`[Chat] Erro ao listar conversas via DB: ${e.message}`);
     return res.status(503).json({ detail: e.message });
   }
 };
 
 const getConversation = async (req, res) => {
   const { phone } = req.params;
+  const cleanPhone = phone.split('@')[0];
   const limit = parseInt(req.query.limit || 50);
   
   try {
-    const sessionName = await getActiveSessionName(req.tenantId);
-    
-    // Faz o backfill das mensagens em memória do WhatsApp
-    const nativeMessages = await whatsappCore.getChatHistory(sessionName, phone, limit);
-    
-    // No ambiente real, faríamos o sync disso com o Mongo (Message.findOrCreate...)
-    // Aqui retornaremos direto da memória por performance para a requisição, e depois a persistência
-    // seria contínua via Worker (já implementado no upsert do Baileys)
+    const messages = await Message.find({ contact_phone: cleanPhone, tenant_id: req.tenantId })
+                                  .sort({ timestamp: -1 })
+                                  .limit(limit);
     
     return res.json({
-      jid: phone.includes('@') ? phone : `${phone}@s.whatsapp.net`,
-      phone: phone.split('@')[0],
-      total_messages: nativeMessages.length,
+      jid: `${cleanPhone}@s.whatsapp.net`,
+      phone: cleanPhone,
+      total_messages: messages.length,
       has_more: false,
-      messages: nativeMessages
+      messages: messages.reverse()
     });
   } catch (e) {
-    logger.error(`[Chat] Erro ao recuperar histórico específico: ${e.message}`);
+    logger.error(`[Chat] Erro ao recuperar histórico específico do DB: ${e.message}`);
     return res.status(503).json({ detail: e.message });
   }
 };
