@@ -57,13 +57,15 @@ const sendManualMessage = async (req, res) => {
   if (!to || !content) {
     return res.status(400).json({ error: 'Destinatário e conteúdo são obrigatórios.' });
   }
+  
+  const cleanTo = String(to).split('@')[0];
 
   try {
     // 1. Grava no banco otimista (Aparece instantâneo no Front)
     const pendingMessage = await Message.create({
       tenant_id: req.tenantId,
       session_name: `tenant_${req.tenantId}`, // Padrão
-      contact_phone: to,
+      contact_phone: cleanTo,
       content: content,
       source: 'agent', // Human agent
       message_type: type,
@@ -73,7 +75,7 @@ const sendManualMessage = async (req, res) => {
     // 2. Dispara pra fila de Outgoing (Mesma arquitetura testada e resiliente do Python)
     await rabbitmqBus.publish('messages_exchange', 'message.outgoing', {
       tenant_id: req.tenantId,
-      to,
+      to: cleanTo,
       content,
       type
     });

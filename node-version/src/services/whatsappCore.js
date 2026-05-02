@@ -253,6 +253,8 @@ class WhatsAppService {
           await connectionManager.broadcastToTenant(tenantId, socketPayload);
 
           // SE MENSAGEM DO USUÁRIO -> INSERE NA FILA DE FLOW (RabbitMQ)
+          /* 
+          // [REMOVIDO A PEDIDO DO USUÁRIO] - Desativa a auto-resposta de fluxo.
           if (!isFromMe) {
             await rabbitmqBus.publish('messages_exchange', 'message.incoming', {
               tenant_id: tenantId,
@@ -263,6 +265,7 @@ class WhatsAppService {
               message_id: msg.key.id
             });
           }
+          */
 
         } catch (dbErr) {
           logger.error(`[${sessionId}] ❌ Erro ao processar mensagem localmente: ${dbErr.message}`);
