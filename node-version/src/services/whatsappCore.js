@@ -43,6 +43,12 @@ class WhatsAppService {
   constructor() {
     this.sockets = {};
     this.stores = {};
+    /**
+     * Mapa LID → telefone real por sessão.
+     * Populado automaticamente pelos eventos contacts.set / contacts.upsert do Baileys.
+     * Estrutura: { sessionId: { 'xxxx@lid': '5511999999999' } }
+     */
+    this.lidMaps = {};
     // Logger minimalista embutido para o Baileys não sujar o terminal
     this.baileysLogger = pino({ level: 'silent' });
   }
@@ -61,13 +67,39 @@ class WhatsAppService {
     const { version } = await fetchLatestBaileysVersion();
 
     // Store customizado assíncrono para evitar Memory Leaks e Event Loop Block (Sprint Bridge)
+    // Inicializa o mapa LID para esta sessão
+    this.lidMaps[sessionId] = this.lidMaps[sessionId] || {};
+    const lidMap = this.lidMaps[sessionId];
+
+    /**
+     * Popula o mapa LID → telefone a partir de um array de contatos do Baileys.
+     * Cada contato pode ter { id: '55xxx@s.whatsapp.net', lid: 'yyy@lid' }.
+     * @param {Array} contacts - Array de objetos de contato do Baileys
+     */
+    const populateLidMap = (contacts) => {
+      if (!contacts) return;
+      contacts.forEach(c => {
+        if (c.id && c.id.includes('@s.whatsapp.net') && c.lid) {
+          const phone = c.id.split('@')[0];
+          lidMap[c.lid] = phone;
+          logger.info(`[${sessionId}] 🗺️ LID mapeado: ${c.lid} → ${phone}`);
+        }
+      });
+    };
+
     const store = {
       messages: {}, chats: {}, contacts: {},
       bind(ev) {
         ev.on('chats.set', ({ chats }) => chats.forEach(c => this.chats[c.id] = c));
         ev.on('chats.upsert', (chats) => chats.forEach(c => this.chats[c.id] = { ...this.chats[c.id], ...c }));
-        ev.on('contacts.set', ({ contacts }) => contacts.forEach(c => c.id && (this.contacts[c.id] = c)));
-        ev.on('contacts.upsert', (contacts) => contacts.forEach(c => c.id && (this.contacts[c.id] = { ...this.contacts[c.id], ...c })));
+        ev.on('contacts.set', ({ contacts }) => {
+          contacts.forEach(c => c.id && (this.contacts[c.id] = c));
+          populateLidMap(contacts); // Popula mapa LID na sincronização inicial
+        });
+        ev.on('contacts.upsert', (contacts) => {
+          contacts.forEach(c => c.id && (this.contacts[c.id] = { ...this.contacts[c.id], ...c }));
+          populateLidMap(contacts); // Popula mapa LID em atualizações incrementais
+        });
 
         // Batching Assíncrono do Histórico (Portado fielmente da Etapa Anterior)
         ev.on('messaging-history.set', async ({ chats, contacts, messages }) => {
@@ -81,6 +113,7 @@ class WhatsAppService {
           };
           await processBatch(chats, c => this.chats[c.id] = c);
           await processBatch(contacts, c => c.id && (this.contacts[c.id] = c));
+          if (contacts) populateLidMap(contacts); // Garante LID mapeado no histórico também
         });
       }
     };
@@ -163,8 +196,62 @@ class WhatsAppService {
         const remoteJid = msg.key.remoteJid;
         if (remoteJid === 'status@broadcast') continue; // Ignora status de WhatsApp
 
-        const phone = remoteJid.split('@')[0];
+        const jidSuffix = remoteJid.split('@')[1] || '';
+        let phone = remoteJid.split('@')[0];
         const pushName = msg.pushName || 'Contato Desconhecido';
+
+        // ── RESOLUÇÃO DE JID NO FORMATO LID ──────────────────────────────────────────
+        // O WhatsApp usa Linked Device Identifiers (LID) que não são números de telefone.
+        // Exemplo: '22285310236267670@lid' — deve ser resolvido para '5511998828726'.
+        // Hierarquia de resolução:
+        //   1. lidMap (mapa em memória populado na sincronização de contatos) — O(1)
+        //   2. Scan de store.contacts procurando c.lid === remoteJid         — O(n)
+        //   3. PostgreSQL: busca contato pelo pushName (full_name)            — async DB
+        //   4. Descarte — evita salvar dados corrompidos no MongoDB
+        if (jidSuffix === 'lid') {
+          const currentLidMap = this.lidMaps[sessionId] || {};
+
+          if (currentLidMap[remoteJid]) {
+            // Caminho rápido: mapa já populado
+            phone = currentLidMap[remoteJid];
+            logger.info(`[${sessionId}] 🗺️ LID resolvido via mapa: ${remoteJid} → ${phone}`);
+
+          } else {
+            // Caminho médio: scan nos contatos em memória
+            const contactsArr = Object.values(store.contacts);
+            const matchByLid = contactsArr.find(
+              c => c.lid === remoteJid && c.id && c.id.includes('@s.whatsapp.net')
+            );
+
+            if (matchByLid) {
+              phone = matchByLid.id.split('@')[0];
+              currentLidMap[remoteJid] = phone; // Cacheia para futuras mensagens
+              logger.info(`[${sessionId}] 🔍 LID resolvido via scan: ${remoteJid} → ${phone}`);
+
+            } else if (pushName && pushName !== 'Contato Desconhecido') {
+              // Caminho lento: consulta PostgreSQL pelo nome do contato
+              try {
+                const pgContact = await Contact.findOne({
+                  where: { full_name: pushName, tenant_id: tenantId }
+                });
+                if (pgContact?.phone_number) {
+                  phone = pgContact.phone_number;
+                  currentLidMap[remoteJid] = phone; // Cacheia para futuras mensagens
+                  logger.info(`[${sessionId}] 🗄️ LID resolvido via PostgreSQL (nome='${pushName}'): ${remoteJid} → ${phone}`);
+                } else {
+                  logger.warn(`[${sessionId}] ⚠️ LID não resolvível (sem contato pg para '${pushName}'): ${remoteJid}. Descartado.`);
+                  continue;
+                }
+              } catch (pgErr) {
+                logger.warn(`[${sessionId}] ⚠️ Erro ao consultar PostgreSQL para LID ${remoteJid}: ${pgErr.message}. Descartado.`);
+                continue;
+              }
+            } else {
+              logger.warn(`[${sessionId}] ⚠️ LID não resolvível (sem pushName e sem mapa): ${remoteJid}. Descartado.`);
+              continue;
+            }
+          }
+        }
 
         // Normalização Mínima de Texto
         let textContent = '';
