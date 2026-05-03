@@ -1,7 +1,7 @@
-const { 
-  makeWASocket, 
-  useMultiFileAuthState, 
-  fetchLatestBaileysVersion, 
+const {
+  makeWASocket,
+  useMultiFileAuthState,
+  fetchLatestBaileysVersion,
   DisconnectReason,
   Browsers
 } = require('@whiskeysockets/baileys');
@@ -23,18 +23,18 @@ const connectionManager = require('../websockets/connectionManager');
 function normalizeToJid(phone) {
   const digits = String(phone).replace(/\D/g, '');
   if (digits.length === 12 || digits.length === 13) {
-      if (digits.startsWith('55') && digits.length === 13 && digits[4] === '9') {
-          const areaCode = digits.substring(2, 4);
-          if (parseInt(areaCode) <= 27) {
-              return `${digits}@s.whatsapp.net`;
-          } else {
-              return `55${areaCode}${digits.substring(5)}@s.whatsapp.net`;
-          }
+    if (digits.startsWith('55') && digits.length === 13 && digits[4] === '9') {
+      const areaCode = digits.substring(2, 4);
+      if (parseInt(areaCode) <= 27) {
+        return `${digits}@s.whatsapp.net`;
+      } else {
+        return `55${areaCode}${digits.substring(5)}@s.whatsapp.net`;
       }
-      return `${digits}@s.whatsapp.net`;
+    }
+    return `${digits}@s.whatsapp.net`;
   }
   if (digits.length >= 10 && digits.length <= 11) {
-      return `55${digits}@s.whatsapp.net`;
+    return `55${digits}@s.whatsapp.net`;
   }
   return `${digits}@s.whatsapp.net`;
 }
@@ -51,7 +51,7 @@ class WhatsAppService {
     if (this.sockets[sessionId]) return;
 
     logger.info(`[*] Iniciando Baileys Nativo para tenant: ${tenantId} | session: ${sessionId}`);
-    
+
     const tokenPath = path.join(__dirname, '..', '..', 'tokens', sessionId);
     if (!fs.existsSync(tokenPath)) {
       fs.mkdirSync(tokenPath, { recursive: true });
@@ -68,10 +68,10 @@ class WhatsAppService {
         ev.on('chats.upsert', (chats) => chats.forEach(c => this.chats[c.id] = { ...this.chats[c.id], ...c }));
         ev.on('contacts.set', ({ contacts }) => contacts.forEach(c => c.id && (this.contacts[c.id] = c)));
         ev.on('contacts.upsert', (contacts) => contacts.forEach(c => c.id && (this.contacts[c.id] = { ...this.contacts[c.id], ...c })));
-        
+
         // Batching Assíncrono do Histórico (Portado fielmente da Etapa Anterior)
         ev.on('messaging-history.set', async ({ chats, contacts, messages }) => {
-          logger.info(`[${sessionId}] 📚 Processando histórico massivo: chats=${chats?.length||0}, msgs=${messages?.length||0}`);
+          logger.info(`[${sessionId}] 📚 Processando histórico massivo: chats=${chats?.length || 0}, msgs=${messages?.length || 0}`);
           const processBatch = async (items, processor) => {
             if (!items) return;
             for (let i = 0; i < items.length; i += 100) {
@@ -124,19 +124,19 @@ class WhatsAppService {
         const shouldReconnect = (lastDisconnect.error instanceof Boom)
           ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut
           : true;
-        
+
         logger.warn(`[${sessionId}] Conexão fechada. Motivo: ${lastDisconnect.error}. Reconectar? ${shouldReconnect}`);
-        
+
         if (shouldReconnect) {
-           await WhatsAppInstance.update(
+          await WhatsAppInstance.update(
             { status: 'CONNECTING' },
             { where: { session_name: sessionId }, ignoreTenant: true }
           );
           delete this.sockets[sessionId];
           setTimeout(() => this.initializeSession(tenantId, sessionId), 5000);
         } else {
-           logger.error(`[${sessionId}] Sessão permanentemente deslogada.`);
-           await WhatsAppInstance.update(
+          logger.error(`[${sessionId}] Sessão permanentemente deslogada.`);
+          await WhatsAppInstance.update(
             { status: 'DISCONNECTED', qrcode_base64: null },
             { where: { session_name: sessionId }, ignoreTenant: true }
           );
@@ -165,7 +165,7 @@ class WhatsAppService {
 
         const phone = remoteJid.split('@')[0];
         const pushName = msg.pushName || 'Contato Desconhecido';
-        
+
         // Normalização Mínima de Texto
         let textContent = '';
         if (msg.message.conversation) textContent = msg.message.conversation;
@@ -174,7 +174,7 @@ class WhatsAppService {
         else if (msg.message.audioMessage) textContent = '🎵 [Áudio]';
         else textContent = '📦 [Mídia/Outro]';
 
-        logger.info(`[${sessionId}] 📩 Mensagem Recebida de ${phone}: ${textContent.substring(0,30)}`);
+        logger.info(`[${sessionId}] 📩 Mensagem Recebida de ${phone}: ${textContent.substring(0, 30)}`);
 
         // GRAVAÇÃO NO MONGOOSE COM PROTEÇÃO CONTRA DUPLICATAS OTIMISTAS
         try {
@@ -227,13 +227,13 @@ class WhatsAppService {
             if (localContact && localContact.full_name) {
               contactDisplayName = localContact.full_name;
             }
-          } catch (err) {}
+          } catch (err) { }
 
           const socketPayload = {
             method: 'receive_message',
             params: {
               message_id: msg.key.id,
-              conversation_id: remoteJid,
+              conversation_id: phone,  // Usa o telefone normalizado (nunca o JID/LID bruto)
               contact_phone: phone,
               contact: {
                 phone: phone,
@@ -275,16 +275,36 @@ class WhatsAppService {
   }
 
   /**
+   * Resolve o sessionId ativo em memória para um determinado tenantId.
+   * Prioriza sessões autenticadas (sock.user != null). Garante que o controller
+   * nunca dependa do PostgreSQL para descobrir a sessão correta.
+   * @param {string} tenantId - ID do tenant (ex: 'FBEAE7DA')
+   * @returns {string|null} sessionId ativo ou null se não encontrado
+   */
+  getActiveSessionForTenant(tenantId) {
+    const prefix = `tenant_${tenantId.toUpperCase()}`;
+    // Prioriza sessão autenticada
+    const authenticatedSession = Object.keys(this.sockets).find(
+      sessionId => sessionId.startsWith(prefix) && this.sockets[sessionId]?.user
+    );
+    // Fallback: qualquer sessão do tenant
+    const anySession = Object.keys(this.sockets).find(
+      sessionId => sessionId.startsWith(prefix)
+    );
+    return authenticatedSession || anySession || null;
+  }
+
+  /**
    * Envio de mensagens invocado pelos Workers ou API diretamente em memória
    */
   async sendMessage(sessionId, to, content) {
     const sock = this.sockets[sessionId];
     if (!sock) throw new Error(`Sessão ${sessionId} não está ativa na memória.`);
     if (!sock.user) throw new Error(`Sessão ${sessionId} não está autenticada (Aguardando QR Code).`);
-    
+
     const jid = normalizeToJid(to);
     logger.info(`[${sessionId}] 📤 Enviando nativamente para ${jid}`);
-    
+
     const result = await sock.sendMessage(jid, { text: content });
     return { success: !!result, message_id: result?.key?.id };
   }
@@ -315,7 +335,7 @@ class WhatsAppService {
     const store = this.stores[sessionId];
     if (!store) throw new Error(`Sessão ${sessionId} não está ativa.`);
     const jid = normalizeToJid(phone);
-    
+
     // O store.messages guarda arrays de mensagens indexados pelo JID
     const messages = store.messages[jid]?.array || [];
     // Retorna as últimas N mensagens
@@ -337,10 +357,10 @@ class WhatsAppService {
 
       for (const instance of activeInstances) {
         logger.info(`🔄 Restaurando sessão do tenant '${instance.tenant_id}' (${instance.session_name})...`);
-        
+
         // Coloca como conectando para evitar inconsistências
         await instance.update({ status: 'CONNECTING' });
-        
+
         // Inicia
         this.initializeSession(instance.tenant_id, instance.session_name);
       }
