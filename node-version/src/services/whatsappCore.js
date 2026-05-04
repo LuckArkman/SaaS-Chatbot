@@ -180,7 +180,7 @@ class WhatsAppService {
 
         // ── LOG DE DEBUG: CORPO COMPLETO DA MENSAGEM (Apenas Recebidas) ─────────────
         if (!isFromMe) {
-          logger.info(`[${sessionId}] 📦 RAW RECEIVED MESSAGE: ${JSON.stringify(msg, null, 2)}`);
+          // logger.debug(`[${sessionId}] 📦 RAW RECEIVED MESSAGE: ${JSON.stringify(msg, null, 2)}`);
         }
 
         const remoteJid = msg.key.remoteJid;
@@ -202,59 +202,63 @@ class WhatsAppService {
         // Hierarquia de resolução:
         //   1. lidMap (mapa em memória populado na sincronização de contatos) — O(1)
         //   2. Scan de store.contacts procurando c.lid === remoteJid         — O(n)
-        //   3. PostgreSQL: busca contato pelo pushName (full_name)            — async DB
+        //   2. Redis: persistência entre sessões
+        //   3. Scan de store.contacts procurando c.lid === remoteJid         — O(n)
         //   4. Descarte — evita salvar dados corrompidos no MongoDB
         // ── RESOLUÇÃO DE JID NO FORMATO LID / GRUPOS ────────────────────────────────
         // Prioridade 0: participantPn (Campo nativo do Baileys que traz o telefone real)
         const participantPn = msg.key.participantPn || (msg.message?.extendedTextMessage?.contextInfo?.participantPn);
         if (participantPn && participantPn.includes('@s.whatsapp.net')) {
           phone = phoneUtils.normalizeToDb(participantPn.split('@')[0]);
+          
+          // Alimenta o cache (Memória e Redis) para acelerar futuras mensagens
+          const currentLidMap = this.lidMaps[sessionId] || {};
+          currentLidMap[remoteJid] = phone;
+          try {
+            const redisService = require('../config/redis');
+            await redisService.set(`lid_map:${tenantId}:${remoteJid}`, phone, 60 * 60 * 24 * 30);
+          } catch (e) {}
+
           logger.info(`[${sessionId}] 💎 LID resolvido via participantPn: ${remoteJid} → ${phone}`);
         }
         else if (jidSuffix === 'lid') {
           const currentLidMap = this.lidMaps[sessionId] || {};
 
+          // 1. Tenta Memória (Rápido)
           if (currentLidMap[remoteJid]) {
             phone = currentLidMap[remoteJid];
           } else {
-            // Busca exaustiva no Store do Baileys (Contatos sincronizados)
-            const contactsArr = Object.values(store.contacts || {});
-            const matchByLid = contactsArr.find(
-              c => c.lid === remoteJid && c.id && c.id.includes('@s.whatsapp.net')
-            );
-
-            if (matchByLid) {
-              phone = phoneUtils.normalizeToDb(matchByLid.id.split('@')[0]);
-              currentLidMap[remoteJid] = phone;
-              logger.info(`[${sessionId}] 🔎 LID resolvido via Store Scan: ${remoteJid} → ${phone}`);
-            } else {
-              // Fallback 1: Participant JID
-              const realJid = msg.key.participant || msg.participant;
-              if (realJid && realJid.includes('@s.whatsapp.net')) {
-                phone = phoneUtils.normalizeToDb(realJid.split('@')[0]);
+            // 2. Tenta Redis (Persistente entre Restarts)
+            try {
+              const redisService = require('../config/redis');
+              const cachedPhone = await redisService.get(`lid_map:${tenantId}:${remoteJid}`);
+              if (cachedPhone) {
+                phone = cachedPhone;
                 currentLidMap[remoteJid] = phone;
-                logger.info(`[${sessionId}] 💡 LID resolvido via Participant JID: ${remoteJid} → ${phone}`);
-              } 
-              // Fallback 2: Busca no PG por Nome (Insensível a Maiúsculas)
-              else if (pushName && pushName !== 'Contato Desconhecido') {
+                logger.info(`[${sessionId}] 🚀 LID resolvido via Redis: ${remoteJid} → ${phone}`);
+              }
+            } catch (redisErr) {
+              logger.debug(`[${sessionId}] ⚠️ Redis indisponível para LID cache: ${redisErr.message}`);
+            }
+
+            if (!phone) {
+              // 3. Tenta Store Scan (Sincronização atual)
+              const contactsArr = Object.values(store.contacts || {});
+              const matchByLid = contactsArr.find(
+                c => c.lid === remoteJid && c.id && c.id.includes('@s.whatsapp.net')
+              );
+
+              if (matchByLid) {
+                phone = phoneUtils.normalizeToDb(matchByLid.id.split('@')[0]);
+                currentLidMap[remoteJid] = phone;
+                
+                // Persiste no Redis para a próxima vez
                 try {
-                  const { Op } = require('sequelize');
-                  const pgContact = await Contact.findOne({ 
-                    where: { 
-                      full_name: { [Op.iLike]: pushName }, 
-                      tenant_id: tenantId 
-                    } 
-                  });
-                  if (pgContact?.phone_number) {
-                    phone = pgContact.phone_number;
-                    currentLidMap[remoteJid] = phone;
-                    logger.info(`[${sessionId}] 🗄️ LID resolvido via PG (iLike Nome: ${pushName}): ${remoteJid} → ${phone}`);
-                  } else {
-                    logger.debug(`[${sessionId}] 🔍 PG Search: Nenhum contato encontrado para nome '${pushName}' (tenant: ${tenantId})`);
-                  }
-                } catch (pgErr) { 
-                  logger.error(`[${sessionId}] ❌ Erro na busca PG por nome: ${pgErr.message}`);
-                }
+                  const redisService = require('../config/redis');
+                  await redisService.set(`lid_map:${tenantId}:${remoteJid}`, phone, 60 * 60 * 24 * 30); // 30 dias
+                } catch (e) {}
+
+                logger.info(`[${sessionId}] 🔎 LID resolvido via Store Scan: ${remoteJid} → ${phone}`);
               }
             }
           }
