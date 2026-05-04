@@ -198,13 +198,11 @@ class WhatsAppService {
 
         // ── RESOLUÇÃO DE JID NO FORMATO LID ──────────────────────────────────────────
         // O WhatsApp usa Linked Device Identifiers (LID) que não são números de telefone.
-        // Exemplo: '22285310236267670@lid' — deve ser resolvido para '5511998828726'.
-        // Hierarquia de resolução:
-        //   1. lidMap (mapa em memória populado na sincronização de contatos) — O(1)
-        //   2. Scan de store.contacts procurando c.lid === remoteJid         — O(n)
-        //   2. Redis: persistência entre sessões
-        //   3. Scan de store.contacts procurando c.lid === remoteJid         — O(n)
-        //   4. Descarte — evita salvar dados corrompidos no MongoDB
+        // Hierarquia de resolução implementada:
+        //   0. participantPn / senderPn (Campo oficial Baileys com telefone real)
+        //   1. lidMap (Mapa em memória da sessão atual)
+        //   2. Redis (Persistência global entre sessões e restarts)
+        //   3. Store Scan (Busca nos contatos sincronizados pelo Baileys)
         // ── RESOLUÇÃO DE JID NO FORMATO LID / GRUPOS ────────────────────────────────
         // Prioridade 0: participantPn / senderPn (Campos nativos do Baileys que trazem o telefone real)
         const realPhoneJid = msg.key.participantPn || msg.key.senderPn || 
