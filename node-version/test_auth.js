@@ -1,12 +1,12 @@
 const axios = require('axios');
 
-const BASE_URL = 'http://localhost:8001/api/v1';
+const BASE_URL = 'http://76.13.168.200:8001/api/v1';
 
 // Dados de teste para o login
 const testUser = {
   name: "Auth Test User",
-  email: `auth_test_${Date.now()}@example.com`,
-  password: "Password123!",
+  email: `user_${Date.now()}@example.com`,
+  password: "Qwert@3702959",
   tenant_name: `Tenant Auth ${Date.now()}`
 };
 

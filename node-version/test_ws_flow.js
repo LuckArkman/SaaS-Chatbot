@@ -1,7 +1,7 @@
 const axios = require('axios');
 const WebSocket = require('ws');
 
-const BASE_URL = 'http://localhost:8001/api/v1';
+const BASE_URL = 'http://76.13.168.200:8001/api/v1';
 
 const testUser = {
   name: "WS Flow Test User",
@@ -26,7 +26,7 @@ async function runWebSocketFlowTest() {
 
     // 2. Conectar WebSocket com Token JWT
     console.log('\n[2] Estabelecendo conexão WebSocket simulando o Front-end...');
-    const wsUrl = `ws://localhost:8001/api/v1/ws/?token=${authToken}`;
+    const wsUrl = `ws://76.13.168.200:8001/api/v1/ws/?token=${authToken}`;
     const wsClient = new WebSocket(wsUrl);
 
     await new Promise((resolve, reject) => {
