@@ -215,29 +215,43 @@ class WhatsAppService {
 
             if (matchByLid) {
               phone = phoneUtils.normalizeToDb(matchByLid.id.split('@')[0]);
-              currentLidMap[remoteJid] = phone; // Cacheia para futuras mensagens
-              logger.info(`[${sessionId}] 🔍 LID resolvido via scan: ${remoteJid} → ${phone}`);
-
+              currentLidMap[remoteJid] = phone; 
             } else if (pushName && pushName !== 'Contato Desconhecido') {
-              // Caminho lento: consulta PostgreSQL pelo nome do contato
               try {
                 const pgContact = await Contact.findOne({
                   where: { full_name: pushName, tenant_id: tenantId }
                 });
                 if (pgContact?.phone_number) {
                   phone = pgContact.phone_number;
-                  currentLidMap[remoteJid] = phone; // Cacheia para futuras mensagens
+                  currentLidMap[remoteJid] = phone;
                   logger.info(`[${sessionId}] 🗄️ LID resolvido via PostgreSQL (nome='${pushName}'): ${remoteJid} → ${phone}`);
                 } else {
-                  logger.warn(`[${sessionId}] ⚠️ LID não resolvível (sem contato pg para '${pushName}'): ${remoteJid}. Descartado.`);
-                  continue;
+                  logger.warn(`[${sessionId}] ⚠️ LID não resolvível por nome '${pushName}': ${remoteJid}. Tentando busca reversa...`);
+                  
+                  const realJid = msg.key.participant || msg.participant;
+                  if (realJid && realJid.includes('@s.whatsapp.net')) {
+                    phone = phoneUtils.normalizeToDb(realJid.split('@')[0]);
+                    currentLidMap[remoteJid] = phone;
+                    logger.info(`[${sessionId}] 💡 LID resolvido via participant JID: ${remoteJid} → ${phone}`);
+                  } else {
+                    logger.error(`[${sessionId}] ❌ Falha Total na resolução de LID para '${pushName}': ${remoteJid}. Mensagem descartada.`);
+                    continue;
+                  }
                 }
               } catch (pgErr) {
                 logger.warn(`[${sessionId}] ⚠️ Erro ao consultar PostgreSQL para LID ${remoteJid}: ${pgErr.message}. Descartado.`);
                 continue;
               }
             } else {
-              logger.warn(`[${sessionId}] ⚠️ LID não resolvível (sem pushName e sem mapa): ${remoteJid}. Descartado.`);
+              const realJid = msg.key.participant || msg.participant;
+              if (realJid && realJid.includes('@s.whatsapp.net')) {
+                phone = phoneUtils.normalizeToDb(realJid.split('@')[0]);
+                currentLidMap[remoteJid] = phone;
+                logger.info(`[${sessionId}] 💡 LID resolvido via participant JID (sem nome): ${remoteJid} → ${phone}`);
+              } else {
+                logger.warn(`[${sessionId}] ⚠️ LID não resolvível (sem pushName e sem participant): ${remoteJid}. Descartado.`);
+                continue;
+              }
             }
           }
         }
