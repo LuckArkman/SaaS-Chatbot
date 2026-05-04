@@ -50,7 +50,17 @@ function normalizeToJid(phone) {
   return `${digits}@s.whatsapp.net`;
 }
 
+/**
+ * Verifica se o número está no formato canônico estrito (13 dígitos)
+ * @param {string} phone 
+ * @returns {boolean}
+ */
+function isValidDbFormat(phone) {
+  return /^[0-9]{13}$/.test(phone) && phone.startsWith('55');
+}
+
 module.exports = {
   normalizeToDb,
-  normalizeToJid
+  normalizeToJid,
+  isValidDbFormat
 };

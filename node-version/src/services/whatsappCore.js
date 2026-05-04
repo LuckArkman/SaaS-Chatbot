@@ -241,6 +241,12 @@ class WhatsAppService {
               continue;
             }
           }
+        
+        // ── FILTRO DE CONTRATO FECHADO (Antes de "compilar" para o banco/front) ──────
+        // Se o número não estiver no formato canônico (13 dígitos), descartamos.
+        if (!phoneUtils.isValidDbFormat(phone)) {
+          logger.warn(`[${sessionId}] 🛑 Contrato Violado: Mensagem de '${remoteJid}' (phone='${phone}') descartada por formato inválido.`);
+          continue;
         }
 
         // Normalização Mínima de Texto

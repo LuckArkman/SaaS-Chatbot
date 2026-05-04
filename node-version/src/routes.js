@@ -1,6 +1,7 @@
 const express = require('express');
 const { incomingWebhook } = require('./controllers/gatewayController');
 const { requireAuth } = require('./middlewares/authMiddleware');
+const { validatePhoneContract } = require('./middlewares/contractMiddleware');
 const callsController = require('./controllers/callsController');
 
 // Carrega os controllers com os stubs para as rotas ausentes
@@ -248,7 +249,7 @@ router.delete('/v1/flows/:flow_id', requireAuth, flowsController.deleteFlow);
  *       200:
  *         description: OK
  */
-router.post('/v1/chat/send', requireAuth, chatController.sendManualMessage);
+router.post('/v1/chat/send', requireAuth, validatePhoneContract, chatController.sendManualMessage);
 
 /**
  * @swagger
@@ -640,7 +641,7 @@ router.post('/v1/campaigns/:id/pause', requireAuth, campaignsController.pauseCam
  *         description: OK
  */
 router.get('/v1/contacts/', requireAuth, contactsController.listContacts);
-router.post('/v1/contacts/', requireAuth, contactsController.createContact);
+router.post('/v1/contacts/', requireAuth, validatePhoneContract, contactsController.createContact);
 
 /**
  * @swagger
@@ -745,7 +746,7 @@ router.post('/v1/contacts/whatsapp', requireAuth, contactsController.addWhatsapp
  *       200:
  *         description: OK
  */
-router.put('/v1/contacts/whatsapp/:phone', requireAuth, contactsController.editWhatsappContact);
+router.put('/v1/contacts/whatsapp/:phone', requireAuth, validatePhoneContract, contactsController.editWhatsappContact);
 router.delete('/v1/contacts/whatsapp/:phone', requireAuth, contactsController.deleteWhatsappContact);
 
 
