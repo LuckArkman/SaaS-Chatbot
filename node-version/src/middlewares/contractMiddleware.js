@@ -9,11 +9,13 @@ const validatePhoneContract = (req, res, next) => {
   const { phone, phone_number, to, conversation_id } = { ...req.body, ...req.query, ...req.params };
   const rawPhone = phone || phone_number || to || conversation_id;
 
+  // Log de diagnóstico para identificar qual rota está chamando o contrato
+  logger.debug(`[Contrato] Validando rota: ${req.method} ${req.originalUrl} | Phone: ${rawPhone || 'N/A'}`);
+
   if (!rawPhone) {
-    return res.status(400).json({ 
-      error: 'Contrato Inválido', 
-      detail: 'Identificador de telefone ausente.' 
-    });
+    // Se não há telefone na requisição, permitimos que siga. 
+    // O Controller dará erro se o campo for obrigatório para a lógica de negócio.
+    return next();
   }
 
   const normalized = phoneUtils.normalizeToDb(rawPhone);

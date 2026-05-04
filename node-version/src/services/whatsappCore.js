@@ -176,10 +176,13 @@ class WhatsAppService {
       for (const msg of messages) {
         if (!msg.message) continue;
 
-        // ── LOG DE DEBUG: CORPO COMPLETO DA MENSAGEM ───────────────────────────────
-        logger.info(`[${sessionId}] 📦 RAW MESSAGE: ${JSON.stringify(msg, null, 2)}`);
-
         const isFromMe = msg.key.fromMe;
+
+        // ── LOG DE DEBUG: CORPO COMPLETO DA MENSAGEM (Apenas Recebidas) ─────────────
+        if (!isFromMe) {
+          logger.info(`[${sessionId}] 📦 RAW RECEIVED MESSAGE: ${JSON.stringify(msg, null, 2)}`);
+        }
+
         const remoteJid = msg.key.remoteJid;
         if (remoteJid === 'status@broadcast') continue; // Ignora status de WhatsApp
 
@@ -201,68 +204,45 @@ class WhatsAppService {
         //   2. Scan de store.contacts procurando c.lid === remoteJid         — O(n)
         //   3. PostgreSQL: busca contato pelo pushName (full_name)            — async DB
         //   4. Descarte — evita salvar dados corrompidos no MongoDB
-        if (jidSuffix === 'lid') {
+        // ── RESOLUÇÃO DE JID NO FORMATO LID / GRUPOS ────────────────────────────────
+        // Prioridade 0: participantPn (Campo nativo do Baileys que traz o telefone real)
+        const participantPn = msg.key.participantPn || (msg.message?.extendedTextMessage?.contextInfo?.participantPn);
+        if (participantPn && participantPn.includes('@s.whatsapp.net')) {
+          phone = phoneUtils.normalizeToDb(participantPn.split('@')[0]);
+          logger.info(`[${sessionId}] 💎 LID resolvido via participantPn: ${remoteJid} → ${phone}`);
+        }
+        else if (jidSuffix === 'lid') {
           const currentLidMap = this.lidMaps[sessionId] || {};
 
           if (currentLidMap[remoteJid]) {
-            // Caminho rápido: mapa já populado
             phone = currentLidMap[remoteJid];
-            logger.info(`[${sessionId}] 🗺️ LID resolvido via mapa: ${remoteJid} → ${phone}`);
-
           } else {
-            // Caminho médio: scan nos contatos em memória
-            const contactsArr = Object.values(store.contacts);
-            const matchByLid = contactsArr.find(
-              c => c.lid === remoteJid && c.id && c.id.includes('@s.whatsapp.net')
-            );
-
-            if (matchByLid) {
-              phone = phoneUtils.normalizeToDb(matchByLid.id.split('@')[0]);
-              currentLidMap[remoteJid] = phone; 
+            // ... resto da lógica de busca reversa ...
+            const realJid = msg.key.participant || msg.participant;
+            if (realJid && realJid.includes('@s.whatsapp.net')) {
+              phone = phoneUtils.normalizeToDb(realJid.split('@')[0]);
+              currentLidMap[remoteJid] = phone;
             } else if (pushName && pushName !== 'Contato Desconhecido') {
               try {
-                const pgContact = await Contact.findOne({
-                  where: { full_name: pushName, tenant_id: tenantId }
-                });
+                const pgContact = await Contact.findOne({ where: { full_name: pushName, tenant_id: tenantId } });
                 if (pgContact?.phone_number) {
                   phone = pgContact.phone_number;
                   currentLidMap[remoteJid] = phone;
-                  logger.info(`[${sessionId}] 🗄️ LID resolvido via PostgreSQL (nome='${pushName}'): ${remoteJid} → ${phone}`);
-                } else {
-                  logger.warn(`[${sessionId}] ⚠️ LID não resolvível por nome '${pushName}': ${remoteJid}. Tentando busca reversa...`);
-                  
-                  const realJid = msg.key.participant || msg.participant;
-                  if (realJid && realJid.includes('@s.whatsapp.net')) {
-                    phone = phoneUtils.normalizeToDb(realJid.split('@')[0]);
-                    currentLidMap[remoteJid] = phone;
-                    logger.info(`[${sessionId}] 💡 LID resolvido via participant JID: ${remoteJid} → ${phone}`);
-                  } else {
-                    logger.error(`[${sessionId}] ❌ Falha Total na resolução de LID para '${pushName}': ${remoteJid}. Mensagem descartada.`);
-                    continue;
-                  }
                 }
-              } catch (pgErr) {
-                logger.warn(`[${sessionId}] ⚠️ Erro ao consultar PostgreSQL para LID ${remoteJid}: ${pgErr.message}. Descartado.`);
-                continue;
-              }
-            } else {
-              const realJid = msg.key.participant || msg.participant;
-              if (realJid && realJid.includes('@s.whatsapp.net')) {
-                phone = phoneUtils.normalizeToDb(realJid.split('@')[0]);
-                currentLidMap[remoteJid] = phone;
-                logger.info(`[${sessionId}] 💡 LID resolvido via participant JID (sem nome): ${remoteJid} → ${phone}`);
-              } else {
-                logger.warn(`[${sessionId}] ⚠️ LID não resolvível (sem pushName e sem participant): ${remoteJid}. Descartado.`);
-                continue;
-              }
+              } catch (pgErr) { }
             }
           }
         }
-        
-        // ── FILTRO DE CONTRATO FECHADO (Antes de "compilar" para o banco/front) ──────
-        // Se o número não estiver no formato canônico (13 dígitos), descartamos.
+
+        // ── FILTRO DE CONTRATO E TIPO DE CHAT ───────────────────────────────────────
+        if (remoteJid.endsWith('@g.us')) {
+          // Se for grupo, ignoramos silenciosamente (ou tratamos se o SaaS suportar grupos)
+          // logger.debug(`[${sessionId}] 👥 Mensagem de grupo '${remoteJid}' ignorada.`);
+          continue; 
+        }
+
         if (!phoneUtils.isValidDbFormat(phone)) {
-          logger.warn(`[${sessionId}] 🛑 Contrato Violado: Mensagem de '${remoteJid}' (phone='${phone}') descartada por formato inválido.`);
+          logger.warn(`[${sessionId}] 🛑 Contrato Violado: Mensagem de '${remoteJid}' (phone='${phone}') descartada.`);
           continue;
         }
 
