@@ -301,6 +301,14 @@ class WhatsAppService {
           logger.error(`[${sessionId}] ❌ Erro ao recuperar contato do banco: ${dbErr.message}`);
         }
 
+        // ── FILTRO DE MENSAGENS DE PROTOCOLO (Ignorar Sincronizações/Internos) ─────
+        const msgType = Object.keys(msg.message || {})[0];
+        const protocolTypes = ['protocolMessage', 'senderKeyDistributionMessage', 'peerDataOperationRequestResponseMessage', 'peerDataOperationRequestMessage'];
+        
+        if (protocolTypes.includes(msgType)) {
+          continue;
+        }
+
         // Normalização Mínima de Texto
         let textContent = '';
         if (msg.message.conversation) textContent = msg.message.conversation;
