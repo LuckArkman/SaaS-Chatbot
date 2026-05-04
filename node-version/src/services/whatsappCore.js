@@ -238,9 +238,9 @@ class WhatsAppService {
               }
             } else {
               logger.warn(`[${sessionId}] ⚠️ LID não resolvível (sem pushName e sem mapa): ${remoteJid}. Descartado.`);
-              continue;
             }
           }
+        }
         
         // ── FILTRO DE CONTRATO FECHADO (Antes de "compilar" para o banco/front) ──────
         // Se o número não estiver no formato canônico (13 dígitos), descartamos.
