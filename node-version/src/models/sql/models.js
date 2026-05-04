@@ -177,8 +177,27 @@ const Department = sequelize.define('Department', {
 User.belongsToMany(Department, { through: 'agent_department', foreignKey: 'user_id' });
 Department.belongsToMany(User, { through: 'agent_department', foreignKey: 'department_id' });
 
+const AiConfig = sequelize.define('AiConfig', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  tenant_id: { type: DataTypes.STRING, unique: true, allowNull: false },
+  provider: { type: DataTypes.STRING(50), defaultValue: 'gemini' }, // gemini, openai, anthropic, local
+  model: { type: DataTypes.STRING(100), defaultValue: 'gemma-3-12b-it' },
+  api_key: { type: DataTypes.STRING(255), allowNull: true },
+  system_prompt: { type: DataTypes.TEXT, allowNull: true },
+  temperature: { type: DataTypes.FLOAT, defaultValue: 0.7 },
+  max_tokens: { type: DataTypes.INTEGER, defaultValue: 1024 },
+  is_rag_enabled: { type: DataTypes.BOOLEAN, defaultValue: false },
+  is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
+}, {
+  tableName: 'ai_configs',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: 'updated_at'
+});
+
 module.exports = { 
   User, Contact, Tag, WhatsAppInstance, 
   Plan, Subscription, Invoice, Transaction, 
-  Campaign, CampaignContact, Department 
+  Campaign, CampaignContact, Department,
+  AiConfig
 };

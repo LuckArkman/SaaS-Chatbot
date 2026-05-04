@@ -410,25 +410,38 @@ class WhatsAppService {
             logger.error(`❌ Falha na entrega WebSocket para o Front-end: ${wsErr.message}`);
           }
 
-          // SE MENSAGEM DO USUÁRIO -> INSERE NA FILA DE FLOW (RabbitMQ)
-          // [REMOVIDO A PEDIDO DO USUÁRIO] - Desativa a auto-resposta de fluxo.
-          /*
+          // ── PROCESSAMENTO DE INTELIGÊNCIA ARTIFICIAL (BRAIN/RAG) ──────────────
           if (!isFromMe) {
-            await rabbitmqBus.publish('messages_exchange', 'message.incoming', {
-              tenant_id: tenantId,
-              session_name: sessionId,
-              from: phone,
-              name: contactDisplayName,
-              content: textContent,
-              message_id: msg.key.id
-            });
+            // Executa em segundo plano para não bloquear o socket
+            this.handleAiResponse(tenantId, sessionId, phone, textContent);
           }
-          */
+
         } catch (dbErr) {
           logger.error(`[${sessionId}] ❌ Erro ao processar mensagem localmente: ${dbErr.message}`);
         }
       }
     });
+  }
+
+  /**
+   * Processa a resposta automática via IA com suporte a RAG
+   */
+  async handleAiResponse(tenantId, sessionId, phone, userMessage) {
+    try {
+      const agentService = require('./ai/agentService');
+      
+      // A "Instância MCP" do tenant processa a mensagem de forma isolada
+      const responseText = await agentService.processMessage(tenantId, userMessage);
+
+      // Envio da Resposta se gerada
+      if (responseText) {
+        await this.sendMessage(sessionId, phone, responseText);
+        logger.info(`🤖 [MCP:${tenantId}] Resposta enviada para ${phone}`);
+      }
+
+    } catch (e) {
+      logger.error(`❌ Falha no Cérebro AI do Tenant ${tenantId}: ${e.message}`);
+    }
   }
 
   /**

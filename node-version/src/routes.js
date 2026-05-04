@@ -15,6 +15,7 @@ const {
   campaignsController, 
   billingController 
 } = require('./controllers/stubManager');
+const aiController = require('./controllers/aiController');
 
 const router = express.Router();
 
@@ -879,5 +880,47 @@ router.post('/v1/calls/reject', requireAuth, callsController.rejectCall);
  *       101:
  *         description: Switching Protocols
  */
+
+// ==========================================
+// 12. AI & RAG
+// ==========================================
+/**
+ * @swagger
+ * /api/v1/ai/config:
+ *   get:
+ *     summary: Get AI Configuration
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *   post:
+ *     summary: Update AI Configuration (Select Brain Model)
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/v1/ai/config', requireAuth, aiController.getConfig);
+router.post('/v1/ai/config', requireAuth, aiController.updateConfig);
+
+/**
+ * @swagger
+ * /api/v1/rag/ingest:
+ *   post:
+ *     summary: Ingest knowledge into the RAG brain
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post('/v1/rag/ingest', requireAuth, aiController.ingestKnowledge);
+
+/**
+ * @swagger
+ * /api/v1/rag/clear:
+ *   delete:
+ *     summary: Clear tenant knowledge base
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.delete('/v1/rag/clear', requireAuth, aiController.clearKnowledge);
 
 module.exports = router;
