@@ -162,7 +162,20 @@ class ConnectionManager {
   async publishEvent(tenantId, payload, userId = null) {
     tenantId = tenantId.toUpperCase();
 
-    // Normalização legado
+    // ── NORMALIZAÇÃO DE CONTRATO (Garantir Telefone em Mensagens) ────────────
+    if (payload.method === 'new_message' || payload.method === 'receive_message') {
+      const params = payload.params || {};
+      // Garante que o telefone esteja presente tanto como 'contact_phone' quanto 'phone'
+      const phone = params.contact_phone || params.phone || params.conversation_id;
+      if (phone) {
+        payload.params.contact_phone = phone;
+        payload.params.phone = phone;
+      } else {
+        logger.warn(`[WS] ⚠️ Tentativa de enviar mensagem sem telefone para o front-end (tenant: ${tenantId})`);
+      }
+    }
+
+    // Normalização legado para payloads simples que vêm como { type: '...', ... }
     if (payload.type && !payload.method) {
       const evtType = payload.type;
       delete payload.type;
