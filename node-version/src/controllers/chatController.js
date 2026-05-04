@@ -1,5 +1,6 @@
 const Message = require('../models/nosql/Message');
 const rabbitmqBus = require('../config/rabbitmq');
+const phoneUtils = require('../utils/phoneUtils');
 const logger = require('../utils/logger');
 
 const getChatHistory = async (req, res) => {
@@ -58,7 +59,7 @@ const sendManualMessage = async (req, res) => {
     return res.status(400).json({ error: 'Destinatário e conteúdo são obrigatórios.' });
   }
   
-  const cleanTo = String(to).split('@')[0];
+  const cleanTo = phoneUtils.normalizeToDb(to);
 
   try {
     // 1. Grava no banco otimista (Aparece instantâneo no Front)

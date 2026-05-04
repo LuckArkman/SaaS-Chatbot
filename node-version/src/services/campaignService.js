@@ -1,6 +1,7 @@
 const { Campaign, CampaignContact } = require('../models/sql/models');
 const rabbitmqBus = require('../config/rabbitmq');
 const logger = require('../utils/logger');
+const phoneUtils = require('../utils/phoneUtils');
 
 class CampaignService {
   static async createCampaign(tenantId, name, message) {
@@ -17,7 +18,7 @@ class CampaignService {
   static async addContacts(campaignId, contactsArray, tenantId) {
     const records = contactsArray.map(phone => ({
       campaign_id: campaignId,
-      phone_number: phone,
+      phone_number: phoneUtils.normalizeToDb(phone),
       status: 'pending',
       tenant_id: tenantId
     }));

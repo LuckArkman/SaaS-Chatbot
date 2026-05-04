@@ -4,6 +4,7 @@ const connectionManager = require('../websockets/connectionManager');
 const { Message } = require('../models/nosql/Message');
 const { Contact } = require('../models/sql/models');
 const MessageNormalizer = require('../utils/messageNormalizer');
+const sessionMapper = require('../utils/sessionMapper');
 
 /**
  * Endpoint de Gateway.
@@ -19,17 +20,8 @@ function resolveTenantId(payload) {
   
   if (!rawStr) return null;
   
-  rawStr = String(rawStr);
-  const withoutPrefix = rawStr.startsWith('tenant_') ? rawStr.replace('tenant_', '') : rawStr;
-  
-  const parts = withoutPrefix.split('_');
-  if (parts.length >= 2) {
-    const lastPart = parts[parts.length - 1];
-    if (lastPart.length === 8) {
-      return parts.slice(0, -1).join('_'); // Remove o sufixo UUID de 8 caracteres
-    }
-  }
-  return withoutPrefix;
+  // Usa o SessionMapper para resolver chaves rotacionadas ou extrair o ID de forma robusta
+  return sessionMapper.getTenantId(rawStr);
 }
 
 const incomingWebhook = async (req, res) => {

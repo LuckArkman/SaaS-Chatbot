@@ -1,5 +1,6 @@
 const { Contact, Tag } = require('../models/sql/models');
 const { Op } = require('sequelize');
+const phoneUtils = require('../utils/phoneUtils');
 
 const listContacts = async (req, res) => {
   const { page = 1, limit = 50, search = '' } = req.query;
@@ -30,7 +31,8 @@ const listContacts = async (req, res) => {
 const createContact = async (req, res) => {
   const { phone_number, full_name, tag_ids = [] } = req.body;
   try {
-    const contact = await Contact.create({ phone_number, full_name });
+    const normalizedPhone = phoneUtils.normalizeToDb(phone_number);
+    const contact = await Contact.create({ phone_number: normalizedPhone, full_name });
     if (tag_ids.length > 0) {
       await contact.addTags(tag_ids);
     }
@@ -47,7 +49,8 @@ const updateContact = async (req, res) => {
     const contact = await Contact.findByPk(id);
     if (!contact) return res.status(404).json({ detail: 'Contact not found' });
 
-    await contact.update({ phone_number, full_name, is_blacklisted });
+    const normalizedPhone = phone_number ? phoneUtils.normalizeToDb(phone_number) : contact.phone_number;
+    await contact.update({ phone_number: normalizedPhone, full_name, is_blacklisted });
     
     if (tag_ids !== undefined) {
       await contact.setTags(tag_ids);

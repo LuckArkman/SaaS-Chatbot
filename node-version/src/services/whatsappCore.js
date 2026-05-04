@@ -16,28 +16,9 @@ const Message = require('../models/nosql/Message');
 const { WhatsAppInstance, Contact } = require('../models/sql/models');
 const rabbitmqBus = require('../config/rabbitmq');
 const connectionManager = require('../websockets/connectionManager');
+const phoneUtils = require('../utils/phoneUtils');
+const sessionMapper = require('../utils/sessionMapper');
 
-/**
- * Normaliza números para o padrão JID do WhatsApp
- */
-function normalizeToJid(phone) {
-  const digits = String(phone).replace(/\D/g, '');
-  if (digits.length === 12 || digits.length === 13) {
-    if (digits.startsWith('55') && digits.length === 13 && digits[4] === '9') {
-      const areaCode = digits.substring(2, 4);
-      if (parseInt(areaCode) <= 27) {
-        return `${digits}@s.whatsapp.net`;
-      } else {
-        return `55${areaCode}${digits.substring(5)}@s.whatsapp.net`;
-      }
-    }
-    return `${digits}@s.whatsapp.net`;
-  }
-  if (digits.length >= 10 && digits.length <= 11) {
-    return `55${digits}@s.whatsapp.net`;
-  }
-  return `${digits}@s.whatsapp.net`;
-}
 
 class WhatsAppService {
   constructor() {
@@ -55,6 +36,9 @@ class WhatsAppService {
 
   async initializeSession(tenantId, sessionId) {
     if (this.sockets[sessionId]) return;
+
+    // Associa a chave de sessão (possivelmente rotacionada) ao tenant original
+    sessionMapper.associate(sessionId, `tenant_${tenantId}`);
 
     logger.info(`[*] Iniciando Baileys Nativo para tenant: ${tenantId} | session: ${sessionId}`);
 
@@ -80,7 +64,7 @@ class WhatsAppService {
       if (!contacts) return;
       contacts.forEach(c => {
         if (c.id && c.id.includes('@s.whatsapp.net') && c.lid) {
-          const phone = c.id.split('@')[0];
+          const phone = phoneUtils.normalizeToDb(c.id.split('@')[0]);
           lidMap[c.lid] = phone;
           logger.info(`[${sessionId}] 🗺️ LID mapeado: ${c.lid} → ${phone}`);
         }
@@ -198,6 +182,12 @@ class WhatsAppService {
 
         const jidSuffix = remoteJid.split('@')[1] || '';
         let phone = remoteJid.split('@')[0];
+        
+        // Normaliza para o formato DB (13 dígitos) se não for LID
+        if (jidSuffix !== 'lid') {
+          phone = phoneUtils.normalizeToDb(phone);
+        }
+
         const pushName = msg.pushName || 'Contato Desconhecido';
 
         // ── RESOLUÇÃO DE JID NO FORMATO LID ──────────────────────────────────────────
@@ -224,7 +214,7 @@ class WhatsAppService {
             );
 
             if (matchByLid) {
-              phone = matchByLid.id.split('@')[0];
+              phone = phoneUtils.normalizeToDb(matchByLid.id.split('@')[0]);
               currentLidMap[remoteJid] = phone; // Cacheia para futuras mensagens
               logger.info(`[${sessionId}] 🔍 LID resolvido via scan: ${remoteJid} → ${phone}`);
 
@@ -389,7 +379,7 @@ class WhatsAppService {
     if (!sock) throw new Error(`Sessão ${sessionId} não está ativa na memória.`);
     if (!sock.user) throw new Error(`Sessão ${sessionId} não está autenticada (Aguardando QR Code).`);
 
-    let jid = normalizeToJid(to);
+    let jid = phoneUtils.normalizeToJid(to);
 
     // ── FIX CRÍTICO: Consulta o JID real no WhatsApp ──
     // O WhatsApp no Brasil possui inconsistências com o 9º dígito.
