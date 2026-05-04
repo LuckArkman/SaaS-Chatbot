@@ -373,27 +373,29 @@ class WhatsAppService {
           } catch (err) { }
 
           const socketPayload = {
-            method: 'receive_message',
+            method: 'new_message', // Padronizado para o front-end moderno
             params: {
               message_id: msg.key.id,
-              conversation_id: phone,  // Usa o telefone normalizado (nunca o JID/LID bruto)
+              conversation_id: phone,
               contact_phone: phone,
-              contact: {
-                phone: phone,
-                name: contactDisplayName,
-                profile_picture: null
-              },
+              contact_name: contactDisplayName,
               content: textContent,
               message_type: 'text',
               source: isFromMe ? 'agent' : 'user',
               from_me: isFromMe,
               side: isFromMe ? 'bot' : 'client',
+              session: sessionId,
+              tenant_id: tenantId,
               timestamp: new Date().toISOString()
             }
           };
 
-          // Dispara para todos os usuários online do Tenant atual
-          await connectionManager.broadcastToTenant(tenantId, socketPayload);
+          // Dispara via publishEvent que já trata a normalização legado se necessário
+          await connectionManager.publishEvent(tenantId, socketPayload);
+          
+          // Fallback para o método antigo caso o front ainda use 'receive_message'
+          socketPayload.method = 'receive_message';
+          await connectionManager.publishEvent(tenantId, socketPayload);
 
           // SE MENSAGEM DO USUÁRIO -> INSERE NA FILA DE FLOW (RabbitMQ)
           // [REMOVIDO A PEDIDO DO USUÁRIO] - Desativa a auto-resposta de fluxo.
