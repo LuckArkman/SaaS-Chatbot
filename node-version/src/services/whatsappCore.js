@@ -235,19 +235,35 @@ class WhatsAppService {
                 currentLidMap[remoteJid] = phone;
                 logger.info(`[${sessionId}] 💡 LID resolvido via Participant JID: ${remoteJid} → ${phone}`);
               } 
-              // Fallback 2: Busca no PG por Nome
+              // Fallback 2: Busca no PG por Nome (Insensível a Maiúsculas)
               else if (pushName && pushName !== 'Contato Desconhecido') {
                 try {
-                  const pgContact = await Contact.findOne({ where: { full_name: pushName, tenant_id: tenantId } });
+                  const { Op } = require('sequelize');
+                  const pgContact = await Contact.findOne({ 
+                    where: { 
+                      full_name: { [Op.iLike]: pushName }, 
+                      tenant_id: tenantId 
+                    } 
+                  });
                   if (pgContact?.phone_number) {
                     phone = pgContact.phone_number;
                     currentLidMap[remoteJid] = phone;
-                    logger.info(`[${sessionId}] 🗄️ LID resolvido via PG (Nome: ${pushName}): ${remoteJid} → ${phone}`);
+                    logger.info(`[${sessionId}] 🗄️ LID resolvido via PG (iLike Nome: ${pushName}): ${remoteJid} → ${phone}`);
+                  } else {
+                    logger.debug(`[${sessionId}] 🔍 PG Search: Nenhum contato encontrado para nome '${pushName}' (tenant: ${tenantId})`);
                   }
-                } catch (pgErr) { }
+                } catch (pgErr) { 
+                  logger.error(`[${sessionId}] ❌ Erro na busca PG por nome: ${pgErr.message}`);
+                }
               }
             }
           }
+        }
+
+        // ── VERIFICAÇÃO DE DECRIPTOGRAFIA ───────────────────────────────────────────
+        if (!msg.message || Object.keys(msg.message).length === 0) {
+          logger.warn(`[${sessionId}] 🔐 Mensagem de '${pushName}' não pôde ser decriptografada (Erro de Sessão/MAC).`);
+          continue;
         }
 
         // ── FILTRO DE CONTRATO E TIPO DE CHAT ───────────────────────────────────────
@@ -258,6 +274,31 @@ class WhatsAppService {
         if (!phoneUtils.isValidDbFormat(phone)) {
           logger.warn(`[${sessionId}] 🛑 Contrato Violado: Mensagem de '${pushName}' [${remoteJid}] (phone='${phone}') descartada.`);
           continue;
+        }
+
+        // ── RECUPERAÇÃO DO CONTATO (Hierarquia: 1. Telefone, 2. Nome) ──────────────
+        let dbContact = null;
+        try {
+          const { Op } = require('sequelize');
+          // 1. Busca Primária: Por Número de Telefone
+          dbContact = await Contact.findOne({ 
+            where: { phone_number: phone, tenant_id: tenantId } 
+          });
+
+          // 2. Busca Secundária: Por Nome (se não achou pelo número)
+          if (!dbContact && pushName && pushName !== 'Contato Desconhecido') {
+            dbContact = await Contact.findOne({ 
+              where: { 
+                full_name: { [Op.iLike]: pushName }, 
+                tenant_id: tenantId 
+              } 
+            });
+            if (dbContact) {
+              logger.info(`[${sessionId}] 👤 Contato reconciliado via Nome: ${pushName} (ID: ${dbContact.id})`);
+            }
+          }
+        } catch (dbErr) {
+          logger.error(`[${sessionId}] ❌ Erro ao recuperar contato do banco: ${dbErr.message}`);
         }
 
         // Normalização Mínima de Texto
