@@ -217,32 +217,46 @@ class WhatsAppService {
           if (currentLidMap[remoteJid]) {
             phone = currentLidMap[remoteJid];
           } else {
-            // ... resto da lógica de busca reversa ...
-            const realJid = msg.key.participant || msg.participant;
-            if (realJid && realJid.includes('@s.whatsapp.net')) {
-              phone = phoneUtils.normalizeToDb(realJid.split('@')[0]);
+            // Busca exaustiva no Store do Baileys (Contatos sincronizados)
+            const contactsArr = Object.values(store.contacts || {});
+            const matchByLid = contactsArr.find(
+              c => c.lid === remoteJid && c.id && c.id.includes('@s.whatsapp.net')
+            );
+
+            if (matchByLid) {
+              phone = phoneUtils.normalizeToDb(matchByLid.id.split('@')[0]);
               currentLidMap[remoteJid] = phone;
-            } else if (pushName && pushName !== 'Contato Desconhecido') {
-              try {
-                const pgContact = await Contact.findOne({ where: { full_name: pushName, tenant_id: tenantId } });
-                if (pgContact?.phone_number) {
-                  phone = pgContact.phone_number;
-                  currentLidMap[remoteJid] = phone;
-                }
-              } catch (pgErr) { }
+              logger.info(`[${sessionId}] 🔎 LID resolvido via Store Scan: ${remoteJid} → ${phone}`);
+            } else {
+              // Fallback 1: Participant JID
+              const realJid = msg.key.participant || msg.participant;
+              if (realJid && realJid.includes('@s.whatsapp.net')) {
+                phone = phoneUtils.normalizeToDb(realJid.split('@')[0]);
+                currentLidMap[remoteJid] = phone;
+                logger.info(`[${sessionId}] 💡 LID resolvido via Participant JID: ${remoteJid} → ${phone}`);
+              } 
+              // Fallback 2: Busca no PG por Nome
+              else if (pushName && pushName !== 'Contato Desconhecido') {
+                try {
+                  const pgContact = await Contact.findOne({ where: { full_name: pushName, tenant_id: tenantId } });
+                  if (pgContact?.phone_number) {
+                    phone = pgContact.phone_number;
+                    currentLidMap[remoteJid] = phone;
+                    logger.info(`[${sessionId}] 🗄️ LID resolvido via PG (Nome: ${pushName}): ${remoteJid} → ${phone}`);
+                  }
+                } catch (pgErr) { }
+              }
             }
           }
         }
 
         // ── FILTRO DE CONTRATO E TIPO DE CHAT ───────────────────────────────────────
         if (remoteJid.endsWith('@g.us')) {
-          // Se for grupo, ignoramos silenciosamente (ou tratamos se o SaaS suportar grupos)
-          // logger.debug(`[${sessionId}] 👥 Mensagem de grupo '${remoteJid}' ignorada.`);
           continue; 
         }
 
         if (!phoneUtils.isValidDbFormat(phone)) {
-          logger.warn(`[${sessionId}] 🛑 Contrato Violado: Mensagem de '${remoteJid}' (phone='${phone}') descartada.`);
+          logger.warn(`[${sessionId}] 🛑 Contrato Violado: Mensagem de '${pushName}' [${remoteJid}] (phone='${phone}') descartada.`);
           continue;
         }
 
