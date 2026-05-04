@@ -390,12 +390,20 @@ class WhatsAppService {
             }
           };
 
-          // Dispara via publishEvent que já trata a normalização legado se necessário
-          await connectionManager.publishEvent(tenantId, socketPayload);
-          
-          // Fallback para o método antigo caso o front ainda use 'receive_message'
-          socketPayload.method = 'receive_message';
-          await connectionManager.publishEvent(tenantId, socketPayload);
+          // ── NOTIFICAÇÃO EM TEMPO REAL COM LOGS DE DIAGNÓSTICO ─────────────────────
+          try {
+            // Dispara via publishEvent que já trata a normalização legado se necessário
+            await connectionManager.publishEvent(tenantId, socketPayload);
+            
+            // Fallback para o método antigo caso o front ainda use 'receive_message'
+            socketPayload.method = 'receive_message';
+            await connectionManager.publishEvent(tenantId, socketPayload);
+
+            const now = new Date().toLocaleString('pt-BR');
+            logger.info(`✅ Mensagem entregue ao Front-end | Data: ${now} | Conteúdo: "${textContent.substring(0, 50)}..."`);
+          } catch (wsErr) {
+            logger.error(`❌ Falha na entrega WebSocket para o Front-end: ${wsErr.message}`);
+          }
 
           // SE MENSAGEM DO USUÁRIO -> INSERE NA FILA DE FLOW (RabbitMQ)
           // [REMOVIDO A PEDIDO DO USUÁRIO] - Desativa a auto-resposta de fluxo.
