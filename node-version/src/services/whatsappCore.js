@@ -176,6 +176,9 @@ class WhatsAppService {
       for (const msg of messages) {
         if (!msg.message) continue;
 
+        // ── LOG DE DEBUG: CORPO COMPLETO DA MENSAGEM ───────────────────────────────
+        logger.info(`[${sessionId}] 📦 RAW MESSAGE: ${JSON.stringify(msg, null, 2)}`);
+
         const isFromMe = msg.key.fromMe;
         const remoteJid = msg.key.remoteJid;
         if (remoteJid === 'status@broadcast') continue; // Ignora status de WhatsApp
