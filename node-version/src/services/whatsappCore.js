@@ -389,7 +389,40 @@ class WhatsAppService {
     if (!sock) throw new Error(`Sessão ${sessionId} não está ativa na memória.`);
     if (!sock.user) throw new Error(`Sessão ${sessionId} não está autenticada (Aguardando QR Code).`);
 
-    const jid = normalizeToJid(to);
+    let jid = normalizeToJid(to);
+
+    // ── FIX CRÍTICO: Consulta o JID real no WhatsApp ──
+    // O WhatsApp no Brasil possui inconsistências com o 9º dígito.
+    // Consultamos o servidor para obter o JID exato (com ou sem o 9).
+    try {
+      const waExists = await sock.onWhatsApp(jid);
+      if (waExists && waExists.length > 0 && waExists[0].exists) {
+        jid = waExists[0].jid;
+      } else {
+        // Se não existir, tenta adicionar ou remover o 9º dígito
+        const digits = String(to).replace(/\D/g, '');
+        let alternateJid = jid;
+        if (digits.length === 13 && digits.startsWith('55')) {
+          // Remove o 9º dígito
+          const areaCode = digits.substring(2, 4);
+          alternateJid = `55${areaCode}${digits.substring(5)}@s.whatsapp.net`;
+        } else if (digits.length === 12 && digits.startsWith('55')) {
+          // Adiciona o 9º dígito
+          const areaCode = digits.substring(2, 4);
+          alternateJid = `55${areaCode}9${digits.substring(4)}@s.whatsapp.net`;
+        }
+        
+        if (alternateJid !== jid) {
+          const alternateExists = await sock.onWhatsApp(alternateJid);
+          if (alternateExists && alternateExists.length > 0 && alternateExists[0].exists) {
+            jid = alternateExists[0].jid;
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn(`[${sessionId}] ⚠️ Falha ao verificar existência no WhatsApp para ${jid}: ${err.message}`);
+    }
+
     logger.info(`[${sessionId}] 📤 Enviando nativamente para ${jid}`);
 
     const result = await sock.sendMessage(jid, { text: content });
