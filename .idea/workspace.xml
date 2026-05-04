@@ -4,9 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="46ac9361-d88a-4ce2-a30a-947c96b3e066" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/node-version/src/services/whatsappCore.js" beforeDir="false" afterPath="$PROJECT_DIR$/node-version/src/services/whatsappCore.js" afterDir="false" />
-    </list>
+    <list default="true" id="46ac9361-d88a-4ce2-a30a-947c96b3e066" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -56,7 +54,7 @@
       <updated>1777819987279</updated>
       <workItem from="1777819988565" duration="4055000" />
       <workItem from="1777900165290" duration="131000" />
-      <workItem from="1777908837968" duration="3602000" />
+      <workItem from="1777908837968" duration="4224000" />
     </task>
     <servers />
   </component>

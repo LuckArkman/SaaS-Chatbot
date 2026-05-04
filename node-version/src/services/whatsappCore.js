@@ -206,10 +206,13 @@ class WhatsAppService {
         //   3. Scan de store.contacts procurando c.lid === remoteJid         — O(n)
         //   4. Descarte — evita salvar dados corrompidos no MongoDB
         // ── RESOLUÇÃO DE JID NO FORMATO LID / GRUPOS ────────────────────────────────
-        // Prioridade 0: participantPn (Campo nativo do Baileys que traz o telefone real)
-        const participantPn = msg.key.participantPn || (msg.message?.extendedTextMessage?.contextInfo?.participantPn);
-        if (participantPn && participantPn.includes('@s.whatsapp.net')) {
-          phone = phoneUtils.normalizeToDb(participantPn.split('@')[0]);
+        // Prioridade 0: participantPn / senderPn (Campos nativos do Baileys que trazem o telefone real)
+        const realPhoneJid = msg.key.participantPn || msg.key.senderPn || 
+                           (msg.message?.extendedTextMessage?.contextInfo?.participantPn) ||
+                           (msg.message?.extendedTextMessage?.contextInfo?.senderPn);
+
+        if (realPhoneJid && realPhoneJid.includes('@s.whatsapp.net')) {
+          phone = phoneUtils.normalizeToDb(realPhoneJid.split('@')[0]);
           
           // Alimenta o cache (Memória e Redis) para acelerar futuras mensagens
           const currentLidMap = this.lidMaps[sessionId] || {};
