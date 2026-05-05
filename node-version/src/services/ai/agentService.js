@@ -1,7 +1,7 @@
-const { AiConfig } = require('../models/sql/models');
-const ragService = require('./ai/ragService');
-const geminiService = require('./ai/geminiService');
-const logger = require('../utils/logger');
+const { AiConfig } = require('../../models/sql/models');
+const ragService = require('./ragService');
+const geminiService = require('./geminiService');
+const logger = require('../../utils/logger');
 
 /**
  * AgentService - Implementa o conceito de Instância MCP (Model Context Protocol) isolada por Tenant.
@@ -38,7 +38,7 @@ class AgentService {
       // 4. Delegação para o provedor de IA (Gemini, OpenAI, etc)
       let response = null;
       if (config.provider === 'gemini') {
-        response = await geminiService.generateResponse(userMessage, finalPrompt, conversationHistory);
+        response = await geminiService.generateResponse(userMessage, finalPrompt, conversationHistory, config.api_key);
       } else {
         logger.warn(`[AgentService] Provedor ${config.provider} não implementado na instância ${tenantId}`);
       }

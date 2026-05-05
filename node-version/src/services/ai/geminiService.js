@@ -1,6 +1,6 @@
 const axios = require('axios');
 const logger = require('../../utils/logger');
-require('dotenv').config({ path: '../../.env' });
+require('dotenv').config({ path: '../../../.env' });
 
 class GeminiService {
   static MODEL = 'gemma-3-12b-it';
@@ -11,7 +11,7 @@ class GeminiService {
     return `${this.BASE_URL}/${model}:generateContent`;
   }
 
-  static async generateResponse(userMessage, systemPrompt = '', conversationHistory = []) {
+  static async generateResponse(userMessage, systemPrompt = '', conversationHistory = [], overrideApiKey = null) {
     const contents = [...conversationHistory];
     
     contents.push({
@@ -33,9 +33,9 @@ class GeminiService {
       topP: 0.9
     };
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = overrideApiKey || process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      logger.error('❌ GEMINI_API_KEY não configurada no .env');
+      logger.error('❌ GEMINI_API_KEY não configurada no .env nem por parâmetro');
       return 'Erro: Chave da IA não configurada no backend.';
     }
 
