@@ -397,11 +397,7 @@ class WhatsAppService {
 
           // ── NOTIFICAÇÃO EM TEMPO REAL COM LOGS DE DIAGNÓSTICO ─────────────────────
           try {
-            // Dispara via publishEvent que já trata a normalização legado se necessário
-            await connectionManager.publishEvent(tenantId, socketPayload);
-            
-            // Fallback para o método antigo caso o front ainda use 'receive_message'
-            socketPayload.method = 'receive_message';
+            // Dispara via publishEvent (Método Moderno: new_message)
             await connectionManager.publishEvent(tenantId, socketPayload);
 
             const now = new Date().toLocaleString('pt-BR');
