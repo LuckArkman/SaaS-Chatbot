@@ -13,6 +13,8 @@ class ConnectionManager {
     this.wss = null;
     // Estrutura: { "TENANT_A": { "user_1": [ws, ws] } }
     this.activeConnections = {};
+    // Cache de IDs de mensagens entregues para evitar duplicidade no frontend: { "message_id": timestamp }
+    this.deliveredMessageIds = new Map();
   }
 
   init(server) {
@@ -122,7 +124,39 @@ class ConnectionManager {
     }
   }
 
+  /**
+   * Helper para evitar a entrega duplicada de mensagens no WebSocket (Deduplicação de Contrato)
+   */
+  isDuplicateMessage(message) {
+    if (!message || !message.method || !message.params) return false;
+    
+    const isMessageEvent = message.method === 'new_message' || message.method === 'receive_message';
+    if (!isMessageEvent) return false;
+
+    const messageId = message.params.message_id || message.params.id;
+    if (!messageId) return false;
+
+    const now = Date.now();
+    
+    // Limpeza de chaves expiradas (mais de 15 segundos) para evitar vazamento de memória
+    for (const [id, timestamp] of this.deliveredMessageIds.entries()) {
+      if (now - timestamp > 15000) {
+        this.deliveredMessageIds.delete(id);
+      }
+    }
+
+    if (this.deliveredMessageIds.has(messageId)) {
+      logger.info(`[WS] 🛡️ Mensagem duplicada descartada para evitar renderização dupla no front-end (ID: ${messageId})`);
+      return true;
+    }
+
+    this.deliveredMessageIds.set(messageId, now);
+    return false;
+  }
+
   async sendPersonalMessage(tenantId, userId, message) {
+    if (this.isDuplicateMessage(message)) return;
+
     const userSockets = this.activeConnections[tenantId]?.[userId];
     if (userSockets && userSockets.length > 0) {
       const msgStr = JSON.stringify(message);
@@ -136,6 +170,7 @@ class ConnectionManager {
 
   async broadcastToTenant(tenantId, message) {
     tenantId = tenantId.toUpperCase();
+    if (this.isDuplicateMessage(message)) return 0;
     
     const tenantSockets = this.activeConnections[tenantId];
     if (!tenantSockets) {
