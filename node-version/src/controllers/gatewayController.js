@@ -111,7 +111,7 @@ const incomingWebhook = async (req, res) => {
           }
         };
 
-        await connectionManager.broadcastToTenant(resolvedTenantId, socketPayload);
+        await connectionManager.publishEvent(resolvedTenantId, socketPayload);
       }
     } catch (e) {
       logger.error(`[Gateway] Falha não tratada no processamento background: ${e.message}`);

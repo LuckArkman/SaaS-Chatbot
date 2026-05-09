@@ -125,7 +125,8 @@ class ConnectionManager {
   }
 
   /**
-   * Helper para evitar a entrega duplicada de mensagens no WebSocket (Deduplicação de Contrato)
+   * Helper para evitar a entrega duplicada de mensagens no WebSocket (Deduplicação Híbrida: ID e Semântica)
+   * Garante exatamente-uma-entrega mesmo se os canais (Baileys nativo vs Webhook de ponte externa) usarem IDs e formatos diferentes.
    */
   isDuplicateMessage(message) {
     if (!message || !message.method || !message.params) return false;
@@ -133,24 +134,47 @@ class ConnectionManager {
     const isMessageEvent = message.method === 'new_message' || message.method === 'receive_message';
     if (!isMessageEvent) return false;
 
-    const messageId = message.params.message_id || message.params.id;
-    if (!messageId) return false;
-
+    const params = message.params;
+    const messageId = params.message_id || params.id;
+    
+    // Extrai telefone, conteúdo e origem de forma ultra-tolerante
+    const phone = params.contact_phone || params.phone || params.conversation_id || (params.contact && (params.contact.phone || params.contact.phone_number));
+    const content = params.content || '';
+    const source = params.source || (params.from_me ? 'agent' : 'user');
+    
     const now = Date.now();
     
-    // Limpeza de chaves expiradas (mais de 15 segundos) para evitar vazamento de memória
-    for (const [id, timestamp] of this.deliveredMessageIds.entries()) {
-      if (now - timestamp > 15000) {
-        this.deliveredMessageIds.delete(id);
+    // Limpeza de chaves expiradas para evitar vazamento de memória (4s para assinaturas, 15s para IDs de mensagens)
+    for (const [key, timestamp] of this.deliveredMessageIds.entries()) {
+      const isSignature = key.startsWith('sig:');
+      const maxAge = isSignature ? 4000 : 15000;
+      if (now - timestamp > maxAge) {
+        this.deliveredMessageIds.delete(key);
       }
     }
 
-    if (this.deliveredMessageIds.has(messageId)) {
-      logger.info(`[WS] 🛡️ Mensagem duplicada descartada para evitar renderização dupla no front-end (ID: ${messageId})`);
-      return true;
+    // 1. Deduplicação por ID de Mensagem legítimo
+    if (messageId && !String(messageId).includes('Date') && !String(messageId).match(/^\d+$/)) {
+      const idKey = `id:${messageId}`;
+      if (this.deliveredMessageIds.has(idKey)) {
+        logger.info(`[WS] 🛡️ Mensagem duplicada descartada por ID (ID: ${messageId})`);
+        return true;
+      }
+      this.deliveredMessageIds.set(idKey, now);
     }
 
-    this.deliveredMessageIds.set(messageId, now);
+    // 2. Deduplicação Semântica (Telefone + Conteúdo + Origem) para barrar Webhooks e pontes concorrentes
+    if (phone && content) {
+      const cleanPhone = String(phone).replace(/\D/g, '');
+      const signature = `sig:${cleanPhone}:${content}:${source}`;
+
+      if (this.deliveredMessageIds.has(signature)) {
+        logger.info(`[WS] 🛡️ Mensagem duplicada descartada por Assinatura Semântica (Telefone: ${cleanPhone}, Conteúdo: "${content.substring(0, 20)}")`);
+        return true;
+      }
+      this.deliveredMessageIds.set(signature, now);
+    }
+
     return false;
   }
 
