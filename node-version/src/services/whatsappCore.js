@@ -324,7 +324,7 @@ class WhatsAppService {
 
         logger.info(`[${sessionId}] 📩 Mensagem Recebida de ${phone}: ${textContent.substring(0, 30)}`);
 
-        // GRAVAÇÃO NO MONGOOSE COM PROTEÇÃO CONTRA DUPLICATAS OTIMISTAS
+        // GRAVAÇÃO NO MONGOOSE COM PROTEÇÃO CONTRA DUPLICATAS OTIMISTAS E DE BANCO
         try {
           if (isFromMe) {
             // Se foi enviada via API/Bot, a mensagem "otimista" já existe sem external_id
@@ -341,31 +341,49 @@ class WhatsAppService {
               existingMsg.ack = 1; // Enviado
               await existingMsg.save();
             } else {
-              // Enviado direto do celular do usuário
+              // Enviado direto do celular do usuário (verifica se já existe para evitar duplicação)
+              const isDuplicate = await Message.findOne({
+                tenant_id: tenantId,
+                external_id: msg.key.id
+              });
+
+              if (!isDuplicate) {
+                await Message.create({
+                  tenant_id: tenantId,
+                  session_name: sessionId,
+                  contact_phone: phone,
+                  contact_name: pushName,
+                  content: textContent,
+                  source: 'agent',
+                  message_type: 'text',
+                  external_id: msg.key.id,
+                  ack: 1
+                });
+              } else {
+                logger.debug(`[${sessionId}] 🛡️ Mensagem de saída ${msg.key.id} já existe no MongoDB. Pulando criação.`);
+              }
+            }
+          } else {
+            // Mensagem incoming de um usuário (verifica se já existe para evitar duplicação)
+            const isDuplicate = await Message.findOne({
+              tenant_id: tenantId,
+              external_id: msg.key.id
+            });
+
+            if (!isDuplicate) {
               await Message.create({
                 tenant_id: tenantId,
                 session_name: sessionId,
                 contact_phone: phone,
                 contact_name: pushName,
                 content: textContent,
-                source: 'agent',
+                source: 'user',
                 message_type: 'text',
-                external_id: msg.key.id,
-                ack: 1
+                external_id: msg.key.id
               });
+            } else {
+              logger.debug(`[${sessionId}] 🛡️ Mensagem de entrada ${msg.key.id} já existe no MongoDB. Pulando criação.`);
             }
-          } else {
-            // Mensagem incoming de um usuário
-            await Message.create({
-              tenant_id: tenantId,
-              session_name: sessionId,
-              contact_phone: phone,
-              contact_name: pushName,
-              content: textContent,
-              source: 'user',
-              message_type: 'text',
-              external_id: msg.key.id
-            });
           }
 
           // BROADCAST WS EM TEMPO REAL PARA O FRONTEND

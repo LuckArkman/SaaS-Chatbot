@@ -13,8 +13,8 @@ class ConnectionManager {
     this.wss = null;
     // Estrutura: { "TENANT_A": { "user_1": [ws, ws] } }
     this.activeConnections = {};
-    // Cache de IDs de mensagens entregues para evitar duplicidade no frontend: { "message_id": timestamp }
-    this.deliveredMessageIds = new Map();
+    // Armazena a última mensagem processada por contato para deduplicação semântica rígida: { "contact_phone": { content, timestamp } }
+    this.lastSentMessageByContact = new Map();
   }
 
   init(server) {
@@ -125,8 +125,11 @@ class ConnectionManager {
   }
 
   /**
-   * Helper para evitar a entrega duplicada de mensagens no WebSocket (Deduplicação Híbrida: ID e Semântica)
-   * Garante exatamente-uma-entrega mesmo se os canais (Baileys nativo vs Webhook de ponte externa) usarem IDs e formatos diferentes.
+   * Helper para evitar a entrega duplicada de mensagens no WebSocket (Comparação por Contato e Conteúdo da Mensagem)
+   * De acordo com a especificação técnica fornecida:
+   * 1. Armazena o formulário (corpo/conteúdo) da mensagem atual enviada ao frontend por contato.
+   * 2. Compara se a nova mensagem para este contato possui o mesmo corpo/conteúdo da anterior.
+   * 3. Se possuir, bloqueia a nova para manter apenas a primeira mensagem entregue.
    */
   isDuplicateMessage(message) {
     if (!message || !message.method || !message.params) return false;
@@ -135,45 +138,34 @@ class ConnectionManager {
     if (!isMessageEvent) return false;
 
     const params = message.params;
-    const messageId = params.message_id || params.id;
     
-    // Extrai telefone, conteúdo e origem de forma ultra-tolerante
+    // 1. Identifica o contato destinatário/remetente (o telefone)
     const phone = params.contact_phone || params.phone || params.conversation_id || (params.contact && (params.contact.phone || params.contact.phone_number));
+    if (!phone) return false;
+
+    const cleanPhone = String(phone).replace(/\D/g, '');
     const content = params.content || '';
-    const source = params.source || (params.from_me ? 'agent' : 'user');
-    
     const now = Date.now();
-    
-    // Limpeza de chaves expiradas para evitar vazamento de memória (4s para assinaturas, 15s para IDs de mensagens)
-    for (const [key, timestamp] of this.deliveredMessageIds.entries()) {
-      const isSignature = key.startsWith('sig:');
-      const maxAge = isSignature ? 4000 : 15000;
-      if (now - timestamp > maxAge) {
-        this.deliveredMessageIds.delete(key);
-      }
-    }
 
-    // 1. Deduplicação por ID de Mensagem legítimo
-    if (messageId && !String(messageId).includes('Date') && !String(messageId).match(/^\d+$/)) {
-      const idKey = `id:${messageId}`;
-      if (this.deliveredMessageIds.has(idKey)) {
-        logger.info(`[WS] 🛡️ Mensagem duplicada descartada por ID (ID: ${messageId})`);
+    // 2. Busca a última mensagem enviada/processada para este contato específico
+    if (this.lastSentMessageByContact.has(cleanPhone)) {
+      const previousMessage = this.lastSentMessageByContact.get(cleanPhone);
+      
+      // Compara o conteúdo (corpo da mensagem) atual com o anterior
+      // Tempo de expiração de segurança de 30 segundos para permitir re-envio manual posterior da mesma frase se desejado
+      const isTimeMatch = (now - previousMessage.timestamp) < 30000;
+      
+      if (previousMessage.content === content && isTimeMatch) {
+        logger.info(`[WS] 🛡️ Duplicidade evitada por conteúdo igual para contato ${cleanPhone}: "${content.substring(0, 30)}"`);
         return true;
       }
-      this.deliveredMessageIds.set(idKey, now);
     }
 
-    // 2. Deduplicação Semântica (Telefone + Conteúdo + Origem) para barrar Webhooks e pontes concorrentes
-    if (phone && content) {
-      const cleanPhone = String(phone).replace(/\D/g, '');
-      const signature = `sig:${cleanPhone}:${content}:${source}`;
-
-      if (this.deliveredMessageIds.has(signature)) {
-        logger.info(`[WS] 🛡️ Mensagem duplicada descartada por Assinatura Semântica (Telefone: ${cleanPhone}, Conteúdo: "${content.substring(0, 20)}")`);
-        return true;
-      }
-      this.deliveredMessageIds.set(signature, now);
-    }
+    // 3. Salva a mensagem atual como a "última mensagem enviada" para este contato
+    this.lastSentMessageByContact.set(cleanPhone, {
+      content: content,
+      timestamp: now
+    });
 
     return false;
   }
