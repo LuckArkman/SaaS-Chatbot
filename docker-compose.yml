@@ -52,7 +52,6 @@ services:
       - saas_redis
       - saas_rabbitmq
       - saas_mongo
-      - saas_ollama
     environment:
       - DOCKER_CONTAINER=true
       - POSTGRES_SERVER=saas_postgres
@@ -62,7 +61,7 @@ services:
       - MONGODB_URL=mongodb://saas_chatbot:3702959@saas_mongo:27017/SaaS_Chatbot?authSource=admin
       - REDIS_URL=redis://saas_redis:6379/0
       - RABBITMQ_URL=amqp://admin:password123@saas_rabbitmq/
-      - OLLAMA_URL=http://saas_ollama:11434
+      - GEMINI_API_KEY=sua_api_key_aqui
     ports:
       - "8001:8000"
     volumes:
@@ -70,17 +69,6 @@ services:
       - ./node-version/src/config:/app/src/config # Mapeamento opcional
     restart: always
 
-  saas_ollama:
-    image: ollama/ollama:latest
-    container_name: saas_ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    restart: always
-
 volumes:
   postgres_data:
   mongo_data:
-  ollama_data:
-
