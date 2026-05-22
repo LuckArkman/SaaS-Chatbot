@@ -5,7 +5,11 @@ const { User } = require('../../models/sql/models');
 const redisService = require('../../config/redis');
 const connectionManager = require('../../websockets/connectionManager');
 const whatsappService = require('../whatsappCore');
+<<<<<<< HEAD
 const GeminiService = require('../ai/geminiService');
+=======
+const LlamaService = require('../ai/llamaService');
+>>>>>>> main
 
 class ConditionEvaluator {
   static injectVariables(text, variables) {
@@ -84,10 +88,17 @@ class NodeActions {
     
     // Inverte para ordem cronológica e constrói o histórico
     recentMessages.reverse();
+<<<<<<< HEAD
     const conversationHistory = GeminiService.buildHistoryFromMessages(recentMessages);
 
     // Chama o serviço do Gemma 3 12B
     const aiReply = await GeminiService.generateResponse(processedInput, systemPrompt, conversationHistory);
+=======
+    const conversationHistory = LlamaService.buildHistoryFromMessages(recentMessages);
+
+    // Chama o serviço do Llama
+    const aiReply = await LlamaService.generateResponse(processedInput, systemPrompt, conversationHistory);
+>>>>>>> main
 
     // Grava no Mongoose
     await Message.create({
