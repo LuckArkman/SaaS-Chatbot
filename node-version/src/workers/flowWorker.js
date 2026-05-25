@@ -32,7 +32,7 @@ class FlowWorker {
         // A mensagem já foi salva no MongoDB pelo whatsappCore! (Zero duplicação)
         
         // 1. Busca fluxo ativo do Tenant
-        const flow = await Flow.findOne({ is_active: true });
+        const flow = await Flow.findOne({ tenant_id: tenant_id.toUpperCase(), is_active: true });
         
         if (!flow) {
           logger.warn(`⚠️ Nenhum fluxo ativo encontrado para o Tenant ${tenant_id}`);
@@ -41,6 +41,7 @@ class FlowWorker {
 
         // 2. Busca ou Cria a sessão do contato neste fluxo
         let session = await SessionState.findOne({ 
+          tenant_id: tenant_id.toUpperCase(),
           contact_phone: contactPhone, 
           flow_id: flow._id.toString() 
         });

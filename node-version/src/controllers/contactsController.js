@@ -7,12 +7,20 @@ const listContacts = async (req, res) => {
   const offset = (page - 1) * limit;
 
   try {
-    const whereClause = search ? {
-      [Op.or]: [
-        { full_name: { [Op.iLike]: `%${search}%` } },
-        { phone_number: { [Op.iLike]: `%${search}%` } }
-      ]
-    } : {};
+    const whereClause = {
+      tenant_id: req.tenantId
+    };
+
+    if (search) {
+      whereClause[Op.and] = [
+        {
+          [Op.or]: [
+            { full_name: { [Op.iLike]: `%${search}%` } },
+            { phone_number: { [Op.iLike]: `%${search}%` } }
+          ]
+        }
+      ];
+    }
 
     const { count, rows } = await Contact.findAndCountAll({
       where: whereClause,
@@ -32,9 +40,23 @@ const createContact = async (req, res) => {
   const { phone_number, full_name, tag_ids = [] } = req.body;
   try {
     const normalizedPhone = phoneUtils.normalizeToDb(phone_number);
-    const contact = await Contact.create({ phone_number: normalizedPhone, full_name });
+    const contact = await Contact.create({ 
+      phone_number: normalizedPhone, 
+      full_name,
+      tenant_id: req.tenantId
+    });
+
     if (tag_ids.length > 0) {
-      await contact.addTags(tag_ids);
+      const validTags = await Tag.findAll({
+        where: {
+          id: { [Op.in]: tag_ids },
+          tenant_id: req.tenantId
+        }
+      });
+      const validTagIds = validTags.map(t => t.id);
+      if (validTagIds.length > 0) {
+        await contact.addTags(validTagIds);
+      }
     }
     return res.status(201).json(contact);
   } catch (e) {
@@ -46,14 +68,24 @@ const updateContact = async (req, res) => {
   const { id } = req.params;
   const { phone_number, full_name, is_blacklisted, tag_ids } = req.body;
   try {
-    const contact = await Contact.findByPk(id);
+    const contact = await Contact.findOne({ where: { id, tenant_id: req.tenantId } });
     if (!contact) return res.status(404).json({ detail: 'Contact not found' });
 
     const normalizedPhone = phone_number ? phoneUtils.normalizeToDb(phone_number) : contact.phone_number;
     await contact.update({ phone_number: normalizedPhone, full_name, is_blacklisted });
     
     if (tag_ids !== undefined) {
-      await contact.setTags(tag_ids);
+      if (tag_ids.length > 0) {
+        const validTags = await Tag.findAll({
+          where: {
+            id: { [Op.in]: tag_ids },
+            tenant_id: req.tenantId
+          }
+        });
+        await contact.setTags(validTags.map(t => t.id));
+      } else {
+        await contact.setTags([]);
+      }
     }
     
     return res.json(contact);
@@ -65,7 +97,7 @@ const updateContact = async (req, res) => {
 const deleteContact = async (req, res) => {
   const { id } = req.params;
   try {
-    const contact = await Contact.findByPk(id);
+    const contact = await Contact.findOne({ where: { id, tenant_id: req.tenantId } });
     if (!contact) return res.status(404).json({ detail: 'Contact not found' });
     
     await contact.destroy();

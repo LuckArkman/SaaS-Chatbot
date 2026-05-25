@@ -16,7 +16,10 @@ const uploadFile = async (req, res) => {
       return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
     }
 
-    const tenantId = req.tenantId || 'GLOBAL';
+    const tenantId = req.tenantId;
+    if (!tenantId) {
+      return res.status(401).json({ error: 'Contexto de tenant ausente ou não autenticado.' });
+    }
     
     logger.info(`[Storage] Recebido arquivo para upload: ${req.file.originalname} | Tamanho: ${req.file.size} bytes | Tenant: ${tenantId}`);
     

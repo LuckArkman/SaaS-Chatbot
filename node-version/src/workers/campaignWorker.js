@@ -18,7 +18,7 @@ class CampaignWorker {
     // Executa no contexto do Tenant isolado
     tenancyContext.run({ tenantId: tenant_id.toUpperCase() }, async () => {
       try {
-        const campaign = await Campaign.findByPk(campaign_id);
+        const campaign = await Campaign.findOne({ where: { id: campaign_id, tenant_id: tenant_id.toUpperCase() } });
         if (!campaign) return;
 
         if (!['scheduled', 'paused'].includes(campaign.status)) return;
@@ -81,7 +81,7 @@ class CampaignWorker {
             campaign.sent_count += 1;
 
             // Atribuição de Lead
-            const lead = await Contact.findOne({ where: { phone_number: contact.phone_number }});
+            const lead = await Contact.findOne({ where: { phone_number: contact.phone_number, tenant_id: tenant_id.toUpperCase() }});
             if (lead) {
               lead.last_campaign_id = campaign_id;
               await lead.save();

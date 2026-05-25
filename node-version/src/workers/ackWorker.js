@@ -25,7 +25,7 @@ class AckWorker {
     else if (wsStatus === 5) newStatus = 'error';
 
     try {
-      const msg = await Message.findOne({ 'external_id': externalId });
+      const msg = await Message.findOne({ 'external_id': externalId, tenant_id: tenant_id.toUpperCase() });
       
       let conversationRef = externalId;
       if (msg) {

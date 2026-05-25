@@ -16,6 +16,11 @@ class CampaignService {
   }
 
   static async addContacts(campaignId, contactsArray, tenantId) {
+    const campaign = await Campaign.findOne({ where: { id: campaignId, tenant_id: tenantId } });
+    if (!campaign) {
+      throw new Error('Campanha não localizada ou não pertence a este tenant.');
+    }
+
     const records = contactsArray.map(phone => ({
       campaign_id: campaignId,
       phone_number: phoneUtils.normalizeToDb(phone),
@@ -25,15 +30,12 @@ class CampaignService {
 
     await CampaignContact.bulkCreate(records);
 
-    const campaign = await Campaign.findByPk(campaignId);
-    if (campaign) {
-      campaign.total_contacts += contactsArray.length;
-      await campaign.save();
-    }
+    campaign.total_contacts += contactsArray.length;
+    await campaign.save();
   }
 
-  static async scheduleCampaign(campaignId) {
-    const campaign = await Campaign.findByPk(campaignId);
+  static async scheduleCampaign(campaignId, tenantId) {
+    const campaign = await Campaign.findOne({ where: { id: campaignId, tenant_id: tenantId } });
     if (!campaign) return false;
 
     campaign.status = 'scheduled';
@@ -41,10 +43,10 @@ class CampaignService {
 
     await rabbitmqBus.publish('campaign_exchange', 'campaign.start', {
       campaign_id: campaignId,
-      tenant_id: campaign.tenant_id
+      tenant_id: tenantId
     });
 
-    logger.info(`🚀 Campanha ${campaignId} agendada para disparo.`);
+    logger.info(`🚀 Campanha ${campaignId} agendada para disparo pelo tenant ${tenantId}.`);
     return true;
   }
 }

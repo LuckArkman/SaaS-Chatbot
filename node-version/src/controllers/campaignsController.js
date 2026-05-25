@@ -12,7 +12,12 @@ const createCampaign = async (req, res) => {
 
 const scheduleCampaign = async (req, res) => {
   const { id } = req.params;
-  const success = await CampaignService.scheduleCampaign(id);
+  
+  if (!req.tenantId) {
+    return res.status(401).json({ detail: 'Not authenticated or tenant context missing' });
+  }
+
+  const success = await CampaignService.scheduleCampaign(id, req.tenantId);
   if (!success) return res.status(404).json({ detail: 'Campanha não encontrada' });
   res.json({ success: true });
 };

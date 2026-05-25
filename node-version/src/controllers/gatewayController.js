@@ -78,7 +78,7 @@ const incomingWebhook = async (req, res) => {
         // Busca nome local do Contato (Isolado no tenant atual!)
         let contactDisplayName = null;
         try {
-          const localContact = await Contact.findOne({ where: { phone_number: contactPhone } });
+          const localContact = await Contact.findOne({ where: { phone_number: contactPhone, tenant_id: resolvedTenantId.toUpperCase() } });
           if (localContact && localContact.full_name) {
             contactDisplayName = localContact.full_name;
           }
