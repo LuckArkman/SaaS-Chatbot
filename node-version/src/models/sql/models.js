@@ -195,9 +195,25 @@ const AiConfig = sequelize.define('AiConfig', {
   updatedAt: 'updated_at'
 });
 
+const CallLog = sequelize.define('CallLog', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  tenant_id: { type: DataTypes.STRING, allowNull: false },
+  contact_phone: { type: DataTypes.STRING, allowNull: false },
+  call_id: { type: DataTypes.STRING, allowNull: false },
+  type: { type: DataTypes.ENUM('voice', 'video'), defaultValue: 'voice' },
+  direction: { type: DataTypes.ENUM('incoming', 'outgoing'), defaultValue: 'incoming' },
+  status: { type: DataTypes.ENUM('ringing', 'accepted', 'rejected', 'ended', 'missed'), defaultValue: 'ringing' },
+  duration: { type: DataTypes.INTEGER, defaultValue: 0 },
+}, {
+  tableName: 'call_logs',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: 'updated_at'
+});
+
 module.exports = { 
   User, Contact, Tag, WhatsAppInstance, 
   Plan, Subscription, Invoice, Transaction, 
   Campaign, CampaignContact, Department,
-  AiConfig
+  AiConfig, CallLog
 };

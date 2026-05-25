@@ -27,6 +27,7 @@ const getChatHistory = async (req, res) => {
         agent_id: null,
         status: ['PENDING', 'SENT', 'DELIVERED', 'READ'][doc.ack] || 'SENT',
         content: doc.content,
+        media_url: doc.media_url || null,
         side: isFromMe ? 'bot' : 'client',
         from_me: isFromMe,
         type: doc.message_type || 'text',
@@ -52,11 +53,13 @@ const getChatHistory = async (req, res) => {
 };
 
 const sendManualMessage = async (req, res) => {
-  let { to, conversation_id, content, type = 'text' } = req.body;
+  let { to, conversation_id, content, type = 'text', media_url } = req.body;
   to = to || conversation_id;
 
-  if (!to || !content) {
-    return res.status(400).json({ error: 'Destinatário e conteúdo são obrigatórios.' });
+  const finalContent = content || media_url;
+
+  if (!to || !finalContent) {
+    return res.status(400).json({ error: 'Destinatário e conteúdo (ou URL da mídia) são obrigatórios.' });
   }
   
   const cleanTo = phoneUtils.normalizeToDb(to);
@@ -67,18 +70,20 @@ const sendManualMessage = async (req, res) => {
       tenant_id: req.tenantId,
       session_name: `tenant_${req.tenantId}`, // Padrão
       contact_phone: cleanTo,
-      content: content,
+      content: finalContent,
+      media_url: media_url || null,
       source: 'agent', // Human agent
       message_type: type,
       ack: 0 // Pending
     });
 
-    // 2. Dispara pra fila de Outgoing (Mesma arquitetura testada e resiliente do Python)
+    // 2. Dispara pra fila de Outgoing
     await rabbitmqBus.publish('messages_exchange', 'message.outgoing', {
       tenant_id: req.tenantId,
       to: cleanTo,
-      content,
-      type
+      content: finalContent,
+      type,
+      media_url: media_url || null
     });
 
     return res.status(202).json({ success: true, message_id: pendingMessage._id });
@@ -163,6 +168,7 @@ const getConversation = async (req, res) => {
         side: isFromMe ? 'bot' : 'client',
         sender: isFromMe ? doc.session_name : doc.contact_phone,
         content: doc.content,
+        media_url: doc.media_url || null,
         type: doc.message_type || 'text',
         timestamp: new Date(doc.timestamp).getTime() / 1000,
         status: doc.ack || 0

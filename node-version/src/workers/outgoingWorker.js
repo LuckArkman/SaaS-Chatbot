@@ -55,14 +55,9 @@ class OutgoingMessageWorker {
         try {
           logger.info(`📤 Tentativa ${attempt}/${maxRetries} | Sessão: '${instance.session_name}'`);
           
-          if (type === 'text') {
-            // CHAMADA NATIVA (Zero latência HTTP)
-            responseBridge = await whatsappService.sendMessage(instance.session_name, to, content);
-            if (responseBridge.success) break;
-          } else {
-            logger.warn(`⚠️ Tipo '${type}' ainda não suportado no Monolito.`);
-            return;
-          }
+          const mediaUrl = payload.media_url || null;
+          responseBridge = await whatsappService.sendMessage(instance.session_name, to, content, type, mediaUrl);
+          if (responseBridge.success) break;
         } catch (e) {
           logger.warn(`⚠️ Falha na tentativa ${attempt}: ${e.message}`);
         }

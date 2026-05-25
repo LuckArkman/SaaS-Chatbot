@@ -3,6 +3,7 @@ const { incomingWebhook } = require('./controllers/gatewayController');
 const { requireAuth } = require('./middlewares/authMiddleware');
 const { validatePhoneContract } = require('./middlewares/contractMiddleware');
 const callsController = require('./controllers/callsController');
+const storageController = require('./controllers/storageController');
 
 // Carrega os controllers com os stubs para as rotas ausentes
 const { 
@@ -832,7 +833,7 @@ router.get('/v1/admin/ws/connections', requireAuth, adminController.inspectWsCon
  * @swagger
  * /api/v1/calls/start:
  *   post:
- *     summary: Iniciar chamada de voz via WhatsApp
+ *     summary: Iniciar chamada de voz/vídeo via WhatsApp
  *     tags: [calls]
  *     security:
  *       - bearerAuth: []
@@ -855,6 +856,51 @@ router.post('/v1/calls/start', requireAuth, callsController.startCall);
  *         description: OK
  */
 router.post('/v1/calls/reject', requireAuth, callsController.rejectCall);
+
+/**
+ * @swagger
+ * /api/v1/calls/accept:
+ *   post:
+ *     summary: Aceitar chamada recebida via WhatsApp
+ *     tags: [calls]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: OK
+ */
+router.post('/v1/calls/accept', requireAuth, callsController.acceptCall);
+
+/**
+ * @swagger
+ * /api/v1/calls/end:
+ *   post:
+ *     summary: Encerrar chamada via WhatsApp
+ *     tags: [calls]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: OK
+ */
+router.post('/v1/calls/end', requireAuth, callsController.endCall);
+
+// ==========================================
+// 10.5. STORAGE
+// ==========================================
+/**
+ * @swagger
+ * /api/v1/storage/upload:
+ *   post:
+ *     summary: Upload de mídias/arquivos
+ *     tags: [storage]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       201:
+ *         description: Created
+ */
+router.post('/v1/storage/upload', requireAuth, storageController.upload.single('file'), storageController.uploadFile);
 
 // ==========================================
 // 11. WS / RPC (Documentation Only)

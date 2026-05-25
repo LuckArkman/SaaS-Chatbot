@@ -131,10 +131,15 @@ class WhatsAppService {
             { status: 'QRCODE', qrcode_base64: qrBase64 },
             { where: { session_name: sessionId }, ignoreTenant: true }
           );
+          
+          await connectionManager.publishEvent(tenantId, {
+            type: 'bot_qrcode_update',
+            qrcode: qrBase64,
+            session: sessionId
+          });
         } catch (e) {
           logger.error(`[${sessionId}] Erro ao converter QR para base64: ${e.message}`);
         }
-        // Em um sistema real, dispararíamos um Socket.io broadcast aqui
       }
 
       if (connection === 'close') {
@@ -149,6 +154,13 @@ class WhatsAppService {
             { status: 'CONNECTING' },
             { where: { session_name: sessionId }, ignoreTenant: true }
           );
+          
+          await connectionManager.publishEvent(tenantId, {
+            type: 'bot_status_update',
+            status: 'CONNECTING',
+            session: sessionId
+          });
+          
           delete this.sockets[sessionId];
           setTimeout(() => this.initializeSession(tenantId, sessionId), 5000);
         } else {
@@ -157,6 +169,13 @@ class WhatsAppService {
             { status: 'DISCONNECTED', qrcode_base64: null },
             { where: { session_name: sessionId }, ignoreTenant: true }
           );
+          
+          await connectionManager.publishEvent(tenantId, {
+            type: 'bot_status_update',
+            status: 'DISCONNECTED',
+            session: sessionId
+          });
+          
           delete this.sockets[sessionId];
           fs.rmSync(tokenPath, { recursive: true, force: true });
         }
@@ -166,6 +185,85 @@ class WhatsAppService {
           { status: 'CONNECTED', qrcode_base64: null },
           { where: { session_name: sessionId }, ignoreTenant: true }
         );
+        
+        await connectionManager.publishEvent(tenantId, {
+          type: 'bot_status_update',
+          status: 'CONNECTED',
+          session: sessionId
+        });
+      }
+    });
+
+    // Eventos de Chamadas (Sinalização via Baileys)
+    sock.ev.on('call', async (calls) => {
+      for (const call of calls) {
+        if (call.status === 'offer') {
+          const fromJid = call.from;
+          const contactPhone = phoneUtils.normalizeToDb(fromJid.split('@')[0]);
+          const callId = call.id;
+          const isVideo = call.isVideo;
+
+          logger.info(`[${sessionId}] 📞 Chamada recebida de ${contactPhone} | ID: ${callId} | Vídeo: ${isVideo}`);
+
+          try {
+            const { CallLog } = require('../models/sql/models');
+            await CallLog.create({
+              tenant_id: tenantId.toUpperCase(),
+              contact_phone: contactPhone,
+              call_id: callId,
+              type: isVideo ? 'video' : 'voice',
+              direction: 'incoming',
+              status: 'ringing'
+            });
+
+            await connectionManager.publishEvent(tenantId, {
+              method: 'call_incoming',
+              params: {
+                call_id: callId,
+                contact_phone: contactPhone,
+                is_video: isVideo,
+                status: 'ringing',
+                timestamp: new Date().toISOString()
+              }
+            });
+          } catch (err) {
+            logger.error(`[${sessionId}] Erro ao registrar chamada recebida: ${err.message}`);
+          }
+        } 
+        else if (['timeout', 'reject', 'terminate'].includes(call.status)) {
+          const callId = call.id;
+          logger.info(`[${sessionId}] 📞 Chamada finalizada/rejeitada no celular. Status: ${call.status} | ID: ${callId}`);
+          
+          try {
+            const { CallLog } = require('../models/sql/models');
+            const log = await CallLog.findOne({ where: { call_id: callId, tenant_id: tenantId.toUpperCase() } });
+            if (log) {
+              let finalStatus = 'ended';
+              if (call.status === 'timeout') finalStatus = 'missed';
+              else if (call.status === 'reject') finalStatus = 'rejected';
+              
+              log.status = finalStatus;
+              
+              if (log.status === 'accepted' || log.status === 'ringing') {
+                // Se estava ativa ou tocando, calcula duração desde a última atualização
+                const dur = Math.round((new Date() - new Date(log.updated_at || log.created_at)) / 1000);
+                log.duration = dur > 0 ? dur : 0;
+              }
+              await log.save();
+            }
+
+            await connectionManager.publishEvent(tenantId, {
+              method: 'call_ended',
+              params: {
+                call_id: callId,
+                status: call.status === 'timeout' ? 'missed' : 'ended',
+                timestamp: new Date().toISOString()
+              }
+            });
+          } catch (err) {
+            logger.error(`[${sessionId}] Erro ao atualizar finalização de chamada: ${err.message}`);
+          }
+        }
       }
     });
 
@@ -306,21 +404,66 @@ class WhatsAppService {
           logger.error(`[${sessionId}] ❌ Erro ao recuperar contato do banco: ${dbErr.message}`);
         }
 
+        // Unpack wrappers (viewOnce, ephemeral, etc.)
+        let messageBody = msg.message;
+        if (messageBody.viewOnceMessage?.message) {
+          messageBody = messageBody.viewOnceMessage.message;
+        } else if (messageBody.viewOnceMessageV2?.message) {
+          messageBody = messageBody.viewOnceMessageV2.message;
+        } else if (messageBody.ephemeralMessage?.message) {
+          messageBody = messageBody.ephemeralMessage.message;
+        }
+
         // ── FILTRO DE MENSAGENS DE PROTOCOLO (Ignorar Sincronizações/Internos) ─────
-        const msgType = Object.keys(msg.message || {})[0];
+        const msgType = Object.keys(messageBody || {})[0];
         const protocolTypes = ['protocolMessage', 'senderKeyDistributionMessage', 'peerDataOperationRequestResponseMessage', 'peerDataOperationRequestMessage'];
         
         if (protocolTypes.includes(msgType)) {
           continue;
         }
 
-        // Normalização Mínima de Texto
+        const mediaTypes = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage'];
+        const activeMediaType = Object.keys(messageBody || {}).find(type => mediaTypes.includes(type));
+        
+        let mediaUrl = null;
+        let messageType = 'text';
         let textContent = '';
-        if (msg.message.conversation) textContent = msg.message.conversation;
-        else if (msg.message.extendedTextMessage) textContent = msg.message.extendedTextMessage.text;
-        else if (msg.message.imageMessage) textContent = '📷 [Imagem]';
-        else if (msg.message.audioMessage) textContent = '🎵 [Áudio]';
-        else textContent = '📦 [Mídia/Outro]';
+        
+        if (activeMediaType) {
+          const mediaObj = messageBody[activeMediaType];
+          messageType = activeMediaType.replace('Message', ''); // image, video, audio, document
+          textContent = mediaObj.caption || mediaObj.fileName || `[Mídia: ${messageType}]`;
+          
+          try {
+            logger.info(`[${sessionId}] 📂 Baixando anexo de mídia do tipo: ${messageType}...`);
+            
+            const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+            const buffer = await downloadMediaMessage(
+              msg,
+              'buffer',
+              {},
+              { logger: this.baileysLogger, rekey: false }
+            );
+
+            if (buffer) {
+              const originalFileName = mediaObj.fileName || 
+                                       (messageType === 'image' ? 'photo.jpg' : 
+                                        messageType === 'video' ? 'video.mp4' : 
+                                        messageType === 'audio' ? 'audio.mp3' : 'file.bin');
+              
+              const StorageService = require('./storageService');
+              const localPath = await StorageService.saveUpload(buffer, originalFileName, tenantId.toUpperCase());
+              mediaUrl = StorageService.getPublicUrl(localPath);
+              logger.info(`[${sessionId}] 📂 Mídia salva com sucesso: ${mediaUrl}`);
+            }
+          } catch (downloadErr) {
+            logger.error(`[${sessionId}] ❌ Falha ao baixar/salvar mídia: ${downloadErr.message}`);
+          }
+        } else {
+          if (messageBody.conversation) textContent = messageBody.conversation;
+          else if (messageBody.extendedTextMessage) textContent = messageBody.extendedTextMessage.text;
+          else textContent = '📦 [Mídia/Outro]';
+        }
 
         logger.info(`[${sessionId}] 📩 Mensagem Recebida de ${phone}: ${textContent.substring(0, 30)}`);
 
@@ -339,6 +482,8 @@ class WhatsAppService {
             if (existingMsg) {
               existingMsg.external_id = msg.key.id;
               existingMsg.ack = 1; // Enviado
+              existingMsg.message_type = messageType;
+              existingMsg.media_url = mediaUrl;
               await existingMsg.save();
             } else {
               // Enviado direto do celular do usuário (verifica se já existe para evitar duplicação)
@@ -355,7 +500,8 @@ class WhatsAppService {
                   contact_name: pushName,
                   content: textContent,
                   source: 'agent',
-                  message_type: 'text',
+                  message_type: messageType,
+                  media_url: mediaUrl,
                   external_id: msg.key.id,
                   ack: 1
                 });
@@ -378,7 +524,8 @@ class WhatsAppService {
                 contact_name: pushName,
                 content: textContent,
                 source: 'user',
-                message_type: 'text',
+                message_type: messageType,
+                media_url: mediaUrl,
                 external_id: msg.key.id
               });
             } else {
@@ -403,7 +550,8 @@ class WhatsAppService {
               contact_phone: phone,
               contact_name: contactDisplayName,
               content: textContent,
-              message_type: 'text',
+              message_type: messageType,
+              media_url: mediaUrl,
               source: isFromMe ? 'agent' : 'user',
               from_me: isFromMe,
               side: isFromMe ? 'bot' : 'client',
@@ -479,9 +627,37 @@ class WhatsAppService {
   }
 
   /**
-   * Envio de mensagens invocado pelos Workers ou API diretamente em memória
+   * Helper para resolver mimetype com base na extensão para o envio de documentos
    */
-  async sendMessage(sessionId, to, content) {
+  getMimeType(filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeMap = {
+      '.pdf': 'application/pdf',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.xls': 'application/vnd.ms-excel',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      '.txt': 'text/plain',
+      '.csv': 'text/csv',
+      '.zip': 'application/zip',
+      '.rar': 'application/x-rar-compressed',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.mp4': 'video/mp4',
+      '.mp3': 'audio/mpeg',
+      '.ogg': 'audio/ogg',
+      '.wav': 'audio/wav'
+    };
+    return mimeMap[ext] || 'application/octet-stream';
+  }
+
+  /**
+   * Envio de mensagens invocado pelos Workers ou API diretamente em memória.
+   * Suporta mídias (image, video, audio, document) além de texto puro.
+   */
+  async sendMessage(sessionId, to, content, type = 'text', mediaUrl = null) {
     const sock = this.sockets[sessionId];
     if (!sock) throw new Error(`Sessão ${sessionId} não está ativa na memória.`);
     if (!sock.user) throw new Error(`Sessão ${sessionId} não está autenticada (Aguardando QR Code).`);
@@ -520,10 +696,76 @@ class WhatsAppService {
       logger.warn(`[${sessionId}] ⚠️ Falha ao verificar existência no WhatsApp para ${jid}: ${err.message}`);
     }
 
-    logger.info(`[${sessionId}] 📤 Enviando nativamente para ${jid}`);
+    let result;
+    if (type !== 'text' && mediaUrl) {
+      // Resolve caminho físico local do arquivo a partir da URL pública
+      const relativePath = mediaUrl.replace(/^\//, ''); // Remove barra inicial
+      const localPath = path.join(__dirname, '..', '..', relativePath.split('/').join(path.sep));
 
-    const result = await sock.sendMessage(jid, { text: content });
+      if (!fs.existsSync(localPath)) {
+        throw new Error(`Arquivo de mídia não encontrado no disco local: ${localPath}`);
+      }
+
+      logger.info(`[${sessionId}] 📤 Enviando mídia (${type}) para ${jid} | Path: ${localPath}`);
+
+      if (type === 'image') {
+        result = await sock.sendMessage(jid, { image: { url: localPath }, caption: content });
+      } else if (type === 'video') {
+        result = await sock.sendMessage(jid, { video: { url: localPath }, caption: content });
+      } else if (type === 'audio') {
+        result = await sock.sendMessage(jid, { audio: { url: localPath }, mimetype: 'audio/mp4', ptt: true });
+      } else if (type === 'document') {
+        const originalName = path.basename(localPath).replace(/^[a-f0-9-]{36}_/, '');
+        const mimeType = this.getMimeType(localPath);
+        result = await sock.sendMessage(jid, { document: { url: localPath }, mimetype: mimeType, fileName: originalName });
+      } else {
+        throw new Error(`Tipo de mídia não suportado para envio: ${type}`);
+      }
+    } else {
+      logger.info(`[${sessionId}] 📤 Enviando nativamente para ${jid}`);
+      result = await sock.sendMessage(jid, { text: content });
+    }
+
     return { success: !!result, message_id: result?.key?.id };
+  }
+
+  /**
+   * Dispara um sinal de chamada de voz ou vídeo (signaling offer)
+   */
+  async makeCall(sessionId, phone, isVideo = false) {
+    const sock = this.sockets[sessionId];
+    if (!sock) throw new Error(`Sessão ${sessionId} não está ativa.`);
+    if (!sock.user) throw new Error(`Sessão ${sessionId} não está autenticada.`);
+
+    const jid = phoneUtils.normalizeToJid(phone);
+    const callId = require('crypto').randomBytes(16).toString('hex');
+    
+    logger.info(`[${sessionId}] 📞 Emitindo oferta de chamada para ${jid} | ID: ${callId} | Vídeo: ${isVideo}`);
+    
+    if (typeof sock.offerCall === 'function') {
+      const result = await sock.offerCall(jid, { callId, isVideo });
+      return { id: callId, result };
+    } else {
+      logger.warn(`[${sessionId}] ⚠️ sock.offerCall não é suportado pelo Baileys instalado. Simulando sinal.`);
+      return { id: callId, simulated: true };
+    }
+  }
+
+  /**
+   * Rejeita chamada entrante
+   */
+  async rejectCall(sessionId, callId, callerJid) {
+    const sock = this.sockets[sessionId];
+    if (!sock) throw new Error(`Sessão ${sessionId} não está ativa.`);
+    
+    const cleanJid = callerJid.includes('@') ? callerJid : phoneUtils.normalizeToJid(callerJid);
+    logger.info(`[${sessionId}] 📞 Rejeitando chamada ID ${callId} de ${cleanJid}`);
+    
+    if (typeof sock.rejectCall === 'function') {
+      await sock.rejectCall(callId, cleanJid);
+      return true;
+    }
+    return false;
   }
 
   async listContacts(sessionId) {

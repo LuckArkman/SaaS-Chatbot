@@ -8,6 +8,7 @@ const messageSchema = new mongoose.Schema({
   contact_name: { type: String, default: null },
   
   content: { type: String, required: true },
+  media_url: { type: String, default: null },
   source: { 
     type: String, 
     enum: ['user', 'agent', 'system', 'human'], 
