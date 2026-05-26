@@ -1,10 +1,7 @@
 const { AiConfig } = require('../../models/sql/models');
 const ragService = require('./ragService');
-<<<<<<< HEAD
 const geminiService = require('./geminiService');
-=======
 const llamaService = require('./llamaService');
->>>>>>> main
 const logger = require('../../utils/logger');
 
 /**
@@ -39,17 +36,12 @@ class AgentService {
       const systemPrompt = config.system_prompt || 'Você é um assistente virtual prestativo.';
       const finalPrompt = `${systemPrompt}${context ? `\n\nCONHECIMENTO ADICIONAL:\n${context}` : ''}`;
 
-<<<<<<< HEAD
-      // 4. Delegação para o provedor de IA (Gemini, OpenAI, etc)
+      // 4. Delegação para o provedor de IA (Gemini, Llama, etc)
       let response = null;
       if (config.provider === 'gemini') {
         response = await geminiService.generateResponse(userMessage, finalPrompt, conversationHistory, config.api_key);
-=======
-      // 4. Delegação para o provedor de IA (Llama, etc)
-      let response = null;
-      if (config.provider === 'llama') {
+      } else if (config.provider === 'llama') {
         response = await llamaService.generateResponse(userMessage, finalPrompt, conversationHistory);
->>>>>>> main
       } else {
         logger.warn(`[AgentService] Provedor ${config.provider} não implementado na instância ${tenantId}`);
       }

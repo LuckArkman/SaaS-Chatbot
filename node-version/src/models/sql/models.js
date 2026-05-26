@@ -180,13 +180,8 @@ Department.belongsToMany(User, { through: 'agent_department', foreignKey: 'depar
 const AiConfig = sequelize.define('AiConfig', {
   id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
   tenant_id: { type: DataTypes.STRING, unique: true, allowNull: false },
-<<<<<<< HEAD
-  provider: { type: DataTypes.STRING(50), defaultValue: 'gemini' }, // gemini, openai, anthropic, local
-  model: { type: DataTypes.STRING(100), defaultValue: 'gemma-3-12b-it' },
-=======
   provider: { type: DataTypes.STRING(50), defaultValue: 'llama' }, // llama, gemini, openai, anthropic, local
   model: { type: DataTypes.STRING(100), defaultValue: 'llama3.2' },
->>>>>>> main
   api_key: { type: DataTypes.STRING(255), allowNull: true },
   system_prompt: { type: DataTypes.TEXT, allowNull: true },
   temperature: { type: DataTypes.FLOAT, defaultValue: 0.7 },
