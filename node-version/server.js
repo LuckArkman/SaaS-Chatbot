@@ -1,7 +1,6 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 require('dotenv').config({ path: path.join(__dirname, '.env') });
-
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
@@ -110,7 +109,6 @@ const bootstrap = async () => {
     // 4.6. Garante que o modelo Llama 3.2 esteja disponível localmente no Ollama (pull em background se ausente)
     const LlamaService = require('./src/services/ai/llamaService');
     await LlamaService.ensureModelExists();
-
     // 5. Cron Jobs
     const BillingNotificationService = require('./src/services/billing/billingNotificationService');
     setInterval(async () => {

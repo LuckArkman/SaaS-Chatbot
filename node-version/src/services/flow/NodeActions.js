@@ -5,6 +5,7 @@ const { User } = require('../../models/sql/models');
 const redisService = require('../../config/redis');
 const connectionManager = require('../../websockets/connectionManager');
 const whatsappService = require('../whatsappCore');
+const GeminiService = require('../ai/geminiService');
 const LlamaService = require('../ai/llamaService');
 
 class ConditionEvaluator {
@@ -84,10 +85,19 @@ class NodeActions {
     
     // Inverte para ordem cronológica e constrói o histórico
     recentMessages.reverse();
-    const conversationHistory = LlamaService.buildHistoryFromMessages(recentMessages);
 
-    // Chama o serviço do Llama
-    const aiReply = await LlamaService.generateResponse(processedInput, systemPrompt, conversationHistory);
+    const { AiConfig } = require('../../models/sql/models');
+    const config = await AiConfig.findOne({ where: { tenant_id: tenantId, is_active: true } });
+    const provider = config?.provider || 'llama';
+
+    let aiReply = '';
+    if (provider === 'gemini') {
+      const conversationHistory = GeminiService.buildHistoryFromMessages(recentMessages);
+      aiReply = await GeminiService.generateResponse(processedInput, systemPrompt, conversationHistory, config?.api_key);
+    } else {
+      const conversationHistory = LlamaService.buildHistoryFromMessages(recentMessages);
+      aiReply = await LlamaService.generateResponse(processedInput, systemPrompt, conversationHistory);
+    }
 
     // Grava no Mongoose
     await Message.create({
