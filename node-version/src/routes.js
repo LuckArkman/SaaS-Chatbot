@@ -274,9 +274,75 @@ router.post('/v1/auth/change-password', requireAuth, authController.changePasswo
  */
 router.get('/v1/auth/me', requireAuth, authController.getMe);
 
+/**
+ * @swagger
+ * /api/v1/auth/account:
+ *   delete:
+ *     summary: Excluir / desactivar a própria conta (requer autenticação e confirmação)
+ *     description: |
+ *       Permite que o utilizador autenticado solicite a desactivação da sua própria conta.
+ *
+ *       **Comportamento:**
+ *       - A conta é marcada como `is_active: false` imediatamente.
+ *       - Todas as sessões WhatsApp activas do tenant são encerradas.
+ *       - Os dados históricos (mensagens, conversas) são **preservados por 30 dias** para fins de compliance antes de serem eliminados pelo sistema.
+ *       - A eliminação total e imediata dos dados só pode ser realizada por um superadmin via `DELETE /api/v1/sadmin/tenants/{tenant_id}`.
+ *
+ *       **Medidas de segurança:**
+ *       - Requer token JWT válido (`Authorization: Bearer <token>`).
+ *       - Requer a **senha actual** no body para prevenir acções acidentais.
+ *       - Requer o campo `confirm: "DELETE_MY_ACCOUNT"` para confirmação explícita.
+ *     tags: [auth]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [confirm, password]
+ *             properties:
+ *               confirm:
+ *                 type: string
+ *                 enum: [DELETE_MY_ACCOUNT]
+ *                 example: DELETE_MY_ACCOUNT
+ *                 description: Valor fixo obrigatório para confirmação explícita da acção.
+ *               password:
+ *                 type: string
+ *                 example: MinhaSenh@Actual123
+ *                 description: Senha actual do utilizador para validar a identidade.
+ *     responses:
+ *       200:
+ *         description: Conta desactivada com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                 email:
+ *                   type: string
+ *                 deactivated_at:
+ *                   type: string
+ *                   format: date-time
+ *       400:
+ *         description: Campo confirm ausente ou incorreto
+ *       401:
+ *         description: Token inválido ou senha incorreta
+ *       422:
+ *         description: Campo password ausente
+ */
+router.delete('/v1/auth/account', requireAuth, authController.deleteMyAccount);
+
 
 // ==========================================
 // 2. GATEWAY
+
 // ==========================================
 /**
  * @swagger

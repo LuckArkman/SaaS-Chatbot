@@ -302,6 +302,89 @@ const refresh = async (req, res) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// DELETE /api/v1/auth/account
+// O utilizador autenticado solicita a exclusão/desactivação da sua própria conta.
+//
+// Comportamento:
+//   1. Exige confirmação explícita no body: { confirm: "DELETE_MY_ACCOUNT" }
+//   2. Exige a senha actual para prevenir acções acidentais ou por terceiros.
+//   3. Desactiva o utilizador (is_active = false) e encerra as sessões WhatsApp.
+//   4. Os dados históricos (mensagens, conversas) são preservados por compliance —
+//      a eliminação total de dados só pode ser feita por um superadmin via /sadmin.
+// ---------------------------------------------------------------------------
+const deleteMyAccount = async (req, res) => {
+  const { confirm, password } = req.body;
+
+  // Guarda de segurança 1: confirmação explícita
+  if (confirm !== 'DELETE_MY_ACCOUNT') {
+    return res.status(400).json({
+      error: 'CONFIRMATION_REQUIRED',
+      detail: 'Envie o campo confirm com o valor "DELETE_MY_ACCOUNT" para confirmar a exclusão.',
+    });
+  }
+
+  // Guarda de segurança 2: senha obrigatória
+  if (!password) {
+    return res.status(422).json({
+      error: 'VALIDATION_ERROR',
+      detail: 'A senha actual é obrigatória para confirmar a exclusão da conta.',
+    });
+  }
+
+  try {
+    const currentUser = req.user;
+
+    // Verificar senha
+    const passwordValid = await security.verifyPassword(password, currentUser.hashed_password);
+    if (!passwordValid) {
+      return res.status(401).json({
+        error: 'WRONG_PASSWORD',
+        detail: 'Senha incorrecta. Não foi possível confirmar a exclusão da conta.',
+      });
+    }
+
+    // Desactivar conta
+    await currentUser.update({ is_active: false });
+
+    // Encerrar sessões WhatsApp activas do tenant
+    try {
+      const { WhatsAppInstance } = require('../models/sql/models');
+      const whatsappCore = require('../services/whatsappCore');
+
+      const instances = await WhatsAppInstance.findAll({
+        where: { tenant_id: currentUser.tenant_id, is_active: true },
+        ignoreTenant: true,
+      });
+
+      for (const instance of instances) {
+        try {
+          await whatsappCore.logoutSession(instance.session_name);
+        } catch (sessionErr) {
+          logger.warn(`[DeleteAccount] Erro ao encerrar sessão ${instance.session_name}: ${sessionErr.message}`);
+        }
+        await instance.update({ is_active: false, status: 'DISCONNECTED' });
+      }
+    } catch (waErr) {
+      // Não bloqueia o processo — a conta já foi desactivada
+      logger.warn(`[DeleteAccount] Aviso ao encerrar sessões WA: ${waErr.message}`);
+    }
+
+    logger.info(`🗑️  [Auth] Conta desactivada por solicitação do próprio utilizador: ${currentUser.email} | Tenant: ${currentUser.tenant_id}`);
+
+    return res.status(200).json({
+      success: true,
+      message: 'A sua conta foi desactivada com sucesso. Os dados históricos serão preservados por 30 dias antes da remoção definitiva.',
+      email: currentUser.email,
+      deactivated_at: new Date().toISOString(),
+    });
+
+  } catch (e) {
+    logger.error(`[DeleteAccount] Erro ao desactivar conta: ${e.message}`);
+    return res.status(500).json({ error: 'INTERNAL_ERROR', detail: 'Erro interno ao processar a solicitação.' });
+  }
+};
+
 module.exports = {
   login,
   register,
@@ -310,4 +393,6 @@ module.exports = {
   getMe,
   changePassword,
   refresh,
+  deleteMyAccount,
 };
+
