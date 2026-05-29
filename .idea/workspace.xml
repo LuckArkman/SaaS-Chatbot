@@ -5,7 +5,6 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="46ac9361-d88a-4ce2-a30a-947c96b3e066" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/node-version/scratch/test_api_whatsapp_media.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -76,6 +75,7 @@
       <workItem from="1779802512498" duration="3847000" />
       <workItem from="1779893594532" duration="89000" />
       <workItem from="1779893686314" duration="1753000" />
+      <workItem from="1780075415127" duration="1812000" />
     </task>
     <servers />
   </component>
