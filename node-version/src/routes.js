@@ -276,7 +276,7 @@ router.get('/v1/auth/me', requireAuth, authController.getMe);
 
 /**
  * @swagger
- * /api/v1/auth/account:
+ * /api/v1/auth/remove:
  *   delete:
  *     summary: Excluir / desactivar a própria conta (requer autenticação e confirmação)
  *     description: |
@@ -337,7 +337,7 @@ router.get('/v1/auth/me', requireAuth, authController.getMe);
  *       422:
  *         description: Campo password ausente
  */
-router.delete('/v1/auth/account', requireAuth, authController.deleteMyAccount);
+router.delete('/v1/auth/remove', requireAuth, authController.deleteMyAccount);
 
 
 // ==========================================
