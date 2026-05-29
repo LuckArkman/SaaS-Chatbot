@@ -1,6 +1,7 @@
 const express = require('express');
 const { incomingWebhook } = require('./controllers/gatewayController');
-const { requireAuth, requireServiceKey } = require('./middlewares/authMiddleware');
+const { requireAuth, requireServiceKey, requireSuperAdmin } = require('./middlewares/authMiddleware');
+const sadminController = require('./controllers/adminController');
 const { validatePhoneContract } = require('./middlewares/contractMiddleware');
 const callsController = require('./controllers/callsController');
 const storageController = require('./controllers/storageController');
@@ -26,6 +27,8 @@ router.post('/v1/gateway/:channel_type', incomingWebhook);
  * @swagger
  * tags:
  *   - name: auth
+ *   - name: sadmin
+ *     description: "🔐 Painel Administrativo — requer Bearer token de AdminUser"
  *   - name: admin
  *   - name: calls
  *   - name: ws
@@ -37,6 +40,7 @@ router.post('/v1/gateway/:channel_type', incomingWebhook);
  *   - name: billing
  *   - name: campaigns
  *   - name: contacts
+ *   - name: AI
  */
 
 // ==========================================
@@ -1148,5 +1152,457 @@ router.post('/v1/rag/ingest', requireAuth, aiController.ingestKnowledge);
  *       - bearerAuth: []
  */
 router.delete('/v1/rag/clear', requireAuth, aiController.clearKnowledge);
+
+// ============================================================
+// 13. SUPER ADMIN — /api/v1/sadmin/*
+// Todas as rotas protegidas por requireSuperAdmin().
+// Token obtido em POST /api/v1/sadmin/auth/login
+// ============================================================
+
+// --- Auth Administrativa ---
+/**
+ * @swagger
+ * /api/v1/sadmin/auth/register:
+ *   post:
+ *     summary: Registar novo AdminUser (bootstrap ou superadmin)
+ *     description: |
+ *       Se não existir nenhum admin, qualquer chamada cria o primeiro (superadmin).
+ *       Se já existirem admins, requer Bearer token de superadmin.
+ *     tags: [sadmin]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password, full_name]
+ *             properties:
+ *               email:     { type: string, example: admin@saas.com }
+ *               password:  { type: string, example: Admin@1234 }
+ *               full_name: { type: string, example: Admin Principal }
+ *               role:      { type: string, enum: [superadmin, support, finance, readonly] }
+ *     responses:
+ *       201: { description: Admin criado }
+ *       409: { description: E-mail já registado }
+ */
+router.post('/v1/sadmin/auth/register', sadminController.registerAdmin);
+
+/**
+ * @swagger
+ * /api/v1/sadmin/auth/login:
+ *   post:
+ *     summary: Login administrativo (devolve token de admin)
+ *     tags: [sadmin]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:    { type: string }
+ *               password: { type: string }
+ *     responses:
+ *       200:
+ *         description: Token administrativo emitido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 access_token: { type: string }
+ *                 token_type:   { type: string }
+ *                 role:         { type: string }
+ *                 expires_in:   { type: string }
+ *       401: { description: Credenciais incorretas }
+ */
+router.post('/v1/sadmin/auth/login', sadminController.loginAdmin);
+
+/**
+ * @swagger
+ * /api/v1/sadmin/auth/me:
+ *   get:
+ *     summary: Perfil do admin autenticado
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: Dados do admin }
+ */
+router.get('/v1/sadmin/auth/me', requireSuperAdmin(), sadminController.getAdminMe);
+
+// --- Gestão de Admins ---
+/**
+ * @swagger
+ * /api/v1/sadmin/admins:
+ *   get:
+ *     summary: Listar todos os administradores
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: Lista de admins }
+ */
+router.get('/v1/sadmin/admins', requireSuperAdmin('superadmin'), sadminController.listAdmins);
+
+/**
+ * @swagger
+ * /api/v1/sadmin/admins/{id}:
+ *   patch:
+ *     summary: Atualizar role ou status de um admin
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               role:      { type: string, enum: [superadmin, support, finance, readonly] }
+ *               is_active: { type: boolean }
+ *     responses:
+ *       200: { description: Admin atualizado }
+ */
+router.patch('/v1/sadmin/admins/:id', requireSuperAdmin('superadmin'), sadminController.updateAdmin);
+
+// --- Gestão de Tenants ---
+/**
+ * @swagger
+ * /api/v1/sadmin/tenants:
+ *   get:
+ *     summary: Listar todos os tenants da plataforma
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 50 }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Lista de tenants com dados de subscrição }
+ */
+router.get('/v1/sadmin/tenants', requireSuperAdmin(), sadminController.listTenants);
+
+/**
+ * @swagger
+ * /api/v1/sadmin/tenants/{tenant_id}:
+ *   get:
+ *     summary: Detalhes completos de um tenant
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: tenant_id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Dados completos do tenant }
+ *       404: { description: Tenant não encontrado }
+ */
+router.get('/v1/sadmin/tenants/:tenant_id', requireSuperAdmin(), sadminController.getTenantDetail);
+
+/**
+ * @swagger
+ * /api/v1/sadmin/tenants/{tenant_id}/block:
+ *   post:
+ *     summary: Bloquear tenant (desativa todos os utilizadores)
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: tenant_id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason: { type: string, example: Violação dos termos de uso }
+ *     responses:
+ *       200: { description: Tenant bloqueado }
+ */
+router.post('/v1/sadmin/tenants/:tenant_id/block', requireSuperAdmin(['superadmin', 'support']), sadminController.blockTenant);
+
+/**
+ * @swagger
+ * /api/v1/sadmin/tenants/{tenant_id}/unblock:
+ *   post:
+ *     summary: Desbloquear tenant
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: tenant_id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Tenant desbloqueado }
+ */
+router.post('/v1/sadmin/tenants/:tenant_id/unblock', requireSuperAdmin(['superadmin', 'support']), sadminController.unblockTenant);
+
+/**
+ * @swagger
+ * /api/v1/sadmin/tenants/{tenant_id}:
+ *   delete:
+ *     summary: Eliminar tenant e todos os dados (IRREVERSÍVEL — requer header de confirmação)
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: tenant_id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: header
+ *         name: X-Confirm-Delete
+ *         required: true
+ *         schema: { type: string, example: DELETE_TENANT_CONFIRMED }
+ *     responses:
+ *       200: { description: Tenant eliminado }
+ *       400: { description: Confirmação não enviada }
+ */
+router.delete('/v1/sadmin/tenants/:tenant_id', requireSuperAdmin('superadmin'), sadminController.deleteTenant);
+
+// --- Gestão de Utilizadores (cross-tenant) ---
+/**
+ * @swagger
+ * /api/v1/sadmin/users:
+ *   get:
+ *     summary: Listar todos os utilizadores da plataforma
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: tenant_id
+ *         schema: { type: string }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: Lista de utilizadores paginada }
+ */
+router.get('/v1/sadmin/users', requireSuperAdmin(), sadminController.listAllUsers);
+
+/**
+ * @swagger
+ * /api/v1/sadmin/users/{id}/status:
+ *   patch:
+ *     summary: Ativar ou desativar um utilizador
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [is_active]
+ *             properties:
+ *               is_active: { type: boolean }
+ *     responses:
+ *       200: { description: Status atualizado }
+ */
+router.patch('/v1/sadmin/users/:id/status', requireSuperAdmin(['superadmin', 'support']), sadminController.updateUserStatus);
+
+// --- Monitoramento e Estatísticas ---
+/**
+ * @swagger
+ * /api/v1/sadmin/stats:
+ *   get:
+ *     summary: Dashboard global da plataforma SaaS
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: Estatísticas globais de tenants, mensagens e WhatsApp }
+ */
+router.get('/v1/sadmin/stats', requireSuperAdmin(), sadminController.getTenantStats);
+
+/**
+ * @swagger
+ * /api/v1/sadmin/tenants/summary:
+ *   get:
+ *     summary: Resumo de subscrições por tenant
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: Resumo de subscrições }
+ */
+router.get('/v1/sadmin/subscriptions/summary', requireSuperAdmin(['superadmin', 'finance']), sadminController.getTenantsSummary);
+
+/**
+ * @swagger
+ * /api/v1/sadmin/transactions:
+ *   get:
+ *     summary: Todas as transações financeiras da plataforma
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: tenant_id
+ *         schema: { type: string }
+ *       - in: query
+ *         name: status
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Lista de transações paginada }
+ */
+router.get('/v1/sadmin/transactions', requireSuperAdmin(['superadmin', 'finance']), sadminController.listTransactions);
+
+// --- Conversas e Auditoria ---
+/**
+ * @swagger
+ * /api/v1/sadmin/conversations:
+ *   get:
+ *     summary: Histórico de conversas (qualquer tenant) para auditoria
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: tenant_id
+ *         schema: { type: string }
+ *       - in: query
+ *         name: contact_phone
+ *         schema: { type: string }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: Mensagens paginadas }
+ */
+router.get('/v1/sadmin/conversations', requireSuperAdmin(), sadminController.listConversations);
+
+/**
+ * @swagger
+ * /api/v1/sadmin/audit-logs:
+ *   get:
+ *     summary: Trilha de auditoria de todas as ações administrativas
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: action
+ *         schema: { type: string }
+ *       - in: query
+ *         name: admin_id
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: entity_type
+ *         schema: { type: string }
+ *       - in: query
+ *         name: from
+ *         schema: { type: string, format: date }
+ *       - in: query
+ *         name: to
+ *         schema: { type: string, format: date }
+ *     responses:
+ *       200: { description: Logs de auditoria paginados }
+ */
+router.get('/v1/sadmin/audit-logs', requireSuperAdmin(), sadminController.listAuditLogs);
+
+/**
+ * @swagger
+ * /api/v1/sadmin/calls:
+ *   get:
+ *     summary: Logs de chamadas de todos os tenants
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: tenant_id
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Logs de chamadas paginados }
+ */
+router.get('/v1/sadmin/calls', requireSuperAdmin(), sadminController.listCallLogs);
+
+// --- Sistema ---
+/**
+ * @swagger
+ * /api/v1/sadmin/system/health:
+ *   get:
+ *     summary: Estado de saúde dos serviços (PostgreSQL, MongoDB, Redis)
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: Todos os serviços saudáveis }
+ *       503: { description: Algum serviço com problemas }
+ */
+router.get('/v1/sadmin/system/health', requireSuperAdmin(), sadminController.getSystemHealth);
+
+/**
+ * @swagger
+ * /api/v1/sadmin/system/maintenance:
+ *   post:
+ *     summary: Ativar ou desativar modo de manutenção
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               enabled: { type: boolean }
+ *               message: { type: string, example: Sistema em manutenção. Volte em breve. }
+ *     responses:
+ *       200: { description: Modo de manutenção atualizado }
+ */
+router.post('/v1/sadmin/system/maintenance', requireSuperAdmin('superadmin'), sadminController.toggleMaintenance);
+
+/**
+ * @swagger
+ * /api/v1/sadmin/system/ws-connections:
+ *   get:
+ *     summary: Inspecionar conexões WebSocket ativas
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: Info de conexões WS ativas }
+ */
+router.get('/v1/sadmin/system/ws-connections', requireSuperAdmin(), sadminController.inspectWsConnections);
 
 module.exports = router;

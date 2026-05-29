@@ -211,9 +211,67 @@ const CallLog = sequelize.define('CallLog', {
   updatedAt: 'updated_at'
 });
 
+// ---------------------------------------------------------------------------
+// ADMIN LAYER MODELS
+// ---------------------------------------------------------------------------
+
+/**
+ * AdminUser — Superadministradores da plataforma SaaS.
+ * Separado da tabela `users` (tenants) para isolamento total de privilégios.
+ */
+const AdminUser = sequelize.define('AdminUser', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  email: { type: DataTypes.STRING, unique: true, allowNull: false },
+  full_name: { type: DataTypes.STRING, allowNull: false },
+  hashed_password: { type: DataTypes.STRING, allowNull: false },
+  role: {
+    type: DataTypes.ENUM('superadmin', 'support', 'finance', 'readonly'),
+    defaultValue: 'readonly'
+  },
+  is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
+  last_login_at: { type: DataTypes.DATE, allowNull: true },
+  login_count: { type: DataTypes.INTEGER, defaultValue: 0 },
+}, {
+  tableName: 'admin_users',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: 'updated_at'
+});
+
+/**
+ * AuditLog — Registo imutável de todas as ações administrativas.
+ * Nunca deve ser deletado — serve como trilha de auditoria.
+ */
+const AuditLog = sequelize.define('AuditLog', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  // Quem fez a ação
+  admin_id: { type: DataTypes.INTEGER, allowNull: true },        // null = ação de sistema
+  admin_email: { type: DataTypes.STRING, allowNull: true },
+  admin_role: { type: DataTypes.STRING, allowNull: true },
+  // O que foi feito
+  action: { type: DataTypes.STRING(100), allowNull: false },     // ex: 'TENANT_BLOCKED'
+  entity_type: { type: DataTypes.STRING(50), allowNull: true },  // ex: 'tenant', 'user'
+  entity_id: { type: DataTypes.STRING(100), allowNull: true },   // ex: tenant_id ou user_id
+  // Contexto adicional (payload antes/depois)
+  details: { type: DataTypes.JSONB, allowNull: true },
+  // Metadados de rede
+  ip_address: { type: DataTypes.STRING(50), allowNull: true },
+  user_agent: { type: DataTypes.STRING(255), allowNull: true },
+}, {
+  tableName: 'audit_logs',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: false  // Imutável — sem updates
+});
+
+// Associações de auditoria
+AdminUser.hasMany(AuditLog, { foreignKey: 'admin_id' });
+AuditLog.belongsTo(AdminUser, { foreignKey: 'admin_id' });
+
 module.exports = { 
   User, Contact, Tag, WhatsAppInstance, 
   Plan, Subscription, Invoice, Transaction, 
   Campaign, CampaignContact, Department,
-  AiConfig, CallLog
+  AiConfig, CallLog,
+  AdminUser, AuditLog
 };
