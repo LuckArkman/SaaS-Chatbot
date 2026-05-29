@@ -47,4 +47,32 @@ const requireAuth = async (req, res, next) => {
   }
 };
 
-module.exports = { requireAuth };
+/**
+ * Middleware para endpoints de serviço (provision, admin reset).
+ * Valida o header X-Service-Key contra process.env.PROVISION_API_KEY.
+ * Não requer JWT de utilizador — é um canal exclusivo para sistemas integrados.
+ */
+const requireServiceKey = (req, res, next) => {
+  const PROVISION_API_KEY = process.env.PROVISION_API_KEY;
+
+  if (!PROVISION_API_KEY) {
+    logger.error('[ServiceKey] PROVISION_API_KEY não está definida no ambiente.');
+    return res.status(503).json({
+      error: 'SERVICE_UNAVAILABLE',
+      detail: 'Endpoint de provisionamento não está configurado neste servidor.',
+    });
+  }
+
+  const receivedKey = req.headers['x-service-key'];
+
+  if (!receivedKey || receivedKey !== PROVISION_API_KEY) {
+    return res.status(401).json({
+      error: 'INVALID_SERVICE_KEY',
+      detail: 'X-Service-Key inválida ou ausente.',
+    });
+  }
+
+  next();
+};
+
+module.exports = { requireAuth, requireServiceKey };

@@ -1,6 +1,6 @@
 const express = require('express');
 const { incomingWebhook } = require('./controllers/gatewayController');
-const { requireAuth } = require('./middlewares/authMiddleware');
+const { requireAuth, requireServiceKey } = require('./middlewares/authMiddleware');
 const { validatePhoneContract } = require('./middlewares/contractMiddleware');
 const callsController = require('./controllers/callsController');
 const storageController = require('./controllers/storageController');
@@ -42,15 +42,58 @@ router.post('/v1/gateway/:channel_type', incomingWebhook);
 // ==========================================
 // 1. AUTH
 // ==========================================
+
 /**
  * @swagger
  * /api/v1/auth/login:
  *   post:
- *     summary: Login Access Token
+ *     summary: Login (obtém JWT)
+ *     description: |
+ *       Aceita JSON **ou** `application/x-www-form-urlencoded`.
+ *       O campo de e-mail pode ser enviado como `email` ou `username` (compatibilidade OAuth2).
  *     tags: [auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: user@hotspot.com
+ *               password:
+ *                 type: string
+ *                 example: Senha@123
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             type: object
+ *             required: [username, password]
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 example: user@hotspot.com
+ *               password:
+ *                 type: string
+ *                 example: Senha@123
  *     responses:
  *       200:
- *         description: OK
+ *         description: JWT emitido com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 access_token:  { type: string }
+ *                 refresh_token: { type: string }
+ *                 token_type:    { type: string, example: bearer }
+ *                 tenant_id:     { type: string }
+ *                 user_id:       { type: string }
+ *       401:
+ *         description: Credenciais incorretas
+ *       422:
+ *         description: Campos obrigatórios em falta
  */
 router.post('/v1/auth/login', authController.login);
 
@@ -58,11 +101,23 @@ router.post('/v1/auth/login', authController.login);
  * @swagger
  * /api/v1/auth/refresh:
  *   post:
- *     summary: Refresh Access Token
+ *     summary: Renovar Access Token via Refresh Token
  *     tags: [auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [refresh_token]
+ *             properties:
+ *               refresh_token:
+ *                 type: string
  *     responses:
  *       200:
- *         description: OK
+ *         description: Novo par de tokens emitido
+ *       401:
+ *         description: Refresh token inválido ou expirado
  */
 router.post('/v1/auth/refresh', authController.refresh);
 
@@ -70,13 +125,92 @@ router.post('/v1/auth/refresh', authController.refresh);
  * @swagger
  * /api/v1/auth/register:
  *   post:
- *     summary: Register User
+ *     summary: Registar utilizador (idempotente, devolve JWT)
+ *     description: |
+ *       Cria um novo utilizador e devolve um JWT imediatamente (sem necessidade de login separado).
+ *       **Comportamento idempotente:**
+ *       - E-mail novo → `201` + JWT + `created: true`
+ *       - E-mail existe + senha correta → `200` + JWT + `created: false` (funciona como login)
+ *       - E-mail existe + senha errada → `409` + `code: PASSWORD_MISMATCH`
  *     tags: [auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: user@hotspot.com
+ *               password:
+ *                 type: string
+ *                 example: Senha@123
+ *               full_name:
+ *                 type: string
+ *                 example: João Silva
  *     responses:
+ *       201:
+ *         description: Utilizador criado com sucesso + JWT
  *       200:
- *         description: OK
+ *         description: E-mail já registado com senha correta — JWT emitido (login idempotente)
+ *       409:
+ *         description: E-mail já registado com senha diferente
+ *       422:
+ *         description: Campos inválidos ou senha fraca
  */
 router.post('/v1/auth/register', authController.register);
+
+/**
+ * @swagger
+ * /api/v1/auth/provision:
+ *   post:
+ *     summary: Provisionamento único para integração Hotspot (requer X-Service-Key)
+ *     description: |
+ *       **Endpoint exclusivo para sistemas integrados** (Hotspot, painel PHP, etc.).
+ *       Protegido pelo header `X-Service-Key` (definido em `PROVISION_API_KEY` no servidor).
+ *       Uma única chamada cria o utilizador, faz login ou atualiza a senha — e **sempre devolve JWT**.
+ *
+ *       | Situação | Status | Extra |
+ *       |---|---|---|
+ *       | E-mail novo | 201 | `created: true` |
+ *       | E-mail existe + senha correta | 200 | `created: false, password_updated: false` |
+ *       | E-mail existe + senha errada | 200 | `created: false, password_updated: true` |
+ *     tags: [auth]
+ *     security:
+ *       - serviceKey: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: user@hotspot.com
+ *               password:
+ *                 type: string
+ *                 example: pass123
+ *               full_name:
+ *                 type: string
+ *                 example: João Silva
+ *               tenant_name:
+ *                 type: string
+ *                 example: Hotspot Norte
+ *     responses:
+ *       201:
+ *         description: Utilizador criado + JWT
+ *       200:
+ *         description: JWT emitido (login ou senha atualizada)
+ *       401:
+ *         description: X-Service-Key inválida ou ausente
+ *       422:
+ *         description: Campos obrigatórios em falta
+ */
+router.post('/v1/auth/provision', requireServiceKey, authController.provision);
 
 /**
  * @swagger
@@ -824,6 +958,52 @@ router.post('/v1/admin/system/maintenance', requireAuth, adminController.toggleM
  *         description: OK
  */
 router.get('/v1/admin/ws/connections', requireAuth, adminController.inspectWsConnections);
+
+/**
+ * @swagger
+ * /api/v1/admin/users/{email}/password:
+ *   patch:
+ *     summary: Reset de senha sem fluxo de e-mail (requer X-Service-Key)
+ *     description: |
+ *       Permite ao painel admin/developer redefinir a senha de qualquer utilizador
+ *       sem enviar e-mail de recuperação. Requer o header `X-Service-Key`.
+ *     tags: [admin]
+ *     security:
+ *       - serviceKey: []
+ *     parameters:
+ *       - in: path
+ *         name: email
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: user@hotspot.com
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [new_password]
+ *             properties:
+ *               new_password:
+ *                 type: string
+ *                 example: NovaSenha@2024
+ *     responses:
+ *       200:
+ *         description: Senha redefinida com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 email:   { type: string }
+ *       401:
+ *         description: X-Service-Key inválida
+ *       404:
+ *         description: Utilizador não encontrado
+ */
+router.patch('/v1/admin/users/:email/password', requireServiceKey, authController.adminResetPassword);
 
 
 // ==========================================
