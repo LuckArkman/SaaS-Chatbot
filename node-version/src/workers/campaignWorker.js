@@ -4,6 +4,21 @@ const { tenancyContext } = require('../middlewares/tenancyMiddleware');
 const whatsappService = require('../services/whatsappCore');
 const logger = require('../utils/logger');
 
+/**
+ * Infere o tipo de mídia a partir da extensão da URL.
+ * Espelha a mesma lógica do chatController para consistência.
+ */
+function _detectMediaType(url) {
+  const ext = (url || '').split('.').pop().toLowerCase().split('?')[0];
+  if (['jpg','jpeg','png','gif','webp'].includes(ext))              return 'image';
+  if (['mp4','mov','avi','mkv','webm'].includes(ext))               return 'video';
+  if (['ogg','mp3','aac','wav','m4a','opus'].includes(ext))         return 'audio';
+  if (['pdf','doc','docx','xls','xlsx','ppt','pptx','zip','rar','txt','csv'].includes(ext)) return 'document';
+  return 'document'; // fallback seguro
+}
+
+
+
 class CampaignWorker {
   async start() {
     logger.info('📦 Iniciando Campaign Dispatcher em Segundo Plano...');
@@ -34,7 +49,7 @@ class CampaignWorker {
 
         // Busca instâncias ativas
         const activeBots = await WhatsAppInstance.findAll({
-          where: { status: 'connected' } // O tenancy context garante que pega só os desse tenant
+          where: { status: 'CONNECTED' } // ENUM: CONNECTED (uppercase) — o tenancy context isola o tenant
         });
 
         if (activeBots.length === 0) {
@@ -72,9 +87,14 @@ class CampaignWorker {
           const currentBot = activeBots[botIndex % activeBots.length];
           botIndex++;
 
-          // Disparo Nativo (Substitui Bridge)
+          // Determina o tipo de mensagem com base na presença de media_url
+          const msgType    = campaign.media_url ? _detectMediaType(campaign.media_url) : 'text';
+          const msgContent = campaign.message_template;
+          const msgMedia   = campaign.media_url || null;
+
+          // Disparo Nativo via Baileys (com suporte a mídia)
           try {
-            await whatsappService.sendMessage(currentBot.session_name, contact.phone_number, campaign.message_template);
+            await whatsappService.sendMessage(currentBot.session_name, contact.phone_number, msgContent, msgType, msgMedia);
             
             contact.status = 'sent';
             contact.sent_at = new Date();

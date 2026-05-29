@@ -53,35 +53,55 @@ const getChatHistory = async (req, res) => {
 };
 
 const sendManualMessage = async (req, res) => {
-  let { to, conversation_id, content, type = 'text', media_url } = req.body;
+  let { to, conversation_id, content, type, media_url } = req.body;
   to = to || conversation_id;
 
-  const finalContent = content || media_url;
-
-  if (!to || !finalContent) {
-    return res.status(400).json({ error: 'Destinatário e conteúdo (ou URL da mídia) são obrigatórios.' });
+  // Deve existir pelo menos um destinatário e (texto ou mídia)
+  if (!to || (!content && !media_url)) {
+    return res.status(400).json({ error: 'Destinatário e conteúdo (texto ou mídia) são obrigatórios.' });
   }
-  
+
   const cleanTo = phoneUtils.normalizeToDb(to);
 
+  // Auto-detecta o tipo de mensagem quando não especificado
+  if (!type || type === 'text') {
+    if (media_url) {
+      const ext = media_url.split('.').pop().toLowerCase().split('?')[0];
+      const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+      const videoExts = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
+      const audioExts = ['ogg', 'mp3', 'aac', 'wav', 'm4a', 'opus'];
+      const docExts   = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'rar', 'txt', 'csv'];
+
+      if (imageExts.includes(ext))      type = 'image';
+      else if (videoExts.includes(ext)) type = 'video';
+      else if (audioExts.includes(ext)) type = 'audio';
+      else if (docExts.includes(ext))   type = 'document';
+      else                              type = 'document'; // fallback seguro
+    } else {
+      type = 'text';
+    }
+  }
+
+  const textContent = content || '';  // legenda para mídias; pode ser vazio
+
   try {
-    // 1. Grava no banco otimista (Aparece instantâneo no Front)
+    // 1. Grava no banco optimista (aparece instantaneamente no Front)
     const pendingMessage = await Message.create({
       tenant_id: req.tenantId,
-      session_name: `tenant_${req.tenantId}`, // Padrão
+      session_name: `tenant_${req.tenantId}`,
       contact_phone: cleanTo,
-      content: finalContent,
+      content: textContent || media_url,  // fallback para URL caso sem legenda
       media_url: media_url || null,
-      source: 'agent', // Human agent
+      source: 'agent',
       message_type: type,
-      ack: 0 // Pending
+      ack: 0
     });
 
-    // 2. Dispara pra fila de Outgoing
+    // 2. Publica na fila RabbitMQ com todos os campos necessários
     await rabbitmqBus.publish('messages_exchange', 'message.outgoing', {
       tenant_id: req.tenantId,
       to: cleanTo,
-      content: finalContent,
+      content: textContent,
       type,
       media_url: media_url || null
     });
@@ -92,6 +112,7 @@ const sendManualMessage = async (req, res) => {
     return res.status(500).json({ detail: 'Failed to send message' });
   }
 };
+
 
 const { WhatsAppInstance } = require('../models/sql/models');
 const whatsappCore = require('../services/whatsappCore');

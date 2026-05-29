@@ -645,9 +645,11 @@ class WhatsAppService {
       '.jpg': 'image/jpeg',
       '.jpeg': 'image/jpeg',
       '.gif': 'image/gif',
+      '.webp': 'image/webp',
       '.mp4': 'video/mp4',
       '.mp3': 'audio/mpeg',
       '.ogg': 'audio/ogg',
+      '.opus': 'audio/opus',
       '.wav': 'audio/wav'
     };
     return mimeMap[ext] || 'application/octet-stream';
@@ -698,36 +700,72 @@ class WhatsAppService {
 
     let result;
     if (type !== 'text' && mediaUrl) {
-      // Resolve caminho físico local do arquivo a partir da URL pública
-      const relativePath = mediaUrl.replace(/^\//, ''); // Remove barra inicial
+      // Resolve o caminho físico absoluto a partir da URL pública relativa (/uploads/...)
+      const relativePath = mediaUrl.replace(/^\//, ''); // remove barra inicial
       const localPath = path.join(__dirname, '..', '..', relativePath.split('/').join(path.sep));
 
       if (!fs.existsSync(localPath)) {
         throw new Error(`Arquivo de mídia não encontrado no disco local: ${localPath}`);
       }
 
-      logger.info(`[${sessionId}] 📤 Enviando mídia (${type}) para ${jid} | Path: ${localPath}`);
+      // ── BUG #3 FIX ──────────────────────────────────────────────────────────
+      // O Baileys NÃO aceita string de caminho absoluto na propriedade `url`.
+      // Precisa de `file://` para caminhos locais, ou um Buffer em memória.
+      // Usar Buffer é mais robusto: funciona em qualquer SO sem depender do
+      // esquema file:// ser reconhecido pela versão instalada do Baileys.
+      // ─────────────────────────────────────────────────────────────────────────
+      const fileBuffer = fs.readFileSync(localPath);
+      const caption    = content || '';   // legenda; pode ser string vazia para mídias sem texto
+
+      logger.info(`[${sessionId}] 📤 Enviando mídia (${type}) para ${jid} | Path: ${localPath} | Tamanho: ${fileBuffer.length} bytes`);
 
       if (type === 'image') {
-        result = await sock.sendMessage(jid, { image: { url: localPath }, caption: content });
+        result = await sock.sendMessage(jid, {
+          image: fileBuffer,
+          caption,
+          mimetype: this.getMimeType(localPath),
+        });
+
       } else if (type === 'video') {
-        result = await sock.sendMessage(jid, { video: { url: localPath }, caption: content });
+        result = await sock.sendMessage(jid, {
+          video: fileBuffer,
+          caption,
+          mimetype: this.getMimeType(localPath),
+        });
+
       } else if (type === 'audio') {
-        result = await sock.sendMessage(jid, { audio: { url: localPath }, mimetype: 'audio/mp4', ptt: true });
+        // Detecta se é áudio gravado (PTT) pela extensão .ogg/.opus
+        const ext = path.extname(localPath).toLowerCase();
+        const isPtt = ['.ogg', '.opus'].includes(ext);
+        result = await sock.sendMessage(jid, {
+          audio: fileBuffer,
+          mimetype: this.getMimeType(localPath),
+          ptt: isPtt,
+        });
+
       } else if (type === 'document') {
+        // Remove o prefixo UUID do nome original do arquivo
         const originalName = path.basename(localPath).replace(/^[a-f0-9-]{36}_/, '');
-        const mimeType = this.getMimeType(localPath);
-        result = await sock.sendMessage(jid, { document: { url: localPath }, mimetype: mimeType, fileName: originalName });
+        const mimeType     = this.getMimeType(localPath);
+        result = await sock.sendMessage(jid, {
+          document: fileBuffer,
+          mimetype: mimeType,
+          fileName: originalName,
+          caption,
+        });
+
       } else {
         throw new Error(`Tipo de mídia não suportado para envio: ${type}`);
       }
+
     } else {
-      logger.info(`[${sessionId}] 📤 Enviando nativamente para ${jid}`);
+      logger.info(`[${sessionId}] 📤 Enviando texto para ${jid}`);
       result = await sock.sendMessage(jid, { text: content });
     }
 
     return { success: !!result, message_id: result?.key?.id };
   }
+
 
   /**
    * Dispara um sinal de chamada de voz ou vídeo (signaling offer)

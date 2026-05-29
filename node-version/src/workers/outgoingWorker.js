@@ -21,12 +21,14 @@ class OutgoingMessageWorker {
   }
 
   async processOutgoing(payload) {
-    const { tenant_id, to, content, type = 'text' } = payload;
-    
-    if (!tenant_id || !to || !content) {
+    const { tenant_id, to, content, type = 'text', media_url = null } = payload;
+
+    // Valida: precisa de destinatário e (texto ou mídia)
+    if (!tenant_id || !to || (!content && !media_url)) {
       logger.error(`❌ Payload inválido descartado: ${JSON.stringify(payload)}`);
       return;
     }
+
 
     // 🔧 FIX CRÍTICO #1: Aplica o contexto de Tenancy para garantir queries seguras
     await tenancyContext.run({ tenantId: tenant_id.toUpperCase() }, async () => {
