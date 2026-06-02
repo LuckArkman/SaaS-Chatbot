@@ -245,10 +245,12 @@ const mockResponse = () => {
   };
   res.json = (data) => {
     res.jsonData = data;
+    console.log(`   [Response Payload - Status ${res.statusCode}]:`, JSON.stringify(data));
     return res;
   };
   res.send = (data) => {
     res.sendData = data;
+    console.log(`   [Response Payload - Status ${res.statusCode}]:`, String(data));
     return res;
   };
   return res;
