@@ -129,8 +129,37 @@ CallLog.findOne = async (options) => {
 CallLog.findAndCountAll = async () => ({ count: mockDb.callLogs.length, rows: mockDb.callLogs });
 
 // Setup sub stubs for Sequelize NXN calls
+const { sequelize } = require('../src/config/database');
+sequelize.query = async (sql, options) => {
+  return [
+    {
+      tenant_id: '63FDADA5',
+      user_count: 1,
+      created_at: new Date(),
+      has_active_user: true
+    }
+  ];
+};
+
+Subscription.findOne = async () => null;
 Subscription.findAll = async () => [];
 Subscription.findAndCountAll = async () => ({ count: 0, rows: [] });
+Subscription.count = async () => 0;
+Subscription.destroy = async () => 0;
+
+WhatsAppInstance.count = async (options) => {
+  const tenantId = options?.where?.tenant_id;
+  if (tenantId) {
+    return mockDb.whatsappInstances.filter(x => x.tenant_id === tenantId).length;
+  }
+  return mockDb.whatsappInstances.length;
+};
+WhatsAppInstance.destroy = async () => 0;
+
+User.destroy = async () => 0;
+Campaign.destroy = async () => 0;
+AiConfig.destroy = async () => 0;
+
 Transaction.findAll = async () => [];
 Transaction.findAndCountAll = async () => ({ count: 0, rows: [] });
 Plan.findAll = async () => [];

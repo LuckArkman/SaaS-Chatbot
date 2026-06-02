@@ -700,53 +700,99 @@ class WhatsAppService {
 
     let result;
     if (type !== 'text' && mediaUrl) {
-      // Resolve o caminho físico absoluto a partir da URL pública relativa (/uploads/...)
-      const relativePath = mediaUrl.replace(/^\//, ''); // remove barra inicial
-      const localPath = path.join(__dirname, '..', '..', relativePath.split('/').join(path.sep));
+      let fileBuffer;
+      let filename = 'file';
+      let mimeType = 'application/octet-stream';
 
-      if (!fs.existsSync(localPath)) {
-        throw new Error(`Arquivo de mídia não encontrado no disco local: ${localPath}`);
+      // 1. Verifica se a URL é absoluta (HTTP/HTTPS)
+      if (mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://')) {
+        // Tenta primeiro resolver localmente se apontar para /uploads
+        try {
+          const parsedUrl = new URL(mediaUrl);
+          const pathname = parsedUrl.pathname; // ex: /uploads/whatsapp/whatsapp_10_1779191087_1_2856.png
+          filename = path.basename(pathname);
+
+          if (pathname.startsWith('/uploads/')) {
+            const relativePath = pathname.replace(/^\//, ''); // remove a barra inicial
+            const localPath = path.join(__dirname, '..', '..', relativePath.split('/').join(path.sep));
+
+            if (fs.existsSync(localPath)) {
+              logger.info(`[${sessionId}] 📂 Mídia resolvida localmente a partir de URL pública: ${localPath}`);
+              fileBuffer = fs.readFileSync(localPath);
+              mimeType = this.getMimeType(localPath);
+            }
+          }
+        } catch (urlErr) {
+          logger.warn(`[${sessionId}] ⚠️ Falha ao tentar analisar URL localmente: ${urlErr.message}`);
+        }
+
+        // Se não foi resolvida localmente (externa ou o arquivo não existia fisicamente), baixa via Axios
+        if (!fileBuffer) {
+          try {
+            logger.info(`[${sessionId}] 🌐 Baixando mídia remota via HTTP/HTTPS: ${mediaUrl}`);
+            const axios = require('axios');
+            const downloadResponse = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
+            fileBuffer = Buffer.from(downloadResponse.data);
+            
+            // Tenta obter o mimetype do cabeçalho Content-Type
+            const contentType = downloadResponse.headers['content-type'];
+            if (contentType) {
+              mimeType = contentType.split(';')[0].trim();
+            } else {
+              // Fallback para extensão da URL
+              const parsedUrl = new URL(mediaUrl);
+              filename = path.basename(parsedUrl.pathname);
+              mimeType = this.getMimeType(filename);
+            }
+          } catch (downloadErr) {
+            throw new Error(`Falha ao baixar mídia remota (${mediaUrl}): ${downloadErr.message}`);
+          }
+        }
+
+      } else {
+        // 2. Mídia local com caminho relativo
+        const relativePath = mediaUrl.replace(/^\//, ''); // Remove barra inicial
+        const localPath = path.join(__dirname, '..', '..', relativePath.split('/').join(path.sep));
+
+        if (!fs.existsSync(localPath)) {
+          throw new Error(`Arquivo de mídia não encontrado no disco local: ${localPath}`);
+        }
+
+        filename = path.basename(localPath);
+        fileBuffer = fs.readFileSync(localPath);
+        mimeType = this.getMimeType(localPath);
       }
 
-      // ── BUG #3 FIX ──────────────────────────────────────────────────────────
-      // O Baileys NÃO aceita string de caminho absoluto na propriedade `url`.
-      // Precisa de `file://` para caminhos locais, ou um Buffer em memória.
-      // Usar Buffer é mais robusto: funciona em qualquer SO sem depender do
-      // esquema file:// ser reconhecido pela versão instalada do Baileys.
-      // ─────────────────────────────────────────────────────────────────────────
-      const fileBuffer = fs.readFileSync(localPath);
-      const caption    = content || '';   // legenda; pode ser string vazia para mídias sem texto
-
-      logger.info(`[${sessionId}] 📤 Enviando mídia (${type}) para ${jid} | Path: ${localPath} | Tamanho: ${fileBuffer.length} bytes`);
+      const caption = content || ''; // legenda; pode ser string vazia para mídias sem texto
+      logger.info(`[${sessionId}] 📤 Enviando mídia (${type}) para ${jid} | Nome: ${filename} | Tamanho: ${fileBuffer.length} bytes`);
 
       if (type === 'image') {
         result = await sock.sendMessage(jid, {
           image: fileBuffer,
           caption,
-          mimetype: this.getMimeType(localPath),
+          mimetype: mimeType,
         });
 
       } else if (type === 'video') {
         result = await sock.sendMessage(jid, {
           video: fileBuffer,
           caption,
-          mimetype: this.getMimeType(localPath),
+          mimetype: mimeType,
         });
 
       } else if (type === 'audio') {
         // Detecta se é áudio gravado (PTT) pela extensão .ogg/.opus
-        const ext = path.extname(localPath).toLowerCase();
+        const ext = path.extname(filename).toLowerCase();
         const isPtt = ['.ogg', '.opus'].includes(ext);
         result = await sock.sendMessage(jid, {
           audio: fileBuffer,
-          mimetype: this.getMimeType(localPath),
+          mimetype: mimeType,
           ptt: isPtt,
         });
 
       } else if (type === 'document') {
         // Remove o prefixo UUID do nome original do arquivo
-        const originalName = path.basename(localPath).replace(/^[a-f0-9-]{36}_/, '');
-        const mimeType     = this.getMimeType(localPath);
+        const originalName = filename.replace(/^[a-f0-9-]{36}_/, '');
         result = await sock.sendMessage(jid, {
           document: fileBuffer,
           mimetype: mimeType,
