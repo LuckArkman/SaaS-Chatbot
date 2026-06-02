@@ -12,7 +12,7 @@ const KnowledgeSchema = new mongoose.Schema({
   created_at: { type: Date, default: Date.now }
 });
 
-// Índice para busca rápida por tenant
-KnowledgeSchema.index({ tenant_id: 1 });
+// Para busca rápida por tenant
+// tenant_id já possui index: true na definição do Schema acima
 
 module.exports = mongoose.model('Knowledge', KnowledgeSchema);
