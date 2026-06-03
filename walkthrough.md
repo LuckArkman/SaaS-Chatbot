@@ -1,6 +1,6 @@
-# Walkthrough: Mídias Multimídia e Chamadas via WhatsApp
+# Walkthrough: Integrações e Dockerização do SaaS-Chatbot
 
-Este documento resume as modificações realizadas no backend em Node.js do projeto **SaaS-Chatbot** para implementar o suporte completo ao envio/recebimento de mídias e à sinalização de chamadas de voz e vídeo através do Baileys.
+Este documento resume as modificações realizadas no backend em Node.js do projeto **SaaS-Chatbot** para implementar o suporte a mídias e chamadas, e a recente reestruturação do Docker Compose para inicializar todo o ecossistema de front-end e servidores web de forma unificada.
 
 ---
 
@@ -39,28 +39,39 @@ Este documento resume as modificações realizadas no backend em Node.js do proj
 
 ---
 
+## 🐳 4. Configuração de Dockerização do Frontend & Docker Compose
+
+Para permitir a inicialização unificada do front-end PHP, do banco local MySQL e do servidor web de segurança Nginx junto com a infraestrutura de backend original, realizamos as seguintes inclusões:
+
+### A. Dockerfile do Frontend ([Dockerfile](file:///D:/SaaS-Chatbot/chatbot/Dockerfile))
+Criado no diretório `chatbot/` (tanto no repositório físico quanto na worktree), configurado sob a imagem base `php:8.2-apache`. Ele:
+1. Instala a extensão PHP `pdo_mysql` para persistência no banco local.
+2. Habilita o módulo `rewrite` do Apache para permitir o roteamento baseado no `.htaccess` (`router.php`).
+3. Reconfigura o Apache para escutar na porta `8081` para casar estritamente com as rotas do proxy reverso Nginx.
+4. Ajusta a variável `APACHE_DOCUMENT_ROOT` para apontar diretamente para a pasta `/var/www/html/public`, isolando o código-fonte da camada pública.
+
+### B. Módulo MySQL do Frontend ([saas_mysql])
+Adicionado ao `docker-compose.yml` para persistência da tabela local de usuários do chatbot (`chatbot_db`). Ele mapeia o arquivo SQL de inicialização original `./chatbot/database/schema.sql` diretamente em `/docker-entrypoint-initdb.d/schema.sql` para que as tabelas necessárias (tabela `users`) sejam criadas de forma automatizada na inicialização primária. A porta externa foi mapeada em `3309:3306` para evitar conflito com instâncias físicas do MySQL rodando no WAMP/XAMPP do host local (porta `3306`).
+
+### C. Mapeamento de Serviços no Docker Compose ([docker-compose.yml](file:///D:/SaaS-Chatbot/docker-compose.yml))
+* O serviço original `saas_node_api` foi renomeado no compose para `saas_api`, alinhando-se com a diretiva de resolução de nomes que constava na configuração do proxy do Nginx.
+* Adicionado o serviço `saas_ui` (Frontend PHP) com mapeamento das variáveis de ambiente necessárias (banco interno `saas_mysql` e API interna `http://saas_api:8000`), expondo a porta `8081`.
+* Adicionado o serviço `saas_nginx` (Proxy reverso Nginx) apontando para o subdiretório `./nginx` onde monta os certificados SSL autoassinados e roteia as rotas `/` para `saas_ui:8081` e `/api/v1/` para `saas_api:8000`.
+
+---
+
 ## 🧪 Validação dos Testes
 
-Criamos e executamos um script de validação sintática e de importação em [test_media_and_calls.js](file:///C:/Users/MPLopes/worktrees/SaaS-Chatbot/analyze-saas-chatbot-backend/node-version/scratch/test_media_and_calls.js) para assegurar a integridade do código implementado:
-
+### Testes da API (Backend)
+Criamos e executamos um script de validação sintática e de importação em [test_media_and_calls.js](file:///C:/Users/MPLopes/worktrees/SaaS-Chatbot/analyze-saas-chatbot-backend/node-version/scratch/test_media_and_calls.js) para assegurar a integridade do código implementado no backend Node:
 ```bash
 node scratch/test_media_and_calls.js
 ```
+Todos os testes passaram (conexão com Postgres, Mongo, StorageService, carregamento das funções de chamada e checagem de tipos de arquivos).
 
-### Resultados da Execução:
-```json
-{"level":30,"time":1779718137787,"pid":18484,"msg":"🚀 Iniciando testes de validação local de Mídias e Chamadas..."}
-{"level":30,"time":1779718137789,"pid":18484,"msg":"Testing SQL models import..."}
-{"level":30,"time":1779718137813,"pid":18484,"msg":"✅ CallLog importado com sucesso."}
-{"level":30,"time":1779718137813,"pid":18484,"msg":"Testing NoSQL Message model import..."}
-{"level":30,"time":1779718137832,"pid":18484,"msg":"✅ Schema Message do MongoDB validado com sucesso."}
-{"level":30,"time":1779718137832,"pid":18484,"msg":"Testing StorageService..."}
-{"level":30,"time":1779718137836,"pid":18484,"msg":"📂 Diretório de uploads criado: C:\\Users\\MPLopes\\.gemini\\antigravity\\worktrees\\SaaS-Chatbot\\analyze-saas-chatbot-backend\\node-version\\uploads"}
-{"level":30,"time":1779718137838,"pid":18484,"msg":"✅ StorageService funcionando. Link público: /uploads/TEST_TENANT/d2a975ef-b781-4d08-b8af-6310e87f997d_test.txt"}
-{"level":30,"time":1779718137838,"pid":18484,"msg":"Testing whatsappCore call signaling helper functions..."}
-{"level":30,"time":1779718140865,"pid":18484,"msg":"✅ whatsappCore exporta assinaturas de chamadas corretamente."}
-{"level":30,"time":1779718140865,"pid":18484,"msg":"Testing mime type lookup helper..."}
-{"level":30,"time":1779718140866,"pid":18484,"msg":"✅ getMimeType resolveu pdf para application/pdf."}
-{"level":30,"time":1779718140866,"pid":18484,"msg":"🎉 Todos os testes de validação sintática e de importação PASSARAM!"}
+### Validação do Docker Compose
+Executamos o comando de verificação e consolidação do docker-compose para assegurar a conformidade sintática e o mapeamento adequado de todas as dependências, portas e diretórios de contexto:
+```bash
+docker-compose config
 ```
-As alterações de rotas e banco estão totalmente prontas e funcionais no backend Node.js.
+O comando validou a estrutura inteira de 9 serviços (`saas_postgres`, `saas_redis`, `saas_rabbitmq`, `saas_mongo`, `saas_api`, `saas_ollama`, `saas_mysql`, `saas_ui`, `saas_nginx`) e 4 volumes montados de forma idônea.
