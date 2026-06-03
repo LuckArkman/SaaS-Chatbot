@@ -489,6 +489,10 @@ $error = $error ?? null;
                 <span style="font-size: 1.2rem;">📊</span>
                 <span class="sidebar-nav-label">Fluxos</span>
             </a>
+            <a href="<?= htmlspecialchars($base) ?>/agentes-ia" title="Agente WhatsApp">
+                <span style="font-size: 1.2rem;">🤖</span>
+                <span class="sidebar-nav-label">Agente WhatsApp</span>
+            </a>
             <a href="<?= htmlspecialchars($base) ?>/configuracoes" title="Configurações">
                 <span style="font-size: 1.2rem;">⚙️</span>
                 <span class="sidebar-nav-label">Configurações</span>

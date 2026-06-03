@@ -88,6 +88,9 @@ $pageTitle = "Consola do Programador";
             <a href="<?php echo htmlspecialchars($base); ?>/board" title="Fluxos">
                 <span style="font-size: 1.2rem;">📊</span><span class="sidebar-nav-label">Fluxos</span>
             </a>
+            <a href="<?php echo htmlspecialchars($base); ?>/agentes-ia" title="Agente WhatsApp">
+                <span style="font-size: 1.2rem;">🤖</span><span class="sidebar-nav-label">Agente WhatsApp</span>
+            </a>
             <a href="<?php echo htmlspecialchars($base); ?>/configuracoes" title="Configurações">
                 <span style="font-size: 1.2rem;">⚙️</span><span class="sidebar-nav-label">Configurações</span>
             </a>
