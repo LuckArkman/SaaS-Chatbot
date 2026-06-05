@@ -123,10 +123,26 @@ const listWhatsappContacts = async (req, res) => {
     const sessionName = await getActiveSessionName(req.user.tenant_id);
     const contacts = await whatsappCore.listContacts(sessionName);
     
+    // Mescla os nomes do banco de dados local para exibir nomes corretos na UI
+    const dbContacts = await Contact.findAll({ where: { tenant_id: req.user.tenant_id } });
+    const dbMap = {};
+    dbContacts.forEach(c => {
+      // Baileys IDs are phone@s.whatsapp.net usually
+      dbMap[c.phone_number] = c.full_name;
+    });
+
+    const merged = contacts.map(c => {
+      const phone = c.id ? c.id.split('@')[0] : '';
+      return {
+        ...c,
+        full_name: dbMap[phone] || c.name || c.notify || ''
+      };
+    });
+    
     return res.json({
       success: true,
-      total: contacts.length,
-      contacts: contacts
+      total: merged.length,
+      contacts: merged
     });
   } catch (e) {
     return res.status(409).json({ success: false, detail: e.message });
@@ -173,4 +189,38 @@ const addWhatsappContact = async (req, res) => {
   }
 };
 
-module.exports = { listContacts, createContact, updateContact, deleteContact, listWhatsappContacts, addWhatsappContact };
+const editWhatsappContact = async (req, res) => {
+  const { phone } = req.params;
+  const { name } = req.body;
+  if (!phone) return res.status(400).json({ success: false, detail: 'O número de telefone é obrigatório' });
+
+  try {
+    const [dbContact, created] = await Contact.findOrCreate({
+      where: { tenant_id: req.user.tenant_id, phone_number: phone },
+      defaults: { full_name: name || `WhatsApp ${phone.slice(-4)}` }
+    });
+
+    if (!created && name) {
+      await dbContact.update({ full_name: name });
+    }
+
+    return res.json({ success: true, contact: dbContact });
+  } catch (e) {
+    return res.status(500).json({ success: false, detail: e.message });
+  }
+};
+
+const deleteWhatsappContact = async (req, res) => {
+  const { phone } = req.params;
+  try {
+    const contact = await Contact.findOne({ where: { tenant_id: req.user.tenant_id, phone_number: phone } });
+    if (contact) {
+      await contact.destroy();
+    }
+    return res.json({ success: true });
+  } catch (e) {
+    return res.status(500).json({ success: false, detail: e.message });
+  }
+};
+
+module.exports = { listContacts, createContact, updateContact, deleteContact, listWhatsappContacts, addWhatsappContact, editWhatsappContact, deleteWhatsappContact };

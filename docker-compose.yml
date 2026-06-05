@@ -42,7 +42,7 @@ services:
       - mongo_data:/data/db
     restart: always
 
-  saas_node_api:
+  saas_api:
     build:
       context: ./node-version
       dockerfile: Dockerfile
@@ -66,8 +66,8 @@ services:
     ports:
       - "8001:8000"
     volumes:
-      - ./node-version/uploads:/app/uploads
-      - ./node-version/src/config:/app/src/config # Mapeamento opcional
+      - uploads_data:/app/uploads
+      - ./node-version/src:/app/src
     restart: always
 
   saas_ollama:
@@ -79,8 +79,60 @@ services:
       - ollama_data:/root/.ollama
     restart: always
 
+  saas_mysql:
+    image: mysql:8.0
+    container_name: saas_mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=password123
+      - MYSQL_DATABASE=chatbot_db
+    ports:
+      - "3309:3306" # Porta 3309 externa evita conflito com o MySQL local do WAMP/XAMPP (3306)
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./chatbot/database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    restart: always
+
+  saas_ui:
+    build:
+      context: ./chatbot
+      dockerfile: Dockerfile
+    container_name: saas_ui
+    depends_on:
+      - saas_mysql
+      - saas_api
+    environment:
+      - DB_HOST=saas_mysql
+      - DB_PORT=3306
+      - DB_NAME=chatbot_db
+      - DB_USER=root
+      - DB_PASS=password123
+      - API_BASE_URL=http://saas_api:8000
+      - FRONTEND_API_URL=http://localhost:8001
+      - API_TIMEOUT=30
+      - API_BOT_TIMEOUT=60
+      - PROGRAMADOR_FULL_ACCESS_EMAILS=alex3andre@yahoo.com.br
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./chatbot:/var/www/html
+    restart: always
+
+  saas_nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: saas_nginx
+    depends_on:
+      - saas_ui
+      - saas_api
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: always
+
 volumes:
   postgres_data:
   mongo_data:
   ollama_data:
-
+  mysql_data:
+  uploads_data:

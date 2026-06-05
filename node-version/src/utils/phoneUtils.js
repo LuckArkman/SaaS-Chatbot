@@ -10,7 +10,14 @@
  */
 function normalizeToDb(phone) {
   if (!phone) return '';
-  let digits = String(phone).replace(/\D/g, '');
+  const phoneStr = String(phone);
+  
+  // Preserva JIDs de grupos
+  if (phoneStr.endsWith('@g.us')) {
+    return phoneStr;
+  }
+
+  let digits = phoneStr.replace(/\D/g, '');
 
   // Se não tem código do país, assume 55
   if (digits.length <= 11 && !digits.startsWith('55')) {
@@ -30,9 +37,6 @@ function normalizeToDb(phone) {
     // Se tem 13 dígitos mas o 5º dígito não é 9 (55 + DDD + 8 dígitos onde o 1º é < 7?)
     // No Brasil, o 9º dígito é sempre 9.
     if (digits.length === 13 && digits[4] !== '9') {
-       // Possível número fixo ou erro de formatação, mas o SaaS foca em mobile
-       // Se o número tem 13 dígitos e o 5º não é 9, pode ser que o 9 esteja sobrando ou faltando em outra posição.
-       // Vamos forçar o padrão mobile: 55 + DDD + 9 + 8 dígitos
        return `55${areaCode}9${digits.substring(5)}`;
     }
   }
@@ -46,17 +50,23 @@ function normalizeToDb(phone) {
  * @returns {string}
  */
 function normalizeToJid(phone) {
+  const phoneStr = String(phone);
+  if (phoneStr.endsWith('@g.us')) return phoneStr;
+  
   const digits = normalizeToDb(phone);
   return `${digits}@s.whatsapp.net`;
 }
 
 /**
- * Verifica se o número está no formato canônico estrito (13 dígitos)
+ * Verifica se o número está no formato canônico estrito (13 dígitos) ou é um grupo
  * @param {string} phone 
  * @returns {boolean}
  */
 function isValidDbFormat(phone) {
-  return /^[0-9]{13}$/.test(phone) && phone.startsWith('55');
+  const phoneStr = String(phone);
+  if (phoneStr.endsWith('@g.us')) return true;
+  if (phoneStr.endsWith('@lid')) return true; // Suporte para LIDs não resolvidos
+  return /^[0-9]{8,30}$/.test(phoneStr);
 }
 
 module.exports = {

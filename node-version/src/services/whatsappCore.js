@@ -37,6 +37,8 @@ class WhatsAppService {
   async initializeSession(tenantId, sessionId) {
     if (this.sockets[sessionId]) return;
 
+    const service = this;
+
     // Associa a chave de sessão (possivelmente rotacionada) ao tenant original
     sessionMapper.associate(sessionId, `tenant_${tenantId}`);
 
@@ -79,15 +81,26 @@ class WhatsAppService {
         ev.on('contacts.set', ({ contacts }) => {
           contacts.forEach(c => c.id && (this.contacts[c.id] = c));
           populateLidMap(contacts); // Popula mapa LID na sincronização inicial
+          service.syncContactsToDb(contacts, tenantId, sessionId, service.sockets[sessionId]).catch(err => {
+            logger.error(`[${sessionId}] Erro ao sincronizar contatos (set): ${err.message}`);
+          });
         });
         ev.on('contacts.upsert', (contacts) => {
           contacts.forEach(c => c.id && (this.contacts[c.id] = { ...this.contacts[c.id], ...c }));
           populateLidMap(contacts); // Popula mapa LID em atualizações incrementais
+          service.syncContactsToDb(contacts, tenantId, sessionId, service.sockets[sessionId]).catch(err => {
+            logger.error(`[${sessionId}] Erro ao sincronizar contatos (upsert): ${err.message}`);
+          });
         });
 
         // Batching Assíncrono do Histórico (Portado fielmente da Etapa Anterior)
         ev.on('messaging-history.set', async ({ chats, contacts, messages }) => {
           logger.info(`[${sessionId}] 📚 Processando histórico massivo: chats=${chats?.length || 0}, msgs=${messages?.length || 0}`);
+          
+          try {
+            await WhatsAppInstance.update({ sync_progress: 10 }, { where: { session_name: sessionId } });
+          } catch(e) {}
+
           const processBatch = async (items, processor) => {
             if (!items) return;
             for (let i = 0; i < items.length; i += 100) {
@@ -95,9 +108,31 @@ class WhatsAppService {
               await new Promise(res => setImmediate(res)); // Yield CPU
             }
           };
+          
           await processBatch(chats, c => this.chats[c.id] = c);
+          try { await WhatsAppInstance.update({ sync_progress: 30 }, { where: { session_name: sessionId } }); } catch(e) {}
+          
           await processBatch(contacts, c => c.id && (this.contacts[c.id] = c));
-          if (contacts) populateLidMap(contacts); // Garante LID mapeado no histórico também
+          try { await WhatsAppInstance.update({ sync_progress: 50 }, { where: { session_name: sessionId } }); } catch(e) {}
+          
+          if (contacts) {
+            populateLidMap(contacts); // Garante LID mapeado no histórico também
+            try {
+              await service.syncContactsToDb(contacts, tenantId, sessionId, service.sockets[sessionId]);
+            } catch(err) {
+              logger.error(`[${sessionId}] Erro ao sincronizar contatos (history): ${err.message}`);
+            }
+          }
+          try { await WhatsAppInstance.update({ sync_progress: 75 }, { where: { session_name: sessionId } }); } catch(e) {}
+          
+          if (messages) {
+            try {
+              await service.syncMessagesToDb(messages, tenantId, sessionId, service.sockets[sessionId]);
+            } catch(err) {
+              logger.error(`[${sessionId}] Erro ao sincronizar histórico de mensagens: ${err.message}`);
+            }
+          }
+          try { await WhatsAppInstance.update({ sync_progress: 100 }, { where: { session_name: sessionId } }); } catch(e) {}
         });
       }
     };
@@ -108,7 +143,7 @@ class WhatsAppService {
       printQRInTerminal: false,
       auth: state,
       browser: Browsers.macOS('SaaS-Chatbot Monolith'),
-      syncFullHistory: false,
+      syncFullHistory: true,
       generateHighQualityLinkPreview: true,
     });
 
@@ -181,16 +216,67 @@ class WhatsAppService {
         }
       } else if (connection === 'open') {
         logger.info(`[${sessionId}] ✅ WhatsApp Conectado e Sincronizado!`);
+        
+        let connectedPhone = null;
+        if (sock.user && sock.user.id) {
+          const rawId = sock.user.id.split(':')[0].split('@')[0];
+          connectedPhone = phoneUtils.normalizeToDb(rawId);
+        }
+
         await WhatsAppInstance.update(
-          { status: 'CONNECTED', qrcode_base64: null },
+          { status: 'CONNECTED', qrcode_base64: null, phone_number: connectedPhone, sync_progress: 10 },
           { where: { session_name: sessionId }, ignoreTenant: true }
         );
         
         await connectionManager.publishEvent(tenantId, {
           type: 'bot_status_update',
           status: 'CONNECTED',
-          session: sessionId
+          session: sessionId,
+          sync_progress: 10
         });
+
+        // ==========================================
+        // SINCRONIZACAO FORCADA POS-CONEXAO
+        // ==========================================
+        (async () => {
+          try {
+            // 1. Grupos
+            logger.info(`[${sessionId}] 📦 Buscando grupos participantes...`);
+            await connectionManager.publishEvent(tenantId, { type: 'sync_progress', progress: 30, session: sessionId });
+            await WhatsAppInstance.update({ sync_progress: 30 }, { where: { session_name: sessionId }, ignoreTenant: true });
+            
+            const groups = await sock.groupFetchAllParticipating();
+            const groupContacts = Object.values(groups).map(g => ({
+              id: g.id,
+              name: g.subject,
+              is_group: true
+            }));
+            
+            // 2. Contatos da Store (em memoria)
+            logger.info(`[${sessionId}] 📦 Lendo contatos locais...`);
+            await connectionManager.publishEvent(tenantId, { type: 'sync_progress', progress: 60, session: sessionId });
+            await WhatsAppInstance.update({ sync_progress: 60 }, { where: { session_name: sessionId }, ignoreTenant: true });
+            
+            const localContacts = Object.values(store.contacts || {});
+            
+            // Combina tudo
+            const allToSync = [...groupContacts, ...localContacts];
+            
+            await connectionManager.publishEvent(tenantId, { type: 'sync_progress', progress: 80, session: sessionId });
+            await WhatsAppInstance.update({ sync_progress: 80 }, { where: { session_name: sessionId }, ignoreTenant: true });
+            
+            if (allToSync.length > 0) {
+              await this.syncContactsToDb(allToSync, tenantId, sessionId, sock);
+            }
+
+            await connectionManager.publishEvent(tenantId, { type: 'sync_progress', progress: 100, session: sessionId });
+            await WhatsAppInstance.update({ sync_progress: 100 }, { where: { session_name: sessionId }, ignoreTenant: true });
+            logger.info(`[${sessionId}] 📦 Sincronização Inicial Concluída.`);
+
+          } catch (err) {
+            logger.error(`[${sessionId}] Erro na sincronizacao forcada: ${err.message}`);
+          }
+        })();
       }
     });
 
@@ -285,11 +371,13 @@ class WhatsAppService {
         if (remoteJid === 'status@broadcast') continue; // Ignora status de WhatsApp
 
         const jidSuffix = remoteJid.split('@')[1] || '';
-        let phone = remoteJid.split('@')[0];
-        
-        // Normaliza para o formato DB (13 dígitos) se não for LID
-        if (jidSuffix !== 'lid') {
-          phone = phoneUtils.normalizeToDb(phone);
+        let phone = remoteJid; // Default: JID completo
+
+        if (jidSuffix === 'g.us') {
+          phone = remoteJid; // Mantém JID para grupos
+        } else if (jidSuffix !== 'lid') {
+          // Normaliza para o formato DB (13 dígitos) se não for LID e não for Grupo
+          phone = phoneUtils.normalizeToDb(remoteJid.split('@')[0]);
         }
 
         const pushName = msg.pushName || 'Contato Desconhecido';
@@ -307,57 +395,59 @@ class WhatsAppService {
                            (msg.message?.extendedTextMessage?.contextInfo?.participantPn) ||
                            (msg.message?.extendedTextMessage?.contextInfo?.senderPn);
 
-        if (realPhoneJid && realPhoneJid.includes('@s.whatsapp.net')) {
-          phone = phoneUtils.normalizeToDb(realPhoneJid.split('@')[0]);
-          
-          // Alimenta o cache (Memória e Redis) para acelerar futuras mensagens
-          const currentLidMap = this.lidMaps[sessionId] || {};
-          currentLidMap[remoteJid] = phone;
-          try {
-            const redisService = require('../config/redis');
-            await redisService.set(`lid_map:${tenantId}:${remoteJid}`, phone, 60 * 60 * 24 * 30);
-          } catch (e) {}
-
-          logger.info(`[${sessionId}] 💎 LID resolvido via participantPn: ${remoteJid} → ${phone}`);
-        }
-        else if (jidSuffix === 'lid') {
-          const currentLidMap = this.lidMaps[sessionId] || {};
-
-          // 1. Tenta Memória (Rápido)
-          if (currentLidMap[remoteJid]) {
-            phone = currentLidMap[remoteJid];
-          } else {
-            // 2. Tenta Redis (Persistente entre Restarts)
+        if (jidSuffix === 'lid') {
+          if (realPhoneJid && realPhoneJid.includes('@s.whatsapp.net')) {
+            phone = phoneUtils.normalizeToDb(realPhoneJid.split('@')[0]);
+            
+            // Alimenta o cache (Memória e Redis) para acelerar futuras mensagens
+            const currentLidMap = this.lidMaps[sessionId] || {};
+            currentLidMap[remoteJid] = phone;
             try {
               const redisService = require('../config/redis');
-              const cachedPhone = await redisService.get(`lid_map:${tenantId}:${remoteJid}`);
-              if (cachedPhone) {
-                phone = cachedPhone;
-                currentLidMap[remoteJid] = phone;
-                logger.info(`[${sessionId}] 🚀 LID resolvido via Redis: ${remoteJid} → ${phone}`);
+              redisService.set(`lid_map:${tenantId}:${remoteJid}`, phone, 60 * 60 * 24 * 30).catch(()=>{});
+            } catch (e) {}
+
+            logger.info(`[${sessionId}] 💎 LID resolvido via participantPn: ${remoteJid} → ${phone}`);
+          }
+          else {
+            const currentLidMap = this.lidMaps[sessionId] || {};
+
+            // 1. Tenta Memória (Rápido)
+            if (currentLidMap[remoteJid]) {
+              phone = currentLidMap[remoteJid];
+            } else {
+              // 2. Tenta Redis (Persistente entre Restarts)
+              try {
+                const redisService = require('../config/redis');
+                const cachedPhone = await redisService.get(`lid_map:${tenantId}:${remoteJid}`);
+                if (cachedPhone) {
+                  phone = cachedPhone;
+                  currentLidMap[remoteJid] = phone;
+                  logger.info(`[${sessionId}] 🚀 LID resolvido via Redis: ${remoteJid} → ${phone}`);
+                }
+              } catch (redisErr) {
+                logger.debug(`[${sessionId}] ⚠️ Redis indisponível para LID cache: ${redisErr.message}`);
               }
-            } catch (redisErr) {
-              logger.debug(`[${sessionId}] ⚠️ Redis indisponível para LID cache: ${redisErr.message}`);
-            }
 
-            if (!phone) {
-              // 3. Tenta Store Scan (Sincronização atual)
-              const contactsArr = Object.values(store.contacts || {});
-              const matchByLid = contactsArr.find(
-                c => c.lid === remoteJid && c.id && c.id.includes('@s.whatsapp.net')
-              );
+              if (!phone || phone === remoteJid) {
+                // 3. Tenta Store Scan (Sincronização atual)
+                const contactsArr = Object.values(store.contacts || {});
+                const matchByLid = contactsArr.find(
+                  c => c.lid === remoteJid && c.id && c.id.includes('@s.whatsapp.net')
+                );
 
-              if (matchByLid) {
-                phone = phoneUtils.normalizeToDb(matchByLid.id.split('@')[0]);
-                currentLidMap[remoteJid] = phone;
-                
-                // Persiste no Redis para a próxima vez
-                try {
-                  const redisService = require('../config/redis');
-                  await redisService.set(`lid_map:${tenantId}:${remoteJid}`, phone, 60 * 60 * 24 * 30); // 30 dias
-                } catch (e) {}
+                if (matchByLid) {
+                  phone = phoneUtils.normalizeToDb(matchByLid.id.split('@')[0]);
+                  currentLidMap[remoteJid] = phone;
+                  
+                  // Persiste no Redis para a próxima vez
+                  try {
+                    const redisService = require('../config/redis');
+                    redisService.set(`lid_map:${tenantId}:${remoteJid}`, phone, 60 * 60 * 24 * 30).catch(()=>{}); // 30 dias
+                  } catch (e) {}
 
-                logger.info(`[${sessionId}] 🔎 LID resolvido via Store Scan: ${remoteJid} → ${phone}`);
+                  logger.info(`[${sessionId}] 🔎 LID resolvido via Store Scan: ${remoteJid} → ${phone}`);
+                }
               }
             }
           }
@@ -370,7 +460,7 @@ class WhatsAppService {
         }
 
         // ── FILTRO DE CONTRATO E TIPO DE CHAT ───────────────────────────────────────
-        if (remoteJid.endsWith('@g.us')) {
+        if (remoteJid.endsWith('@newsletter') || remoteJid === 'status@broadcast') {
           continue; 
         }
 
@@ -381,6 +471,17 @@ class WhatsAppService {
 
         // ── RECUPERAÇÃO DO CONTATO (Hierarquia: 1. Telefone, 2. Nome) ──────────────
         let dbContact = null;
+        let resolvedName = pushName;
+        let avatarUrl = null;
+        try {
+          // Requisita foto de perfil do WhatsApp e tenta buscar nome resolvido do store
+          avatarUrl = await sock.profilePictureUrl(remoteJid, 'image').catch(() => null);
+          
+          if ((!resolvedName || resolvedName === 'Contato Desconhecido') && store.contacts[remoteJid]) {
+            resolvedName = store.contacts[remoteJid].name || store.contacts[remoteJid].notify || resolvedName;
+          }
+        } catch (err) {}
+
         try {
           const { Op } = require('sequelize');
           // 1. Busca Primária: Por Número de Telefone
@@ -389,19 +490,36 @@ class WhatsAppService {
           });
 
           // 2. Busca Secundária: Por Nome (se não achou pelo número)
-          if (!dbContact && pushName && pushName !== 'Contato Desconhecido') {
+          if (!dbContact && resolvedName && resolvedName !== 'Contato Desconhecido') {
             dbContact = await Contact.findOne({ 
               where: { 
-                full_name: { [Op.iLike]: pushName }, 
+                full_name: { [Op.iLike]: resolvedName }, 
                 tenant_id: tenantId 
               } 
             });
             if (dbContact) {
-              logger.info(`[${sessionId}] 👤 Contato reconciliado via Nome: ${pushName} (ID: ${dbContact.id})`);
+              logger.info(`[${sessionId}] 👤 Contato reconciliado via Nome: ${resolvedName} (ID: ${dbContact.id})`);
             }
           }
+
+          // Se não encontrou no banco, cria automaticamente APENAS SE:
+          // - Não for mensagem enviada pelo próprio tenant (fromMe)
+          if (!dbContact && !isFromMe) {
+            // Se não tiver nome resolvido, tenta buscar a info antes
+            const finalName = (resolvedName && resolvedName !== 'Contato Desconhecido') ? resolvedName : (remoteJid.endsWith('@g.us') ? 'Grupo WhatsApp' : `WhatsApp ${phone.slice(-4)}`);
+            dbContact = await Contact.create({
+              phone_number: phone,
+              full_name: finalName,
+              tenant_id: tenantId,
+              is_group: false
+            });
+            logger.info(`[${sessionId}] 👤 Novo contato criado automaticamente: ${dbContact.full_name} (${phone})`);
+          } else if (dbContact && resolvedName && resolvedName !== 'Contato Desconhecido' && dbContact.full_name === `WhatsApp ${phone.slice(-4)}`) {
+            // Atualiza o nome padrão com o nome real
+            await dbContact.update({ full_name: resolvedName });
+          }
         } catch (dbErr) {
-          logger.error(`[${sessionId}] ❌ Erro ao recuperar contato do banco: ${dbErr.message}`);
+          logger.error(`[${sessionId}] ❌ Erro ao recuperar/criar contato do banco: ${dbErr.message}`);
         }
 
         // Unpack wrappers (viewOnce, ephemeral, etc.)
@@ -422,7 +540,7 @@ class WhatsAppService {
           continue;
         }
 
-        const mediaTypes = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage'];
+        const mediaTypes = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage', 'stickerMessage'];
         const activeMediaType = Object.keys(messageBody || {}).find(type => mediaTypes.includes(type));
         
         let mediaUrl = null;
@@ -431,8 +549,8 @@ class WhatsAppService {
         
         if (activeMediaType) {
           const mediaObj = messageBody[activeMediaType];
-          messageType = activeMediaType.replace('Message', ''); // image, video, audio, document
-          textContent = mediaObj.caption || mediaObj.fileName || `[Mídia: ${messageType}]`;
+          messageType = activeMediaType.replace('Message', ''); // image, video, audio, document, sticker
+          textContent = mediaObj.caption || mediaObj.fileName || (messageType === 'sticker' ? 'Adesivo (Sticker)' : `[Mídia: ${messageType}]`);
           
           try {
             logger.info(`[${sessionId}] 📂 Baixando anexo de mídia do tipo: ${messageType}...`);
@@ -449,7 +567,8 @@ class WhatsAppService {
               const originalFileName = mediaObj.fileName || 
                                        (messageType === 'image' ? 'photo.jpg' : 
                                         messageType === 'video' ? 'video.mp4' : 
-                                        messageType === 'audio' ? 'audio.mp3' : 'file.bin');
+                                        messageType === 'audio' ? 'audio.mp3' : 
+                                        messageType === 'sticker' ? 'sticker.webp' : 'file.bin');
               
               const StorageService = require('./storageService');
               const localPath = await StorageService.saveUpload(buffer, originalFileName, tenantId.toUpperCase());
@@ -534,13 +653,10 @@ class WhatsAppService {
           }
 
           // BROADCAST WS EM TEMPO REAL PARA O FRONTEND
-          let contactDisplayName = pushName;
-          try {
-            const localContact = await Contact.findOne({ where: { phone_number: phone, tenant_id: tenantId } });
-            if (localContact && localContact.full_name) {
-              contactDisplayName = localContact.full_name;
-            }
-          } catch (err) { }
+          let contactDisplayName = resolvedName;
+          if (dbContact && dbContact.full_name) {
+            contactDisplayName = dbContact.full_name;
+          }
 
           const socketPayload = {
             method: 'new_message', // Padronizado para o front-end moderno
@@ -549,6 +665,7 @@ class WhatsAppService {
               conversation_id: phone,
               contact_phone: phone,
               contact_name: contactDisplayName,
+              contact_avatar: avatarUrl, // Foto de perfil/avatar obtida via Baileys
               content: textContent,
               message_type: messageType,
               media_url: mediaUrl,
@@ -700,58 +817,110 @@ class WhatsAppService {
 
     let result;
     if (type !== 'text' && mediaUrl) {
-      // Resolve o caminho físico absoluto a partir da URL pública relativa (/uploads/...)
-      const relativePath = mediaUrl.replace(/^\//, ''); // remove barra inicial
-      const localPath = path.join(__dirname, '..', '..', relativePath.split('/').join(path.sep));
+      let fileBuffer;
+      let filename = 'file';
+      let mimeType = 'application/octet-stream';
 
-      if (!fs.existsSync(localPath)) {
-        throw new Error(`Arquivo de mídia não encontrado no disco local: ${localPath}`);
+      // 1. Verifica se a URL é absoluta (HTTP/HTTPS)
+      if (mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://')) {
+        // Tenta primeiro resolver localmente se apontar para /uploads
+        try {
+          const parsedUrl = new URL(mediaUrl);
+          const pathname = parsedUrl.pathname; // ex: /uploads/whatsapp/whatsapp_10_1779191087_1_2856.png
+          filename = path.basename(pathname);
+
+          if (pathname.startsWith('/uploads/')) {
+            const relativePath = pathname.replace(/^\//, ''); // remove a barra inicial
+            const localPath = path.join(__dirname, '..', '..', relativePath.split('/').join(path.sep));
+
+            if (fs.existsSync(localPath)) {
+              logger.info(`[${sessionId}] 📂 Mídia resolvida localmente a partir de URL pública: ${localPath}`);
+              fileBuffer = fs.readFileSync(localPath);
+              mimeType = this.getMimeType(localPath);
+            }
+          }
+        } catch (urlErr) {
+          logger.warn(`[${sessionId}] ⚠️ Falha ao tentar analisar URL localmente: ${urlErr.message}`);
+        }
+
+        // Se não foi resolvida localmente (externa ou o arquivo não existia fisicamente), baixa via Axios
+        if (!fileBuffer) {
+          try {
+            logger.info(`[${sessionId}] 🌐 Baixando mídia remota via HTTP/HTTPS: ${mediaUrl}`);
+            const axios = require('axios');
+            const downloadResponse = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
+            fileBuffer = Buffer.from(downloadResponse.data);
+            
+            // Tenta obter o mimetype do cabeçalho Content-Type
+            const contentType = downloadResponse.headers['content-type'];
+            if (contentType) {
+              mimeType = contentType.split(';')[0].trim();
+            } else {
+              // Fallback para extensão da URL
+              const parsedUrl = new URL(mediaUrl);
+              filename = path.basename(parsedUrl.pathname);
+              mimeType = this.getMimeType(filename);
+            }
+          } catch (downloadErr) {
+            throw new Error(`Falha ao baixar mídia remota (${mediaUrl}): ${downloadErr.message}`);
+          }
+        }
+
+      } else {
+        // 2. Mídia local com caminho relativo
+        const relativePath = mediaUrl.replace(/^\//, ''); // Remove barra inicial
+        const localPath = path.join(__dirname, '..', '..', relativePath.split('/').join(path.sep));
+
+        if (!fs.existsSync(localPath)) {
+          throw new Error(`Arquivo de mídia não encontrado no disco local: ${localPath}`);
+        }
+
+        filename = path.basename(localPath);
+        fileBuffer = fs.readFileSync(localPath);
+        mimeType = this.getMimeType(localPath);
       }
 
-      // ── BUG #3 FIX ──────────────────────────────────────────────────────────
-      // O Baileys NÃO aceita string de caminho absoluto na propriedade `url`.
-      // Precisa de `file://` para caminhos locais, ou um Buffer em memória.
-      // Usar Buffer é mais robusto: funciona em qualquer SO sem depender do
-      // esquema file:// ser reconhecido pela versão instalada do Baileys.
-      // ─────────────────────────────────────────────────────────────────────────
-      const fileBuffer = fs.readFileSync(localPath);
-      const caption    = content || '';   // legenda; pode ser string vazia para mídias sem texto
-
-      logger.info(`[${sessionId}] 📤 Enviando mídia (${type}) para ${jid} | Path: ${localPath} | Tamanho: ${fileBuffer.length} bytes`);
+      const caption = content || ''; // legenda; pode ser string vazia para mídias sem texto
+      logger.info(`[${sessionId}] 📤 Enviando mídia (${type}) para ${jid} | Nome: ${filename} | Tamanho: ${fileBuffer.length} bytes`);
 
       if (type === 'image') {
         result = await sock.sendMessage(jid, {
           image: fileBuffer,
           caption,
-          mimetype: this.getMimeType(localPath),
+          mimetype: mimeType,
         });
 
       } else if (type === 'video') {
         result = await sock.sendMessage(jid, {
           video: fileBuffer,
           caption,
-          mimetype: this.getMimeType(localPath),
+          mimetype: mimeType,
         });
 
       } else if (type === 'audio') {
         // Detecta se é áudio gravado (PTT) pela extensão .ogg/.opus
-        const ext = path.extname(localPath).toLowerCase();
+        const ext = path.extname(filename).toLowerCase();
         const isPtt = ['.ogg', '.opus'].includes(ext);
         result = await sock.sendMessage(jid, {
           audio: fileBuffer,
-          mimetype: this.getMimeType(localPath),
+          mimetype: mimeType,
           ptt: isPtt,
         });
 
       } else if (type === 'document') {
         // Remove o prefixo UUID do nome original do arquivo
-        const originalName = path.basename(localPath).replace(/^[a-f0-9-]{36}_/, '');
-        const mimeType     = this.getMimeType(localPath);
+        const originalName = filename.replace(/^[a-f0-9-]{36}_/, '');
         result = await sock.sendMessage(jid, {
           document: fileBuffer,
           mimetype: mimeType,
           fileName: originalName,
           caption,
+        });
+
+      } else if (type === 'sticker') {
+        result = await sock.sendMessage(jid, {
+          sticker: fileBuffer,
+          mimetype: mimeType
         });
 
       } else {
@@ -816,7 +985,7 @@ class WhatsAppService {
   async verifyContact(sessionId, phone) {
     const sock = this.sockets[sessionId];
     if (!sock) throw new Error(`Sessão ${sessionId} não está ativa.`);
-    const jid = normalizeToJid(phone);
+    const jid = phoneUtils.normalizeToJid(phone);
     // onWhatsApp verifica se o número existe na rede do WhatsApp e retorna um array de matches
     const result = await sock.onWhatsApp(jid);
     return result && result.length > 0 ? result[0] : null;
@@ -831,12 +1000,106 @@ class WhatsAppService {
   async getChatHistory(sessionId, phone, limit = 50) {
     const store = this.stores[sessionId];
     if (!store) throw new Error(`Sessão ${sessionId} não está ativa.`);
-    const jid = normalizeToJid(phone);
+    
+    let jid = phoneUtils.normalizeToJid(phone);
+    let messages = store.messages[jid]?.array || [];
 
-    // O store.messages guarda arrays de mensagens indexados pelo JID
-    const messages = store.messages[jid]?.array || [];
+    // Se não encontrou, tenta com JID alternativo (problema do 9º dígito no BR)
+    if (messages.length === 0) {
+      const digits = String(phone).replace(/\D/g, '');
+      let alternateJid = null;
+      if (digits.length === 13 && digits.startsWith('55')) {
+        const areaCode = digits.substring(2, 4);
+        alternateJid = `55${areaCode}${digits.substring(5)}@s.whatsapp.net`;
+      } else if (digits.length === 12 && digits.startsWith('55')) {
+        const areaCode = digits.substring(2, 4);
+        alternateJid = `55${areaCode}9${digits.substring(4)}@s.whatsapp.net`;
+      }
+      if (alternateJid) {
+        messages = store.messages[alternateJid]?.array || [];
+      }
+    }
+
     // Retorna as últimas N mensagens
     return messages.slice(-limit);
+  }
+
+  /**
+   * Solicita ao servidor WhatsApp (via Baileys fetchMessageHistory on-demand) 
+   * o histórico de um chat específico.
+   * 
+   * Requisito Baileys: syncFullHistory deve estar ativado e a sessão conectada.
+   * O WhatsApp retornará as mensagens via evento 'messaging-history.set',
+   * que o store.bind() captura automaticamente popula store.messages[jid].
+   *
+   * @param {string} sessionId - ID da sessão Baileys
+   * @param {string} phone - Número do contato (ou JID de grupo)
+   * @param {number} count - Quantidade de mensagens a solicitar
+   * @param {number} waitMs - Tempo em ms para aguardar o evento de retorno
+   * @returns {Promise<boolean>} true se a solicitação foi enviada
+   */
+  async requestHistoryFromWhatsApp(sessionId, phone, count = 50, waitMs = 8000) {
+    const sock = this.sockets[sessionId];
+    const store = this.stores[sessionId];
+    if (!sock || !sock.user) {
+      logger.warn(`[${sessionId}] ⚠️ requestHistoryFromWhatsApp: Sessão não autenticada.`);
+      return false;
+    }
+    if (typeof sock.fetchMessageHistory !== 'function') {
+      logger.warn(`[${sessionId}] ⚠️ fetchMessageHistory não disponível nessa versão do Baileys.`);
+      return false;
+    }
+
+    const isGroup = phone.includes('@g.us');
+    const jid = isGroup ? phone : phoneUtils.normalizeToJid(phone);
+
+    // Tenta encontrar a mensagem mais antiga no store para usar como âncora
+    let existingMessages = store.messages[jid]?.array || [];
+
+    // Fallback: tenta JID alternativo (problema do 9º dígito no BR)
+    if (existingMessages.length === 0 && !isGroup) {
+      const digits = String(phone).replace(/\D/g, '');
+      let alternateJid = null;
+      if (digits.length === 13 && digits.startsWith('55')) {
+        const areaCode = digits.substring(2, 4);
+        alternateJid = `55${areaCode}${digits.substring(5)}@s.whatsapp.net`;
+      } else if (digits.length === 12 && digits.startsWith('55')) {
+        const areaCode = digits.substring(2, 4);
+        alternateJid = `55${areaCode}9${digits.substring(4)}@s.whatsapp.net`;
+      }
+      if (alternateJid) {
+        existingMessages = store.messages[alternateJid]?.array || [];
+      }
+    }
+
+    // Usa a mensagem mais antiga como âncora para buscar mensagens anteriores
+    // Se não houver nenhuma, usa um timestamp genérico (epoch = buscar tudo)
+    let oldestMsgKey;
+    let oldestMsgTimestamp;
+
+    if (existingMessages.length > 0) {
+      const oldest = existingMessages[0];
+      oldestMsgKey = oldest.key;
+      const ts = oldest.messageTimestamp;
+      oldestMsgTimestamp = ts ? (ts.low || ts) * 1000 : Date.now();
+    } else {
+      // Sem âncora: cria uma chave ficticia com timestamp atual para pedir as ultimas mensagens
+      oldestMsgKey = { remoteJid: jid, fromMe: false, id: '' };
+      oldestMsgTimestamp = Date.now();
+    }
+
+    try {
+      logger.info(`[${sessionId}] 📡 Solicitando histórico on-demand ao WhatsApp para JID: ${jid} | count: ${count}`);
+      await sock.fetchMessageHistory(count, oldestMsgKey, oldestMsgTimestamp);
+
+      // Aguarda o evento messaging-history.set propagar para o store
+      await new Promise(resolve => setTimeout(resolve, waitMs));
+      logger.info(`[${sessionId}] ✅ Solicitação de histórico concluída para ${jid}`);
+      return true;
+    } catch (err) {
+      logger.warn(`[${sessionId}] ⚠️ Falha ao solicitar histórico on-demand para ${jid}: ${err.message}`);
+      return false;
+    }
   }
 
   /**
@@ -865,6 +1128,211 @@ class WhatsAppService {
     } catch (e) {
       logger.error(`❌ Erro ao restaurar sessões: ${e.message}`);
     }
+  }
+
+  async syncContactsToDb(contactsList, tenantId, sessionId, sock) {
+    if (!contactsList || contactsList.length === 0) return;
+    
+    // Filtra e normaliza contatos válidos (apenas contatos individuais com nome real)
+    const validContacts = [];
+    for (const c of contactsList) {
+      if (!c.id) continue;
+      if (c.id.endsWith('@newsletter')) continue;
+      if (c.id === 'status@broadcast') continue;
+      
+      const remoteJid = c.id;
+      const isGroup = remoteJid.endsWith('@g.us');
+      
+      const jidSuffix = remoteJid.split('@')[1] || '';
+      let phone = remoteJid;
+      
+      if (jidSuffix === 'g.us') {
+        phone = remoteJid; // Grupos mantêm o JID
+      } else if (jidSuffix !== 'lid') {
+        phone = phoneUtils.normalizeToDb(remoteJid.split('@')[0]);
+      } else {
+        // Se for LID, tenta resolver a partir do mapa em memória
+        const currentLidMap = this.lidMaps[sessionId] || {};
+        if (currentLidMap[remoteJid]) {
+          phone = currentLidMap[remoteJid];
+        }
+      }
+      
+      if (!phoneUtils.isValidDbFormat(phone)) continue;
+      
+      // Só salva se tem nome real (name, verifiedName ou notify) ou se for grupo
+      const realName = c.name || c.verifiedName || c.notify || c.subject || phone;
+      if (!realName && !isGroup) continue; // Skip contacts without any name
+      
+      validContacts.push({ phone, name: realName, remoteJid, isGroup });
+    }
+    
+    if (validContacts.length === 0) return;
+    
+    logger.info(`[${sessionId}] 👤 Iniciando persistência de ${validContacts.length} contatos no PostgreSQL...`);
+    
+    // Processamento em lote com Yield CPU para evitar travar a API
+    const batchSize = 10;
+    for (let i = 0; i < validContacts.length; i += batchSize) {
+      const batch = validContacts.slice(i, i + batchSize);
+      await Promise.all(batch.map(async (vc) => {
+        try {
+          let profilePicUrl = null;
+          if (sock) {
+            try {
+              profilePicUrl = await sock.profilePictureUrl(vc.remoteJid, 'image');
+            } catch (err) {
+              // Ignore error (no picture)
+            }
+          }
+
+          const [contact, created] = await Contact.findOrCreate({
+            where: { phone_number: vc.phone, tenant_id: tenantId },
+            defaults: {
+              phone_number: vc.phone,
+              full_name: vc.name,
+              profile_pic_url: profilePicUrl,
+              is_group: vc.isGroup
+            }
+          });
+          
+          let updateData = {};
+          if (!created && vc.name && contact.full_name !== vc.name) {
+            updateData.full_name = vc.name;
+          }
+          if (!created && profilePicUrl && contact.profile_pic_url !== profilePicUrl) {
+            updateData.profile_pic_url = profilePicUrl;
+          }
+          if (Object.keys(updateData).length > 0) {
+            await contact.update(updateData);
+          }
+        } catch (err) {
+          logger.error(`[${sessionId}] ❌ Erro ao salvar contato ${vc.phone} no banco: ${err.message}`);
+        }
+      }));
+      await new Promise(res => setTimeout(res, 50)); // Yield CPU and avoid rate limit
+    }
+    logger.info(`[${sessionId}] 👤 Persistência de contatos concluída.`);
+  }
+
+  async syncMessagesToDb(messagesList, tenantId, sessionId, sock) {
+    if (!messagesList || messagesList.length === 0) return;
+    
+    logger.info(`[${sessionId}] ✉️ Processando ${messagesList.length} mensagens históricas para o MongoDB...`);
+    
+    const validMessages = [];
+    for (const msg of messagesList) {
+      if (!msg.message) continue;
+      
+      const remoteJid = msg.key.remoteJid;
+      if (!remoteJid || remoteJid === 'status@broadcast') continue;
+      if (remoteJid.endsWith('@newsletter')) continue;
+      
+      const isGroup = remoteJid.endsWith('@g.us');
+      const isFromMe = msg.key.fromMe;
+      const jidSuffix = remoteJid.split('@')[1] || '';
+      let phone = remoteJid; // Default: mantém JID para grupos e default fallback
+      
+      if (isGroup) {
+        phone = remoteJid; // Grupos mantêm o JID integral
+      } else if (jidSuffix !== 'lid') {
+        phone = phoneUtils.normalizeToDb(remoteJid.split('@')[0]);
+      } else if (jidSuffix === 'lid') {
+        const currentLidMap = this.lidMaps[sessionId] || {};
+        if (currentLidMap[remoteJid]) {
+          phone = currentLidMap[remoteJid];
+        }
+      }
+      
+      if (!phoneUtils.isValidDbFormat(phone)) {
+        continue;
+      }
+      
+      // Unpack wrappers (viewOnce, ephemeral, etc.)
+      let messageBody = msg.message;
+      if (messageBody.viewOnceMessage?.message) {
+        messageBody = messageBody.viewOnceMessage.message;
+      } else if (messageBody.viewOnceMessageV2?.message) {
+        messageBody = messageBody.viewOnceMessageV2.message;
+      } else if (messageBody.ephemeralMessage?.message) {
+        messageBody = messageBody.ephemeralMessage.message;
+      }
+      
+      // Filtro de mensagens de protocolo
+      const msgType = Object.keys(messageBody || {})[0];
+      const protocolTypes = ['protocolMessage', 'senderKeyDistributionMessage', 'peerDataOperationRequestResponseMessage', 'peerDataOperationRequestMessage'];
+      if (protocolTypes.includes(msgType)) {
+        continue;
+      }
+      
+      const mediaTypes = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage'];
+      const activeMediaType = Object.keys(messageBody || {}).find(type => mediaTypes.includes(type));
+      
+      let messageType = 'text';
+      let textContent = '';
+      
+      if (activeMediaType) {
+        const mediaObj = messageBody[activeMediaType];
+        messageType = activeMediaType.replace('Message', ''); // image, video, audio, document
+        textContent = mediaObj.caption || mediaObj.fileName || `[Mídia: ${messageType}]`;
+      } else {
+        if (messageBody.conversation) textContent = messageBody.conversation;
+        else if (messageBody.extendedTextMessage) textContent = messageBody.extendedTextMessage.text;
+        else textContent = '📦 [Mídia/Outro]';
+      }
+      
+      // Timestamp
+      let msgDate = new Date();
+      if (msg.messageTimestamp) {
+        const timestampNum = typeof msg.messageTimestamp === 'number' 
+          ? msg.messageTimestamp 
+          : (msg.messageTimestamp.low || 0);
+        if (timestampNum > 0) {
+          msgDate = new Date(timestampNum * 1000);
+        }
+      }
+      
+      const pushName = msg.pushName || 'Contato Desconhecido';
+      
+      validMessages.push({
+        tenant_id: tenantId,
+        session_name: sessionId,
+        contact_phone: phone,
+        contact_name: pushName,
+        content: textContent,
+        source: isFromMe ? 'agent' : 'user',
+        message_type: messageType,
+        media_url: null,
+        external_id: msg.key.id,
+        ack: isFromMe ? 1 : 0,
+        timestamp: msgDate
+      });
+    }
+    
+    if (validMessages.length === 0) return;
+    
+    logger.info(`[${sessionId}] ✉️ Gravando ${validMessages.length} mensagens válidas em lotes no MongoDB...`);
+    
+    // Gravação em lote (BulkWrite) com Yield CPU
+    const batchSize = 100;
+    for (let i = 0; i < validMessages.length; i += batchSize) {
+      const batch = validMessages.slice(i, i + batchSize);
+      try {
+        const operations = batch.map(m => ({
+          updateOne: {
+            filter: { tenant_id: tenantId, external_id: m.external_id },
+            update: { $setOnInsert: m },
+            upsert: true
+          }
+        }));
+        await Message.bulkWrite(operations);
+      } catch (err) {
+        logger.error(`[${sessionId}] ❌ Erro no bulkWrite de mensagens históricas: ${err.message}`);
+      }
+      await new Promise(res => setImmediate(res)); // Yield CPU
+    }
+    
+    logger.info(`[${sessionId}] ✉️ Gravação de histórico de mensagens concluída.`);
   }
 }
 

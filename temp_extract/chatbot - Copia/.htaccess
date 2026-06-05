@@ -1,0 +1,6 @@
+# Redireciona tudo para a pasta public/ (onde está index.php e router.php).
+# Assim você pode usar: http://51.161.45.53/chatbotedmilson/login em vez de .../chatbotedmilson/public/login
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>

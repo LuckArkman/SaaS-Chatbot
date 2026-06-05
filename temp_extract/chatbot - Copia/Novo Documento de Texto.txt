@@ -1,0 +1,78 @@
+Você é uma IA desenvolvedora sênior. Gere um projeto completo em PHP 8 com arquitetura MVC, usando MySQL (PDO) e consumo de API externa.
+Entregue o resultado como um “esqueleto de repositório”, com a estrutura de pastas e o conteúdo de cada arquivo.
+
+REGRAS
+1) Não explique teoria. Só entregue: (A) estrutura de pastas + (B) conteúdo dos arquivos.
+2) Use autoload PSR-4 via Composer (namespace App\).
+3) Use Front Controller em public/index.php e um Router simples (GET/POST).
+4) Carregue variáveis de ambiente via arquivo .env (sem biblioteca externa).
+5) Use PDO com charset utf8mb4, exceptions e prepared statements.
+6) Tenha pelo menos:
+   - HomeController (rota “/”) renderizando view
+   - UserController com rotas:
+       GET /users        -> lista do banco
+       GET /users/show   -> exibe 1 usuário por id (querystring ?id=)
+       POST /users/store -> cria usuário
+       GET /api/posts    -> busca dados de API externa e exibe em view
+7) Tenha Model User com métodos: all(), find($id), create($data)
+8) Tenha Service ApiClient com métodos: get($path) com timeout configurável e tratamento de erro.
+9) Tenha Views com layout.php e páginas:
+   - home.php
+   - users/index.php
+   - users/show.php
+   - api/posts.php
+10) Inclua um arquivo SQL em /database/schema.sql criando a tabela users:
+    id (PK AI), name VARCHAR(120), email VARCHAR(190) UNIQUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+11) Inclua README.md com comandos mínimos:
+    composer install
+    criar banco e rodar schema.sql
+    configurar .env
+    como subir em PHP built-in server apontando pra /public
+
+FORMATO DE SAÍDA
+- Primeiro: árvore de pastas (ex.: seu-projeto/...)
+- Depois: para cada arquivo, mostre:
+  === caminho/do/arquivo ===
+  (conteúdo completo)
+- Não omita arquivos.
+- Use API_BASE_URL no .env com default https://jsonplaceholder.typicode.com
+- No endpoint /api/posts, buscar /posts e mostrar os 10 primeiros.
+
+IMPORTANTE
+- Código deve rodar sem frameworks.
+- Evite dependências além do composer autoload.
+- Valide entrada básica no POST /users/store (name/email obrigatórios; email válido).
+- Se der erro de API, mostre mensagem amigável na view.
+
+
+seu-projeto/
+  public/
+    index.php
+    .htaccess
+  app/
+    Controllers/
+      HomeController.php
+      UserController.php
+    Models/
+      User.php
+    Views/
+      layout.php
+      home.php
+      users/
+        index.php
+        show.php
+    Services/
+      ApiClient.php
+    Core/
+      App.php
+      Router.php
+      Controller.php
+      Database.php
+      View.php
+      Env.php
+  storage/
+    logs/
+  config/
+    config.php
+  .env
+  composer.json

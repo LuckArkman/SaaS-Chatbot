@@ -1,0 +1,135 @@
+/* Mídia no chat e página de testes */
+.chat-attach-btn {
+    border: 1px solid #d1d5db;
+    background: #fff;
+    border-radius: 8px;
+    padding: 0.45rem 0.65rem;
+    cursor: pointer;
+    font-size: 1.1rem;
+    line-height: 1;
+    margin-right: 0.35rem;
+    vertical-align: middle;
+}
+.chat-attach-btn:hover {
+    background: #f3f4f6;
+}
+.chat-attach-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.chat-media-img {
+    max-width: min(280px, 100%);
+    border-radius: 8px;
+    display: block;
+}
+.chat-media-video,
+.chat-media-audio {
+    max-width: min(320px, 100%);
+    border-radius: 8px;
+}
+.chat-media-doc {
+    color: #2563eb;
+    text-decoration: none;
+    font-weight: 500;
+}
+.chat-media-caption {
+    margin-top: 0.35rem;
+    font-size: 0.9rem;
+    white-space: pre-wrap;
+}
+.chat-bubble--media .chat-media-img {
+    margin-bottom: 0.15rem;
+}
+
+/* Página /testes-media */
+.media-tests-page {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 1.5rem 1rem 3rem;
+    font-family: Inter, system-ui, sans-serif;
+}
+.media-tests-page h1 {
+    font-size: 1.35rem;
+    margin: 0 0 0.5rem;
+}
+.media-tests-intro {
+    color: #64748b;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    margin-bottom: 1.25rem;
+}
+.media-tests-form {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: 1fr 1fr;
+    margin-bottom: 1rem;
+}
+@media (max-width: 640px) {
+    .media-tests-form {
+        grid-template-columns: 1fr;
+    }
+}
+.media-tests-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+    color: #475569;
+}
+.media-tests-form input {
+    padding: 0.5rem 0.65rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 0.9rem;
+}
+.media-tests-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+.media-tests-actions button {
+    padding: 0.5rem 0.85rem;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+    background: #fff;
+    cursor: pointer;
+    font-size: 0.82rem;
+}
+.media-tests-actions button:hover {
+    background: #f8fafc;
+}
+.media-tests-actions button.primary {
+    background: #4338ca;
+    color: #fff;
+    border-color: #4338ca;
+}
+.media-tests-log {
+    background: #0f172a;
+    color: #e2e8f0;
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    min-height: 220px;
+    max-height: min(60vh, 480px);
+    overflow: auto;
+    font-family: ui-monospace, monospace;
+    font-size: 0.75rem;
+    line-height: 1.45;
+}
+.media-log-line {
+    margin-bottom: 0.2rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.media-log-ok {
+    color: #86efac;
+}
+.media-log-err {
+    color: #fca5a5;
+}
+.media-log-warn {
+    color: #fde047;
+}
+.media-log-info {
+    color: #94a3b8;
+}

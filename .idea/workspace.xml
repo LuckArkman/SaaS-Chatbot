@@ -4,7 +4,15 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="46ac9361-d88a-4ce2-a30a-947c96b3e066" name="Changes" comment="" />
+    <list default="true" id="46ac9361-d88a-4ce2-a30a-947c96b3e066" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docker-compose.yml" beforeDir="false" afterPath="$PROJECT_DIR$/docker-compose.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/node-version/server.js" beforeDir="false" afterPath="$PROJECT_DIR$/node-version/server.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/node-version/src/controllers/chatController.js" beforeDir="false" afterPath="$PROJECT_DIR$/node-version/src/controllers/chatController.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/node-version/src/controllers/contactsController.js" beforeDir="false" afterPath="$PROJECT_DIR$/node-version/src/controllers/contactsController.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/node-version/src/services/whatsappCore.js" beforeDir="false" afterPath="$PROJECT_DIR$/node-version/src/services/whatsappCore.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/node-version/src/utils/phoneUtils.js" beforeDir="false" afterPath="$PROJECT_DIR$/node-version/src/utils/phoneUtils.js" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -21,6 +29,7 @@
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="PackageJsonUpdateNotifier">
+    <dismissed value="$PROJECT_DIR$/node-version/package.json" />
     <dismissed value="$PROJECT_DIR$/package.json" />
   </component>
   <component name="ProjectColorInfo">{
@@ -73,7 +82,11 @@
       <workItem from="1779802512498" duration="3847000" />
       <workItem from="1779893594532" duration="89000" />
       <workItem from="1779893686314" duration="1753000" />
-      <workItem from="1780075415127" duration="2642000" />
+      <workItem from="1780075415127" duration="3240000" />
+      <workItem from="1780112036740" duration="131000" />
+      <workItem from="1780512553894" duration="644000" />
+      <workItem from="1780601547496" duration="3249000" />
+      <workItem from="1780622802613" duration="16000" />
     </task>
     <servers />
   </component>

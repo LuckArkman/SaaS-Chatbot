@@ -2,22 +2,118 @@ const Message = require('../models/nosql/Message');
 const rabbitmqBus = require('../config/rabbitmq');
 const phoneUtils = require('../utils/phoneUtils');
 const logger = require('../utils/logger');
+const whatsappCore = require('../services/whatsappCore');
+
+const parseBaileysMessage = (msg, cleanPhone, isLegacyFormat = false) => {
+  let messageBody = msg.message || {};
+  if (messageBody.viewOnceMessage?.message) messageBody = messageBody.viewOnceMessage.message;
+  else if (messageBody.viewOnceMessageV2?.message) messageBody = messageBody.viewOnceMessageV2.message;
+  else if (messageBody.ephemeralMessage?.message) messageBody = messageBody.ephemeralMessage.message;
+
+  const mediaTypes = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage', 'stickerMessage'];
+  const activeMediaType = Object.keys(messageBody).find(type => mediaTypes.includes(type));
+  
+  let messageType = 'text';
+  let textContent = '';
+  if (activeMediaType) {
+    const mediaObj = messageBody[activeMediaType];
+    messageType = activeMediaType.replace('Message', '');
+    textContent = mediaObj.caption || mediaObj.fileName || (messageType === 'sticker' ? 'Adesivo (Sticker)' : `[Mídia: ${messageType}]`);
+  } else {
+    if (messageBody.conversation) textContent = messageBody.conversation;
+    else if (messageBody.extendedTextMessage) textContent = messageBody.extendedTextMessage.text;
+    else textContent = '📦 [Mídia/Outro]';
+  }
+
+  const isFromMe = msg.key.fromMe;
+  const statusNumber = msg.status || 0;
+  // Status: 1=PENDING, 2=SERVER_ACK, 3=DELIVERY_ACK, 4=READ, 5=PLAYED
+  const statusStr = ['PENDING', 'SENT', 'SENT', 'DELIVERED', 'READ', 'PLAYED'][statusNumber] || 'SENT';
+  const timestamp = msg.messageTimestamp ? (msg.messageTimestamp.low || msg.messageTimestamp) * 1000 : Date.now();
+
+  if (isLegacyFormat) {
+    return {
+      message_id: msg.key.id,
+      from_me: isFromMe,
+      side: isFromMe ? 'bot' : 'client',
+      sender: isFromMe ? 'agent' : cleanPhone,
+      content: textContent,
+      media_url: null,
+      type: messageType,
+      timestamp: timestamp / 1000,
+      status: statusNumber
+    };
+  }
+
+  return {
+    id: msg.key.id,
+    conversation_id: cleanPhone,
+    is_read: statusNumber >= 4,
+    agent_id: null,
+    status: statusStr,
+    content: textContent,
+    media_url: null,
+    side: isFromMe ? 'bot' : 'client',
+    from_me: isFromMe,
+    type: messageType,
+    external_id: msg.key.id,
+    created_at: new Date(timestamp).toISOString(),
+    contact: {
+      id: cleanPhone,
+      full_name: cleanPhone,
+      phone_number: cleanPhone
+    }
+  };
+};
 
 const getChatHistory = async (req, res) => {
   const phone = req.params.conversation_id || req.params.phone;
   if (!phone) return res.status(400).json({ detail: 'Phone is required' });
-  const cleanPhone = phone.split('@')[0]; // Previne vazamento do JID
-  const { limit = 50, page = 1 } = req.query;
+  const isGroup = phone.includes('@g.us');
+  const cleanPhone = isGroup ? phone : phone.split('@')[0];
+  const { limit = 50, page = 1, sync } = req.query;
   const skip = (page - 1) * limit;
 
   try {
-    const messages = await Message.find({ contact_phone: cleanPhone, tenant_id: req.tenantId })
+    const phonesToQuery = [cleanPhone];
+    const digits = String(cleanPhone).replace(/\D/g, '');
+    if (digits.length === 13 && digits.startsWith('55')) {
+      const areaCode = digits.substring(2, 4);
+      phonesToQuery.push(`55${areaCode}${digits.substring(5)}`);
+    } else if (digits.length === 12 && digits.startsWith('55')) {
+      const areaCode = digits.substring(2, 4);
+      phonesToQuery.push(`55${areaCode}9${digits.substring(4)}`);
+    }
+
+    // ── ETAPA 1: Verifica MongoDB Primeiro ──────────────────
+    let messages = await Message.find({ contact_phone: { $in: phonesToQuery }, tenant_id: req.tenantId })
                                   .sort({ timestamp: -1 })
                                   .skip(parseInt(skip))
                                   .limit(parseInt(limit));
     
-    const total = await Message.countDocuments({ contact_phone: cleanPhone, tenant_id: req.tenantId });
+    let total = await Message.countDocuments({ contact_phone: { $in: phonesToQuery }, tenant_id: req.tenantId });
 
+    // ── ETAPA 2: Fallback para Baileys se MongoDB estiver vazio ou sync forçando ──
+    if (total === 0 || sync === 'true') {
+      const sessionId = whatsappCore.getActiveSessionForTenant(req.tenantId);
+      if (sessionId) {
+        logger.info(`[Chat] 📡 Solicitando histórico on-demand ao WhatsApp para JID: ${cleanPhone} | count: ${limit}`);
+        try {
+          await whatsappCore.requestHistoryFromWhatsApp(sessionId, cleanPhone, parseInt(limit), 8000);
+        } catch (e) {
+          logger.warn(`[Chat] Falha na solicitação on-demand ao WhatsApp: ${e.message}`);
+        }
+        
+        // Após os 8s (onde o Baileys emite upserts que gravam no Mongo), buscamos novamente no MongoDB
+        messages = await Message.find({ contact_phone: { $in: phonesToQuery }, tenant_id: req.tenantId })
+                                .sort({ timestamp: -1 })
+                                .skip(parseInt(skip))
+                                .limit(parseInt(limit));
+        total = await Message.countDocuments({ contact_phone: { $in: phonesToQuery }, tenant_id: req.tenantId });
+      }
+    }
+
+    // ── ETAPA 3: Formata Retorno ──────────────────
     const serializedData = messages.reverse().map(doc => {
       const isFromMe = ['agent', 'bot', 'human', 'system'].includes(doc.source);
       return {
@@ -29,26 +125,20 @@ const getChatHistory = async (req, res) => {
         content: doc.content,
         media_url: doc.media_url || null,
         side: isFromMe ? 'bot' : 'client',
+        timestamp: doc.timestamp ? new Date(doc.timestamp).toISOString() : new Date().toISOString(),
         from_me: isFromMe,
-        type: doc.message_type || 'text',
-        external_id: doc.external_id,
-        created_at: doc.timestamp,
-        contact: {
-          id: doc.contact_phone,
-          full_name: doc.contact_name || doc.contact_phone,
-          phone_number: doc.contact_phone
-        }
+        type: doc.message_type || 'text'
       };
     });
 
     return res.json({
       total,
-      has_more: total > skip + parseInt(limit),
+      has_more: total > skip + messages.length,
       data: serializedData
     });
   } catch (e) {
     logger.error(`[Chat] Erro ao buscar histórico: ${e.message}`);
-    return res.status(500).json({ detail: 'Database error' });
+    return res.status(500).json({ detail: 'Erro interno ao buscar histórico' });
   }
 };
 
@@ -115,7 +205,6 @@ const sendManualMessage = async (req, res) => {
 
 
 const { WhatsAppInstance } = require('../models/sql/models');
-const whatsappCore = require('../services/whatsappCore');
 
 const getActiveSessionName = async (tenantId) => {
   const instance = await WhatsAppInstance.findOne({ where: { tenant_id: tenantId } });
@@ -172,15 +261,38 @@ const listConversations = async (req, res) => {
 const getConversation = async (req, res) => {
   const phone = req.params.conversation_id || req.params.phone;
   if (!phone) return res.status(400).json({ detail: 'Phone is required' });
-  const cleanPhone = phone.split('@')[0];
+  const isGroup = phone.includes('@g.us');
+  const cleanPhone = isGroup ? phone : phone.split('@')[0];
+  const returnedJid = isGroup ? phone : `${cleanPhone}@s.whatsapp.net`;
   const limit = parseInt(req.query.limit || 50);
   
   try {
+    let baileysHistory = [];
+    try {
+      const sessionId = whatsappCore.getActiveSessionForTenant(req.tenantId);
+      if (sessionId) {
+        baileysHistory = await whatsappCore.getChatHistory(sessionId, cleanPhone, limit);
+      }
+    } catch (e) {
+      logger.warn(`[Chat] Baileys history fetch error: ${e.message}`);
+    }
+
+    if (baileysHistory && baileysHistory.length > 0) {
+      const serializedMessages = baileysHistory.map(msg => parseBaileysMessage(msg, cleanPhone, true));
+      return res.json({
+        jid: returnedJid,
+        phone: cleanPhone,
+        total_messages: serializedMessages.length,
+        has_more: false,
+        messages: serializedMessages
+      });
+    }
+
+    // Fallback: MongoDB
     const messages = await Message.find({ contact_phone: cleanPhone, tenant_id: req.tenantId })
                                   .sort({ timestamp: -1 })
                                   .limit(limit);
     
-    // Serialização rigorosa para o formato esperado pelo Front-end legado
     const serializedMessages = messages.reverse().map(doc => {
       const isFromMe = ['agent', 'bot', 'human', 'system'].includes(doc.source);
       return {
@@ -197,7 +309,7 @@ const getConversation = async (req, res) => {
     });
 
     return res.json({
-      jid: `${cleanPhone}@s.whatsapp.net`,
+      jid: returnedJid,
       phone: cleanPhone,
       total_messages: serializedMessages.length,
       has_more: false,

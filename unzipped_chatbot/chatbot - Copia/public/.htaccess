@@ -1,0 +1,19 @@
+# Ative o mod_rewrite no Apache (descomente no httpd.conf se necessário).
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Se o Apache devolver 404 nas rotas (api/omni, programador/api, …), descomente e ajuste ao teu caminho:
+    # RewriteBase /chatbotEdmilson/public/
+
+    # Não reescrever se for arquivo ou pasta real (CSS, JS, imagens).
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+
+    # Encaminhar tudo para o front controller (passa o caminho em ?url= para o Router).
+    RewriteRule ^(.*)$ router.php?url=$1 [QSA,L]
+</IfModule>
+
+# Garantir que a pasta use index.php ao acessar sem arquivo.
+<IfModule mod_dir.c>
+    DirectoryIndex index.php
+</IfModule>
