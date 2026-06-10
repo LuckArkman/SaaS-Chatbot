@@ -65,7 +65,6 @@ function normalizeToJid(phone) {
 function isValidDbFormat(phone) {
   const phoneStr = String(phone);
   if (phoneStr.endsWith('@g.us')) return true;
-  if (phoneStr.endsWith('@lid')) return true; // Suporte para LIDs não resolvidos
   return /^[0-9]{8,30}$/.test(phoneStr);
 }
 

@@ -6,11 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="46ac9361-d88a-4ce2-a30a-947c96b3e066" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docker-compose.yml" beforeDir="false" afterPath="$PROJECT_DIR$/docker-compose.yml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/node-version/server.js" beforeDir="false" afterPath="$PROJECT_DIR$/node-version/server.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/node-version/src/controllers/chatController.js" beforeDir="false" afterPath="$PROJECT_DIR$/node-version/src/controllers/chatController.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/node-version/src/controllers/contactsController.js" beforeDir="false" afterPath="$PROJECT_DIR$/node-version/src/controllers/contactsController.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/node-version/src/services/whatsappCore.js" beforeDir="false" afterPath="$PROJECT_DIR$/node-version/src/services/whatsappCore.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/node-version/src/utils/phoneUtils.js" beforeDir="false" afterPath="$PROJECT_DIR$/node-version/src/utils/phoneUtils.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -87,6 +82,7 @@
       <workItem from="1780512553894" duration="644000" />
       <workItem from="1780601547496" duration="3249000" />
       <workItem from="1780622802613" duration="16000" />
+      <workItem from="1781055260346" duration="2242000" />
     </task>
     <servers />
   </component>
