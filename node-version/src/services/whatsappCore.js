@@ -659,7 +659,7 @@ class WhatsAppService {
           }
 
           const socketPayload = {
-            method: 'new_message', // Padronizado para o front-end moderno
+            method: 'receive_message', // Padronizado para o front-end legado/atual
             params: {
               message_id: msg.key.id,
               conversation_id: phone,
