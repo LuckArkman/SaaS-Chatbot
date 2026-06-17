@@ -8,7 +8,6 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^7.0.0-rc13",
     "amqplib": "^0.10.3",
     "axios": "^1.6.8",
     "bcrypt": "^5.1.1",
@@ -31,6 +30,8 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "jest": "^30.4.2",
+    "nodemon": "^3.1.0",
+    "supertest": "^7.2.2"
   }
 }

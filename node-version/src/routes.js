@@ -18,10 +18,13 @@ const {
   billingController 
 } = require('./controllers/stubManager');
 const aiController = require('./controllers/aiController');
+const cloudApiWebhookController = require('./controllers/cloudApiWebhookController');
 
 const router = express.Router();
 
 router.post('/v1/gateway/:channel_type', incomingWebhook);
+router.get('/v1/whatsapp/webhook', cloudApiWebhookController.verifyWebhook.bind(cloudApiWebhookController));
+router.post('/v1/whatsapp/webhook', cloudApiWebhookController.handleWebhook.bind(cloudApiWebhookController));
 
 /**
  * @swagger

@@ -66,6 +66,8 @@ const WhatsAppInstance = sequelize.define('WhatsAppInstance', {
   },
   webhook_url: { type: DataTypes.STRING(255), allowNull: true },
   external_id: { type: DataTypes.STRING(100), allowNull: true },
+  cloud_api_token: { type: DataTypes.TEXT, allowNull: true },
+  cloud_phone_id: { type: DataTypes.STRING(50), allowNull: true },
   qrcode_base64: { type: DataTypes.TEXT, allowNull: true },
   battery_level: { type: DataTypes.INTEGER, defaultValue: 0 },
   phone_number: { type: DataTypes.STRING(20), allowNull: true },

@@ -4,7 +4,6 @@ const logger = require('../utils/logger');
 const fs = require('fs');
 const path = require('path');
 
-// Helper interno (Substitui WhatsAppManagerService.get_or_create_instance)
 const getOrCreateInstance = async (tenantId) => {
   let instance = await WhatsAppInstance.findOne({ 
     where: { tenant_id: tenantId },
@@ -36,46 +35,19 @@ const getQrStream = async (req, res) => {
   try {
     const instance = await getOrCreateInstance(req.tenantId);
     
-    // Fallback: Se não for SSE, envia JSON estático (clientes PHP legados)
     if (!accept || !accept.includes('text/event-stream')) {
-      return res.json({ status: instance.status, qrcode: instance.qrcode_base64 });
+      return res.json({ status: instance.status, qrcode: null });
     }
 
-    // Configura cabeçalhos Server-Sent Events (SSE)
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive'
     });
 
-    let lastQr = null;
-
-    // Em Node.js usamos um intervalo que checa o DB, ou escuta os eventos do WhatsappCore
-    const intervalId = setInterval(async () => {
-      try {
-        const currentInstance = await WhatsAppInstance.findOne({ 
-          where: { tenant_id: req.tenantId },
-          order: [['id', 'DESC']]
-        });
-        if (!currentInstance) return;
-
-        if (currentInstance.qrcode_base64 !== lastQr) {
-          lastQr = currentInstance.qrcode_base64;
-          res.write(`data: ${JSON.stringify({ status: currentInstance.status, qrcode: lastQr })}\n\n`);
-        }
-
-        if (['CONNECTED', 'DISCONNECTED'].includes(currentInstance.status)) {
-          res.write(`data: ${JSON.stringify({ status: currentInstance.status, qrcode: null })}\n\n`);
-          clearInterval(intervalId);
-          res.end();
-        }
-      } catch (err) {
-        clearInterval(intervalId);
-        res.end();
-      }
-    }, 2000);
-
-    req.on('close', () => clearInterval(intervalId));
+    // Na Cloud API não há geração de QR Code, enviamos o status atual e encerramos.
+    res.write(`data: ${JSON.stringify({ status: instance.status, qrcode: null })}\n\n`);
+    res.end();
 
   } catch (e) {
     res.status(500).end();
@@ -84,35 +56,30 @@ const getQrStream = async (req, res) => {
 
 const startBot = async (req, res) => {
   try {
-    // const billingOk = await BillingService.checkPlanValidity(req.tenantId);
-    // if (!billingOk) throw 402;
-    
     const instance = await getOrCreateInstance(req.tenantId);
     
-    // CHAMADA NATIVA: Em vez de HTTP pro Bridge, invoca o próprio monolito!
-    whatsappService.initializeSession(req.tenantId, instance.session_name);
-    
-    await WhatsAppInstance.update({ status: 'CONNECTING' }, { where: { id: instance.id }});
+    // Na API oficial, "Start" significa apenas marcar como conectado se houver chaves.
+    if (!instance.cloud_api_token || !instance.cloud_phone_id) {
+      // Retorna erro se o usuário não tiver configurado as chaves
+      return res.status(400).json({ detail: 'Configure o Token e ID da Cloud API primeiro.' });
+    }
+
+    await WhatsAppInstance.update({ status: 'CONNECTED' }, { where: { id: instance.id }});
     return res.json({ status: 'starting', success: true });
   } catch (e) {
     logger.error(`[Bot] Erro start: ${e.message}`);
-    return res.status(500).json({ detail: 'Falha ao iniciar Baileys Nativo.' });
+    return res.status(500).json({ detail: 'Falha ao iniciar Cloud API.' });
   }
 };
 
 const stopBot = async (req, res) => {
   try {
     const instance = await getOrCreateInstance(req.tenantId);
-    const sock = whatsappService.sockets[instance.session_name];
-    if (sock) {
-      sock.end(undefined);
-      delete whatsappService.sockets[instance.session_name];
-    }
-    await WhatsAppInstance.update({ status: 'DISCONNECTED', qrcode_base64: null }, { where: { id: instance.id }});
+    await WhatsAppInstance.update({ status: 'DISCONNECTED' }, { where: { id: instance.id }});
     
     return res.json({ status: 'stopped', success: true });
   } catch (e) {
-    return res.status(500).json({ detail: 'Falha ao parar Baileys.' });
+    return res.status(500).json({ detail: 'Falha ao parar.' });
   }
 };
 
@@ -129,23 +96,16 @@ const restartBot = async (req, res) => {
 const logoutBot = async (req, res) => {
   try {
     const instance = await getOrCreateInstance(req.tenantId);
-    const sock = whatsappService.sockets[instance.session_name];
+    // Logout apenas limpa as credenciais locais e desconecta
+    await WhatsAppInstance.update({ 
+      status: 'DISCONNECTED', 
+      cloud_api_token: null, 
+      cloud_phone_id: null 
+    }, { where: { id: instance.id }});
     
-    if (sock) {
-      await sock.logout();
-      delete whatsappService.sockets[instance.session_name];
-    }
-    
-    // Destrói as chaves locais do Baileys
-    const tokenPath = path.join(__dirname, '..', '..', 'tokens', instance.session_name);
-    if (fs.existsSync(tokenPath)) {
-      fs.rmSync(tokenPath, { recursive: true, force: true });
-    }
-
-    await WhatsAppInstance.update({ status: 'DISCONNECTED', qrcode_base64: null }, { where: { id: instance.id }});
     return res.json({ status: 'logged_out' });
   } catch (e) {
-    return res.status(500).json({ detail: 'Falha ao deslogar.' });
+    return res.status(500).json({ detail: 'Falha ao deslogar Cloud API.' });
   }
 };
 
