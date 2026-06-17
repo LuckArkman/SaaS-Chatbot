@@ -36,7 +36,7 @@ const getQrStream = async (req, res) => {
     const instance = await getOrCreateInstance(req.tenantId);
     
     if (!accept || !accept.includes('text/event-stream')) {
-      return res.json({ status: instance.status, qrcode: null });
+      return res.json({ status: instance.status, qrcode: instance.qrcode_base64 });
     }
 
     res.writeHead(200, {
@@ -45,9 +45,16 @@ const getQrStream = async (req, res) => {
       'Connection': 'keep-alive'
     });
 
-    // Na Cloud API não há geração de QR Code, enviamos o status atual e encerramos.
-    res.write(`data: ${JSON.stringify({ status: instance.status, qrcode: null })}\n\n`);
-    res.end();
+    // Enviar status atual
+    res.write(`data: ${JSON.stringify({ status: instance.status, qrcode: instance.qrcode_base64 })}\n\n`);
+
+    // Aqui idealmente teríamos um EventEmitter escutando mudanças de QR para emitir, mas um polling simples de 2s serve para o MVP
+    const interval = setInterval(async () => {
+      const current = await WhatsAppInstance.findOne({ where: { id: instance.id } });
+      res.write(`data: ${JSON.stringify({ status: current.status, qrcode: current.qrcode_base64 })}\n\n`);
+    }, 2000);
+
+    req.on('close', () => clearInterval(interval));
 
   } catch (e) {
     res.status(500).end();
@@ -57,26 +64,18 @@ const getQrStream = async (req, res) => {
 const startBot = async (req, res) => {
   try {
     const instance = await getOrCreateInstance(req.tenantId);
-    
-    // Na API oficial, "Start" significa apenas marcar como conectado se houver chaves.
-    if (!instance.cloud_api_token || !instance.cloud_phone_id) {
-      // Retorna erro se o usuário não tiver configurado as chaves
-      return res.status(400).json({ detail: 'Configure o Token e ID da Cloud API primeiro.' });
-    }
-
-    await WhatsAppInstance.update({ status: 'CONNECTED' }, { where: { id: instance.id }});
+    await whatsappService.initializeSession(instance.tenant_id, instance.session_name);
     return res.json({ status: 'starting', success: true });
   } catch (e) {
     logger.error(`[Bot] Erro start: ${e.message}`);
-    return res.status(500).json({ detail: 'Falha ao iniciar Cloud API.' });
+    return res.status(500).json({ detail: 'Falha ao iniciar sessão Baileys.' });
   }
 };
 
 const stopBot = async (req, res) => {
   try {
     const instance = await getOrCreateInstance(req.tenantId);
-    await WhatsAppInstance.update({ status: 'DISCONNECTED' }, { where: { id: instance.id }});
-    
+    await whatsappService.deleteSession(req.tenantId, instance.session_name);
     return res.json({ status: 'stopped', success: true });
   } catch (e) {
     return res.status(500).json({ detail: 'Falha ao parar.' });
@@ -96,16 +95,10 @@ const restartBot = async (req, res) => {
 const logoutBot = async (req, res) => {
   try {
     const instance = await getOrCreateInstance(req.tenantId);
-    // Logout apenas limpa as credenciais locais e desconecta
-    await WhatsAppInstance.update({ 
-      status: 'DISCONNECTED', 
-      cloud_api_token: null, 
-      cloud_phone_id: null 
-    }, { where: { id: instance.id }});
-    
+    await whatsappService.deleteSession(req.tenantId, instance.session_name);
     return res.json({ status: 'logged_out' });
   } catch (e) {
-    return res.status(500).json({ detail: 'Falha ao deslogar Cloud API.' });
+    return res.status(500).json({ detail: 'Falha ao deslogar sessão.' });
   }
 };
 

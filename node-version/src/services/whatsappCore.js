@@ -1,169 +1,116 @@
-const axios = require('axios');
 const path = require('path');
 const fs = require('fs');
 const logger = require('../utils/logger');
 const { WhatsAppInstance } = require('../models/sql/models');
-const phoneUtils = require('../utils/phoneUtils');
-const sessionMapper = require('../utils/sessionMapper');
+const { initWASocket, getWbot, removeWbot } = require('../libs/wbot');
+const { wbotMessageListener } = require('./wbotMessageListener');
 
-class WhatsAppCloudService {
-  constructor() {
-    this.graphApiVersion = 'v19.0';
-    this.baseUrl = `https://graph.facebook.com/${this.graphApiVersion}`;
-  }
-
-  async getCredentials(tenantId) {
-    const instance = await WhatsAppInstance.findOne({ where: { tenant_id: tenantId } });
-    if (!instance || !instance.cloud_api_token || !instance.cloud_phone_id) {
-      throw new Error('Credenciais da Cloud API não configuradas para este Tenant.');
-    }
-    return {
-      token: instance.cloud_api_token,
-      phoneId: instance.cloud_phone_id,
-      sessionId: instance.session_name
-    };
-  }
-
-  async getCloudClient(tenantId) {
-    const creds = await this.getCredentials(tenantId);
-    return {
-      client: axios.create({
-        baseURL: `${this.baseUrl}/${creds.phoneId}`,
-        headers: {
-          'Authorization': `Bearer ${creds.token}`,
-          'Content-Type': 'application/json'
-        }
-      }),
-      phoneId: creds.phoneId,
-      sessionId: creds.sessionId
-    };
-  }
+class WhatsAppBaileysService {
+  constructor() {}
 
   async initializeSession(tenantId, sessionId) {
-    // Na Cloud API, não precisamos "iniciar" a sessão. 
-    // Apenas garantimos que o mapeamento e status estejam OK no banco.
-    sessionMapper.associate(sessionId, `tenant_${tenantId}`);
-    logger.info(`[*] Sincronizando Cloud API para tenant: ${tenantId}`);
+    logger.info(`[*] Sincronizando Baileys para tenant: ${tenantId}`);
     
     try {
-      await WhatsAppInstance.update(
-        { status: 'CONNECTED' },
-        { where: { session_name: sessionId } }
-      );
-    } catch (err) {
-      logger.error(`[${sessionId}] Erro ao atualizar status: ${err.message}`);
-    }
-  }
-
-  getActiveSessionForTenant(tenantId) {
-    return `tenant_${tenantId.toUpperCase()}`;
-  }
-
-  getMimeType(filePath) {
-    const ext = path.extname(filePath).toLowerCase();
-    const mimeMap = {
-      '.pdf': 'application/pdf',
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.mp4': 'video/mp4',
-      '.mp3': 'audio/mpeg',
-      '.ogg': 'audio/ogg'
-    };
-    return mimeMap[ext] || 'application/octet-stream';
-  }
-
-  async sendMessage(tenantId, to, content, type = 'text', mediaUrl = null) {
-    logger.info(`[Tenant:${tenantId}] 📤 Enviando mensagem (${type}) via Cloud API para ${to}`);
-    try {
-      const { client, sessionId } = await this.getCloudClient(tenantId);
-      
-      // Cloud API exige DDI completo, ex: 5511999999999. Sem sufixo @c.us
-      let phone = to.split('@')[0];
-      
-      let payload = {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: phone
-      };
-
-      if (type === 'text') {
-        payload.type = 'text';
-        payload.text = { preview_url: false, body: content };
+      let instance = await WhatsAppInstance.findOne({ where: { tenant_id: tenantId, session_name: sessionId } });
+      if (!instance) {
+        instance = await WhatsAppInstance.create({
+          tenant_id: tenantId,
+          session_name: sessionId,
+          status: 'CONNECTING'
+        });
       } else {
-        // Envio de Mídia: WhatsApp Cloud API aceita link ou Media ID
-        // Para simplificar esta primeira versão, suportaremos link direto ou upload
-        
-        let fileIdOrLink = null;
-
-        if (mediaUrl && mediaUrl.startsWith('http')) {
-           fileIdOrLink = { link: mediaUrl };
-        } else if (mediaUrl) {
-           // Aqui você teria que fazer o upload da mídia local primeiro usando o endpoint de media
-           // e usar o Media ID. Para MVP simplificado, retornamos erro se for arquivo local
-           // sem ter sido subido para uma URL acessível.
-           throw new Error('Upload de arquivo local direto requer POST para /media na Cloud API. Use URLs públicas no momento.');
-        }
-
-        payload.type = type; // image, video, audio, document
-        payload[type] = fileIdOrLink;
-        if (content) {
-          payload[type].caption = content;
-        }
+        await instance.update({ status: 'CONNECTING' });
       }
 
-      const result = await client.post('/messages', payload);
-      const msgId = result.data.messages ? result.data.messages[0].id : null;
-      return { success: true, message_id: msgId };
-    } catch (err) {
-      logger.error(`Falha ao enviar mensagem Cloud API: ${err.response?.data?.error?.message || err.message}`);
-      return { success: false };
-    }
-  }
-
-  async sendTemplateMessage(tenantId, to, templateName, languageCode = 'pt_BR', components = []) {
-    logger.info(`[Tenant:${tenantId}] 📤 Enviando template ${templateName} via Cloud API para ${to}`);
-    try {
-      const { client } = await this.getCloudClient(tenantId);
-      let phone = to.split('@')[0];
+      const wsocket = await initWASocket(instance.id, tenantId, sessionId);
       
-      let payload = {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: phone,
-        type: 'template',
-        template: {
-          name: templateName,
-          language: { code: languageCode },
-          components: components
-        }
-      };
+      // Adiciona o listener
+      wbotMessageListener(wsocket, tenantId, sessionId);
 
-      const result = await client.post('/messages', payload);
-      return { success: true, message_id: result.data.messages[0].id };
+      return { success: true, message: 'Sessão inicializada ou conectada' };
     } catch (err) {
-      logger.error(`Falha ao enviar template: ${err.response?.data?.error?.message || err.message}`);
-      return { success: false };
+      logger.error(`[${sessionId}] Erro ao iniciar Baileys: ${err.message}`);
+      return { success: false, error: err.message };
     }
   }
 
-  async makeCall(sessionId, phone, isVideo = false) {
-    return { id: 'simulated_call', simulated: true };
+  async getSessionStatus(tenantId, sessionId) {
+    const instance = await WhatsAppInstance.findOne({ where: { tenant_id: tenantId, session_name: sessionId } });
+    if (!instance) return null;
+    return instance.status;
   }
 
-  async rejectCall(sessionId, callId, callerJid) {
+  async getSessionQrCode(tenantId, sessionId) {
+    const instance = await WhatsAppInstance.findOne({ where: { tenant_id: tenantId, session_name: sessionId } });
+    if (!instance) return null;
+    return instance.qrcode_base64;
+  }
+
+  async deleteSession(tenantId, sessionId) {
+    const instance = await WhatsAppInstance.findOne({ where: { tenant_id: tenantId, session_name: sessionId } });
+    if (instance) {
+      await removeWbot(instance.id);
+      const sessionDir = path.join(__dirname, '..', '..', 'sessions', `${tenantId}_${sessionId}`);
+      if (fs.existsSync(sessionDir)) {
+        fs.rmSync(sessionDir, { recursive: true, force: true });
+      }
+      await instance.destroy();
+      return true;
+    }
     return false;
   }
 
-  async listContacts(sessionId) { return []; }
-  async verifyContact(sessionId, phone) { return null; }
-  async listChats(sessionId) { return []; }
-  async getChatHistory(sessionId, phone, limit = 50) { return []; }
-  async requestHistoryFromWhatsApp(sessionId, phone, count = 50, waitMs = 8000) { return false; }
-  
+  getActiveSessionForTenant(tenantId) {
+    return `tenant_${tenantId.toUpperCase()}`; // Simulação de sessionId caso não seja dinâmico
+  }
+
+  async sendMessage(tenantId, to, content, type = 'text', mediaUrl = null) {
+    logger.info(`[Tenant:${tenantId}] 📤 Enviando mensagem (${type}) nativa para ${to}`);
+    try {
+      const sessionId = this.getActiveSessionForTenant(tenantId);
+      const instance = await WhatsAppInstance.findOne({ where: { tenant_id: tenantId, session_name: sessionId } });
+      if (!instance) throw new Error('Sessão não encontrada no DB');
+
+      const wsocket = getWbot(instance.id);
+      
+      let remoteJid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+      
+      let payload = {};
+
+      if (type === 'text') {
+        payload = { text: content };
+      } else if (mediaUrl) {
+        // Se for url remota, baileys tem que baixar. Se for arquivo local, ler do disco.
+        if (mediaUrl.startsWith('http')) {
+          payload = {
+            [type]: { url: mediaUrl },
+            caption: content
+          };
+        } else {
+          payload = {
+            [type]: fs.readFileSync(mediaUrl),
+            caption: content
+          };
+        }
+      }
+
+      const result = await wsocket.sendMessage(remoteJid, payload);
+      return { success: true, message_id: result?.key?.id };
+    } catch (err) {
+      logger.error(`Falha ao enviar mensagem Baileys: ${err.message}`);
+      return { success: false };
+    }
+  }
+
   async initializeActiveSessions() {
-    logger.info('🔄 Cloud API gerencia conexões nativamente pela Meta.');
+    logger.info('🔄 Inicializando todas as instâncias ativas do Baileys no DB...');
+    const instances = await WhatsAppInstance.findAll({ where: { is_active: true } });
+    for (const inst of instances) {
+      logger.info(`Inicializando sessão salva: ${inst.session_name} (Tenant: ${inst.tenant_id})`);
+      await this.initializeSession(inst.tenant_id, inst.session_name);
+    }
   }
 }
 
-module.exports = new WhatsAppCloudService();
+module.exports = new WhatsAppBaileysService();

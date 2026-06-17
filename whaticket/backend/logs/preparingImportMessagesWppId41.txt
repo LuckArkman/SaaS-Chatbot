@@ -1,0 +1,7 @@
+Aguardando conexão para iniciar a importação de mensagens:
+  Whatsapp nome: Zap
+  Whatsapp Id: 41
+  Criação do arquivo de logs: 27/11/2025 22:55:25
+  Selecionado Data de inicio de importação: 14/11/2025 16:22:00
+  Selecionado Data final da importação: 19/11/2025 16:21:00
+   

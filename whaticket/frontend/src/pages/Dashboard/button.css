@@ -1,0 +1,40 @@
+/* ===== Botões do Dashboard — seguindo o whitelabel ===== */
+
+/* Variáveis com fallbacks */
+:root {
+  --wl-primary: var(--whitelabel-primary, var(--brand-primary, #1976d2));
+  --wl-primary-dark: var(--whitelabel-primary-dark, var(--brand-primary-dark, #115293));
+  --wl-on-primary: var(--on-primary, #fff);
+}
+
+/* Classe usada no dashboard (ex.: FILTRAR) */
+.MuiButtonBase-root.buttonHover {
+  background: var(--wl-primary) !important;
+  color: var(--wl-on-primary) !important;
+  transition: all .2s ease-in-out;
+  border-radius: 10px;
+}
+
+.MuiButtonBase-root.buttonHover:hover {
+  background: var(--wl-primary-dark) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0,0,0,.15);
+}
+
+/* Garantia extra: qualquer Button "contained" com color="primary" usa o whitelabel */
+.MuiButton-containedPrimary {
+  background-color: var(--wl-primary) !important;
+  color: var(--wl-on-primary) !important;
+}
+.MuiButton-containedPrimary:hover {
+  background-color: var(--wl-primary-dark) !important;
+}
+
+/* Ícones com fundo (ex.: exportar) quando você aplicar a classe buttonHover */
+.MuiIconButton-root.buttonHover {
+  background-color: var(--wl-primary) !important;
+  color: var(--wl-on-primary) !important;
+}
+.MuiIconButton-root.buttonHover:hover {
+  background-color: var(--wl-primary-dark) !important;
+}

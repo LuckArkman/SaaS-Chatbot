@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="pt" class="h-full">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="minimum-scale=1, initial-scale=1, width=device-width" />
+  <meta name="theme-color" content="#f8fafc" />
+  <meta name="color-scheme" content="light" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+
+  <title>Whaticket · Carregando...</title>
+  <link rel="apple-touch-icon" href="%PUBLIC_URL%/apple-touch-icon.png" />
+  <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+  <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+
+  <!-- Inter Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Força tema claro no login antes do primeiro paint -->
+  <script>
+    (function () {
+      var path = location.pathname || "/";
+      var isLogin = /\/(login|signup|forgot-password)(\/|$|\?)/i.test(path) || path === "/";
+      try {
+        if (isLogin) {
+          localStorage.setItem("theme", "light");
+          document.documentElement.classList.remove("dark");
+          document.documentElement.setAttribute("data-theme", "light");
+
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.classList.add("login-page");
+          });
+        } else {
+          var theme = localStorage.getItem("theme");
+          if (theme === "dark") {
+            document.documentElement.classList.add("dark");
+            document.documentElement.setAttribute("data-theme", "dark");
+          } else {
+            document.documentElement.classList.remove("dark");
+            document.documentElement.setAttribute("data-theme", "light");
+          }
+        }
+      } catch (e) {
+        document.documentElement.classList.remove("dark");
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+
+  <style>
+    :root {
+      /* Cor principal (verde estilo WhatsApp, pode alterar com window.setSplashBrand('#hex')) */
+      --brand: #22c55e;
+
+      --bg-color: radial-gradient(circle at top, #ecfdf3 0, #f8fafc 40%, #f1f5f9 100%);
+      --card-bg: #ffffff;
+      --card-stroke: #e2e8f0;
+      --text-title: #0f172a;
+      --text-body: #475569;
+      --ring-glow: rgba(34, 197, 94, 0.25);
+      --progress-track-bg: #e5f5eb;
+    }
+
+    body {
+      font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .splash-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-stroke);
+      box-shadow:
+        0 18px 60px rgba(15, 23, 42, 0.08),
+        0 0 0 1px rgba(148, 163, 184, 0.2);
+      border-radius: 1.5rem;
+    }
+
+    .ring-loader {
+      width: 64px;
+      height: 64px;
+      border-radius: 9999px;
+      border: 3px solid rgba(148, 163, 184, 0.25);
+      border-top-color: var(--brand);
+      box-shadow:
+        0 0 0 1px rgba(148, 163, 184, 0.25),
+        0 0 24px var(--ring-glow);
+      animation: spin .9s linear infinite;
+      background: radial-gradient(circle at 30% 30%, #bbf7d0 0, transparent 42%);
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .progress-track {
+      height: 8px;
+      border-radius: 9999px;
+      overflow: hidden;
+      background: var(--progress-track-bg);
+      box-shadow:
+        inset 0 0 0 1px rgba(22, 163, 74, 0.15),
+        0 0 0 1px rgba(15, 118, 110, 0.05);
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background-image: linear-gradient(
+        90deg,
+        rgba(34, 197, 94, 1),
+        rgba(52, 211, 153, 1)
+      );
+      background-size: 200% 100%;
+      animation: shimmer 1.4s ease-in-out infinite;
+      transition: width .35s ease-in-out;
+    }
+
+    @keyframes shimmer {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    .splash-hide {
+      opacity: 0 !important;
+      pointer-events: none !important;
+      transform: translateY(6px) scale(0.98);
+      transition: opacity .35s ease, transform .35s ease;
+    }
+
+    /* Inputs brancos no login (mantido do seu índice original) */
+    body.login-page .MuiInputBase-root,
+    body.login-page .MuiOutlinedInput-root,
+    body.login-page .MuiOutlinedInput-input,
+    body.login-page .MuiInputBase-input,
+    body.login-page .MuiInputAdornment-root {
+      background-color: #ffffff !important;
+      color: #000000 !important;
+    }
+    body.login-page .MuiOutlinedInput-root.Mui-focused,
+    body.login-page .MuiOutlinedInput-root.Mui-disabled,
+    body.login-page .MuiOutlinedInput-root.Mui-error,
+    body.login-page .MuiOutlinedInput-root.MuiInputBase-adornedStart,
+    body.login-page .MuiOutlinedInput-root.MuiInputBase-adornedEnd,
+    body.login-page .MuiOutlinedInput-root:hover {
+      background-color: #ffffff !important;
+      color: #000000 !important;
+    }
+    body.login-page .MuiOutlinedInput-notchedOutline {
+      border-color: #e5e7eb !important;
+    }
+    body.login-page .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline {
+      border-color: #cbd5e1 !important;
+    }
+    body.login-page .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+      border-color: #10b981 !important;
+    }
+    body.login-page input:-webkit-autofill,
+    body.login-page input:-webkit-autofill:hover,
+    body.login-page input:-webkit-autofill:focus {
+      -webkit-text-fill-color: #000000 !important;
+      transition: background-color 9999s ease-out 0s !important;
+      box-shadow: 0 0 0px 1000px #ffffff inset !important;
+    }
+    body.login-page input:-moz-ui-invalid,
+    body.login-page input:-moz-ui-valid {
+      background-color: #ffffff !important;
+      color: #000000 !important;
+    }
+  </style>
+
+  <script>
+    // Compat SharedArrayBuffer
+    if (!crossOriginIsolated) { /* eslint-disable-next-line */ SharedArrayBuffer = ArrayBuffer; }
+  </script>
+</head>
+
+<body class="h-full antialiased" style="background: var(--bg-color); color: var(--text-body);">
+  <!-- Splash Screen -->
+  <div id="splash" class="fixed inset-0 flex items-center justify-center px-4">
+    <div class="splash-card relative w-full max-w-lg overflow-hidden">
+
+      <!-- Linha/Glow superior em verde -->
+      <div class="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-emerald-400/0 via-emerald-400/80 to-emerald-400/0"></div>
+
+      <!-- Conteúdo -->
+      <div class="flex flex-col items-center gap-6 px-8 py-10">
+
+        <!-- Ícone / Loader -->
+        <div class="relative flex items-center justify-center">
+          <div class="ring-loader"></div>
+          <div class="pointer-events-none absolute inset-0 rounded-full bg-emerald-400/10 blur-2xl"></div>
+        </div>
+
+        <!-- Títulos -->
+        <div class="text-center space-y-2">
+          <!-- Removido "Painel Whaticket" -->
+          <h1 class="text-2xl font-semibold tracking-tight" style="color: var(--text-title);">
+            Carregando...
+          </h1>
+          <p class="text-sm text-slate-500">
+            Isso pode levar alguns segundos, por favor aguarde.
+          </p>
+
+          <!-- Versão única centralizada -->
+          <div class="pt-1 text-[11px] font-medium uppercase tracking-[0.22em] text-emerald-500">
+            V.15.0.0
+          </div>
+        </div>
+
+        <!-- Barra de progresso -->
+        <div class="w-full space-y-2">
+          <div class="progress-track">
+            <div id="progress" class="progress-bar"></div>
+          </div>
+          <div class="flex items-center justify-between text-[11px] text-slate-500">
+            <span class="inline-flex items-center gap-1.5">
+              <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              Inicializando workspace
+            </span>
+            <span id="progress-label" class="font-semibold text-slate-700">0%</span>
+          </div>
+        </div>
+
+        <!-- Rodapé suave -->
+        <div class="mt-2 flex w-full items-center justify-between text-[11px] text-slate-400">
+          <span class="hidden sm:inline">Conectando filas, setores e conversas em tempo real.</span>
+          <!-- Removido "Whaticket" do lado direito, texto mais neutro -->
+          <span class="inline-flex items-center gap-1.5">
+            <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+            Sistema online
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Root da aplicação React -->
+  <div id="root"></div>
+  <noscript class="block px-6 py-4 text-sm">
+    Você precisa habilitar o JavaScript para executar este app.
+  </noscript>
+
+  <script>
+    // Setup inicial: permite trocar a cor de brand e (opcionalmente) a versão em runtime
+    (function setupBrand() {
+      window.setSplashBrand = function (hex) {
+        try {
+          document.documentElement.style.setProperty('--brand', hex);
+        } catch (e) {}
+      };
+
+      // Compat de versão (se algum script ainda usar isso)
+      window.setAppVersion = function (v) {
+        var versionLabel = document.getElementById("app-version");
+        if (versionLabel) {
+          versionLabel.textContent = v || "15.0.0";
+        }
+      };
+
+      window.setAppVersion("15.0.0");
+    })();
+
+    // Controle de progresso / saída do splash
+    (function bootProgress() {
+      let p = 0;
+      const bar = document.getElementById("progress");
+      const label = document.getElementById("progress-label");
+      const splash = document.getElementById("splash");
+
+      const timer = setInterval(() => {
+        if (p < 55) p += 9;
+        else if (p < 80) p += 3;
+        else if (p < 98) p += Math.max(0.6, (99 - p) / 18);
+
+        if (bar) bar.style.width = p + "%";
+        if (label) label.textContent = Math.min(100, Math.round(p)) + "%";
+      }, 700);
+
+      window.finishProgress = () => {
+        p = 100;
+        if (bar) bar.style.width = "100%";
+        if (label) label.textContent = "100%";
+        clearInterval(timer);
+        setTimeout(() => splash && splash.classList.add("splash-hide"), 250);
+        setTimeout(() => splash && splash.remove(), 650);
+      };
+    })();
+  </script>
+</body>
+</html>
