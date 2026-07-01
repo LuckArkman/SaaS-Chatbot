@@ -190,14 +190,14 @@ class WhatsAppService {
         
         if (lastDisconnect.error instanceof Boom) {
           const statusCode = lastDisconnect.error.output?.statusCode;
-          if (
-            statusCode === DisconnectReason.loggedOut ||
-            statusCode === DisconnectReason.badSession ||
-            statusCode === 403 // Proibido/Banido
-          ) {
+          // Somente desconecta permanentemente se o usuário revogou o acesso pelo app (401)
+          if (statusCode === DisconnectReason.loggedOut) {
             shouldReconnect = false;
           }
-        } else if (errMsg.includes('QR refs attempts ended') || errMsg.includes('Stream Errored')) {
+        } 
+        
+        // Permite fechar apenas se a leitura do QR Code expirou (ainda não sincronizou)
+        if (errMsg.includes('QR refs attempts ended')) {
           shouldReconnect = false;
         }
 
