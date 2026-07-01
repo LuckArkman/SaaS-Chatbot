@@ -3,7 +3,8 @@ const {
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
   DisconnectReason,
-  Browsers
+  Browsers,
+  makeCacheableSignalKeyStore
 } = require('@whiskeysockets/baileys');
 const fs = require('fs');
 const path = require('path');
@@ -141,10 +142,16 @@ class WhatsAppService {
       version,
       logger: this.baileysLogger,
       printQRInTerminal: false,
-      auth: state,
-      browser: Browsers.macOS('SaaS-Chatbot Monolith'),
-      syncFullHistory: true,
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, this.baileysLogger),
+      },
+      browser: Browsers.macOS('Desktop'), // Previne banimento/desconexão pelo WA Server
+      syncFullHistory: false, // Historico full bloqueia o socket e causa timeout(408)
       generateHighQualityLinkPreview: true,
+      keepAliveIntervalMs: 30000, // Estabiliza a conexão pings
+      retryRequestDelayMs: 5000,
+      markOnlineOnConnect: true
     });
 
     store.bind(sock.ev);
@@ -178,9 +185,17 @@ class WhatsAppService {
       }
 
       if (connection === 'close') {
-        const shouldReconnect = (lastDisconnect.error instanceof Boom)
-          ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut
-          : true;
+        let shouldReconnect = true;
+        if (lastDisconnect.error instanceof Boom) {
+          const statusCode = lastDisconnect.error.output?.statusCode;
+          if (
+            statusCode === DisconnectReason.loggedOut ||
+            statusCode === DisconnectReason.badSession ||
+            statusCode === 403 // Proibido/Banido
+          ) {
+            shouldReconnect = false;
+          }
+        }
 
         logger.warn(`[${sessionId}] Conexão fechada. Motivo: ${lastDisconnect.error}. Reconectar? ${shouldReconnect}`);
 
