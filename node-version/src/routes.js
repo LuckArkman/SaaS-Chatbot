@@ -23,6 +23,12 @@ const router = express.Router();
 
 router.post('/v1/gateway/:channel_type', incomingWebhook);
 
+// Rota oculta para testar o sistema global de relatórios de falha
+router.post('/v1/force-error', (req, res, next) => {
+  const error = new Error('Falha simulada para testar o Error Reporting System.');
+  error.status = 500;
+  next(error);
+});
 /**
  * @swagger
  * tags:

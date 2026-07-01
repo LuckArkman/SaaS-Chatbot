@@ -24,6 +24,9 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(tenancyMiddleware);
 
+const auditMiddleware = require('./src/middlewares/auditMiddleware');
+app.use(auditMiddleware);
+
 const routes = require('./src/routes');
 app.use('/api', routes);
 
@@ -67,6 +70,10 @@ app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'Monolith OK', version: '2.0.0' });
 });
+
+// Tratamento Global de Erros (Relatórios)
+const errorMiddleware = require('./src/middlewares/errorMiddleware');
+app.use(errorMiddleware);
 
 // Inicializador de todas as conexões
 const connectionManager = require('./src/websockets/connectionManager');
