@@ -186,6 +186,8 @@ class WhatsAppService {
 
       if (connection === 'close') {
         let shouldReconnect = true;
+        const errMsg = lastDisconnect.error?.message || String(lastDisconnect.error);
+        
         if (lastDisconnect.error instanceof Boom) {
           const statusCode = lastDisconnect.error.output?.statusCode;
           if (
@@ -195,9 +197,11 @@ class WhatsAppService {
           ) {
             shouldReconnect = false;
           }
+        } else if (errMsg.includes('QR refs attempts ended') || errMsg.includes('Stream Errored')) {
+          shouldReconnect = false;
         }
 
-        logger.warn(`[${sessionId}] Conexão fechada. Motivo: ${lastDisconnect.error}. Reconectar? ${shouldReconnect}`);
+        logger.warn(`[${sessionId}] Conexão fechada. Motivo: ${errMsg}. Reconectar? ${shouldReconnect}`);
 
         if (shouldReconnect) {
           await WhatsAppInstance.update(
