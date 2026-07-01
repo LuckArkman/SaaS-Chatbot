@@ -1,6 +1,7 @@
 const express = require('express');
 const { incomingWebhook } = require('./controllers/gatewayController');
 const { requireAuth, requireServiceKey, requireSuperAdmin } = require('./middlewares/authMiddleware');
+const { loginRateLimiter } = require('./middlewares/rateLimiterMiddleware');
 const sadminController = require('./controllers/adminController');
 const { validatePhoneContract } = require('./middlewares/contractMiddleware');
 const callsController = require('./controllers/callsController');
@@ -105,7 +106,7 @@ router.post('/v1/force-error', (req, res, next) => {
  *       422:
  *         description: Campos obrigatórios em falta
  */
-router.post('/v1/auth/login', authController.login);
+router.post('/v1/auth/login', loginRateLimiter, authController.login);
 
 /**
  * @swagger
@@ -1289,7 +1290,7 @@ router.post('/v1/sadmin/auth/register', sadminController.registerAdmin);
  *                 expires_in:   { type: string }
  *       401: { description: Credenciais incorretas }
  */
-router.post('/v1/sadmin/auth/login', sadminController.loginAdmin);
+router.post('/v1/sadmin/auth/login', loginRateLimiter, sadminController.loginAdmin);
 
 /**
  * @swagger
