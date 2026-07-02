@@ -110,6 +110,17 @@ router.post('/v1/auth/login', loginRateLimiter, authController.login);
 
 /**
  * @swagger
+ * /api/v1/auth/logout:
+ *   post:
+ *     summary: Encerrar a sessão atual do usuário
+ *     tags: [auth]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post('/v1/auth/logout', requireAuth, authController.logout);
+
+/**
+ * @swagger
  * /api/v1/auth/refresh:
  *   post:
  *     summary: Renovar Access Token via Refresh Token

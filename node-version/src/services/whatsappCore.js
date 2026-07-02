@@ -242,6 +242,44 @@ class WhatsAppService {
           connectedPhone = phoneUtils.normalizeToDb(rawId);
         }
 
+        if (connectedPhone) {
+          const { Op } = require('sequelize');
+          const existingInstance = await WhatsAppInstance.findOne({
+            where: {
+              phone_number: connectedPhone,
+              status: 'CONNECTED',
+              session_name: { [Op.ne]: sessionId }
+            },
+            ignoreTenant: true
+          });
+
+          if (existingInstance) {
+            logger.warn(`[${sessionId}] ⛔ Conexão bloqueada: O número ${connectedPhone} já está conectado na sessão ${existingInstance.session_name}.`);
+            
+            await WhatsAppInstance.update(
+              { status: 'DISCONNECTED', qrcode_base64: null },
+              { where: { session_name: sessionId }, ignoreTenant: true }
+            );
+            
+            await connectionManager.publishEvent(tenantId, {
+              type: 'bot_status_update',
+              status: 'DISCONNECTED',
+              session: sessionId,
+              error: 'NUMBER_ALREADY_CONNECTED'
+            });
+            
+            delete this.sockets[sessionId];
+            
+            // Logout e limpeza
+            setTimeout(async () => {
+              try { await sock.logout(); } catch(e) {}
+              fs.rmSync(tokenPath, { recursive: true, force: true });
+            }, 1000);
+            
+            return;
+          }
+        }
+
         await WhatsAppInstance.update(
           { status: 'CONNECTED', qrcode_base64: null, phone_number: connectedPhone, sync_progress: 10 },
           { where: { session_name: sessionId }, ignoreTenant: true }

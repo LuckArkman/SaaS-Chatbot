@@ -60,8 +60,24 @@ const login = async (req, res) => {
       });
     }
 
+    // Single Active Session - Verifica se já existe sessão no Redis
+    const redisService = require('../config/redis');
+    const activeSession = await redisService.get(`active_session:${user.id}`);
+    if (activeSession) {
+      logger.warn(`[Auth] Bloqueio de Multi-Sessão acionado para: ${loginEmail}`);
+      return res.status(409).json({
+        error: 'SESSION_ALREADY_ACTIVE',
+        detail: 'Você já tem uma sessão ativa em outro local. Encerre-a clicando em Sair no outro dispositivo ou aguarde sua expiração automática.'
+      });
+    }
+
     logger.info(`[Auth] Login bem-sucedido: ${loginEmail} | Tenant: ${user.tenant_id}`);
-    return res.status(200).json(buildTokenResponse(user));
+    const tokenResponse = buildTokenResponse(user);
+    
+    // Registra a sessão ativa no Redis com validade de 15 minutos (igual ao token)
+    await redisService.set(`active_session:${user.id}`, tokenResponse.access_token, 15 * 60);
+
+    return res.status(200).json(tokenResponse);
 
   } catch (e) {
     logger.error(`[Auth] Erro no login: ${e.message}`);
@@ -385,6 +401,26 @@ const deleteMyAccount = async (req, res) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// POST /api/v1/auth/logout
+// Permite ao usuário liberar sua sessão ativa.
+// ---------------------------------------------------------------------------
+const logout = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const redisService = require('../config/redis');
+    
+    // Remove a trava de sessão do Redis
+    await redisService.delete(`active_session:${userId}`);
+    
+    logger.info(`[Auth] Logout efetuado: Usuário ${userId}`);
+    return res.status(200).json({ success: true, detail: 'Logout efetuado com sucesso.' });
+  } catch (e) {
+    logger.error(`[Auth] Erro no logout: ${e.message}`);
+    return res.status(500).json({ error: 'INTERNAL_ERROR', detail: 'Erro ao processar logout.' });
+  }
+};
+
 module.exports = {
   login,
   register,
@@ -394,5 +430,5 @@ module.exports = {
   changePassword,
   refresh,
   deleteMyAccount,
+  logout
 };
-
