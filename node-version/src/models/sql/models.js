@@ -33,6 +33,10 @@ const Contact = sequelize.define('Contact', {
   is_blacklisted: { type: DataTypes.BOOLEAN, defaultValue: false },
   last_campaign_id: { type: DataTypes.INTEGER, allowNull: true },
   tenant_id: { type: DataTypes.STRING, allowNull: false },
+  // Foto de perfil do WhatsApp (URL temporária fornecida pelo Baileys)
+  profile_pic_url: { type: DataTypes.TEXT, allowNull: true },
+  // Indica se este contato é um grupo do WhatsApp
+  is_group: { type: DataTypes.BOOLEAN, defaultValue: false },
 }, {
   tableName: 'contacts',
   timestamps: true,
@@ -74,6 +78,8 @@ const WhatsAppInstance = sequelize.define('WhatsAppInstance', {
   phone_number: { type: DataTypes.STRING(20), allowNull: true },
   is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
   last_health_check: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+  // Foto de perfil do número conectado (buscada do WhatsApp via Baileys)
+  profile_pic_url: { type: DataTypes.TEXT, allowNull: true },
   tenant_id: { type: DataTypes.STRING, allowNull: false },
 }, {
   tableName: 'whatsapp_instances',

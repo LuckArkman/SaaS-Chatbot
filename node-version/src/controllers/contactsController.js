@@ -120,34 +120,86 @@ const getActiveSessionName = async (tenantId) => {
 
 const listWhatsappContacts = async (req, res) => {
   try {
-    const sessionName = await getActiveSessionName(req.user.tenant_id);
-    const contacts = await whatsappCore.listContacts(sessionName);
-    
-    // Mescla os nomes do banco de dados local para exibir nomes corretos na UI
-    const dbContacts = await Contact.findAll({ where: { tenant_id: req.user.tenant_id } });
-    const dbMap = {};
-    dbContacts.forEach(c => {
-      // Baileys IDs are phone@s.whatsapp.net usually
-      dbMap[c.phone_number] = c.full_name;
+    // Retorna contatos diretamente do banco — já têm profile_pic_url preenchido pelo syncContactsToDb
+    const { page = 1, limit = 200, search = '' } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    const whereClause = { tenant_id: req.user.tenant_id };
+    if (search) {
+      whereClause[Op.or] = [
+        { full_name: { [Op.iLike]: `%${search}%` } },
+        { phone_number: { [Op.iLike]: `%${search}%` } }
+      ];
+    }
+
+    const { count, rows } = await Contact.findAndCountAll({
+      where: whereClause,
+      limit: parseInt(limit),
+      offset,
+      order: [['full_name', 'ASC']]
     });
 
-    const merged = contacts.map(c => {
-      const phone = c.id ? c.id.split('@')[0] : '';
-      return {
-        ...c,
-        full_name: dbMap[phone] || c.name || c.notify || ''
-      };
-    });
-    
     return res.json({
       success: true,
-      total: merged.length,
-      contacts: merged
+      total: count,
+      page: parseInt(page),
+      contacts: rows.map(c => ({
+        id: c.id,
+        phone_number: c.phone_number,
+        full_name: c.full_name,
+        profile_pic_url: c.profile_pic_url || null,
+        is_group: c.is_group || false,
+        is_blacklisted: c.is_blacklisted,
+        created_at: c.created_at,
+      }))
     });
   } catch (e) {
     return res.status(409).json({ success: false, detail: e.message });
   }
 };
+
+/**
+ * GET /api/v1/contacts/refresh-pics
+ * Dispara a atualização das fotos de perfil de todos os contatos do tenant em background.
+ * Útil para atualizar fotos que já expiraram (WhatsApp URLs têm validade).
+ */
+const refreshContactPics = async (req, res) => {
+  try {
+    const sessionName = await getActiveSessionName(req.user.tenant_id);
+    const sock = whatsappCore.sockets[sessionName];
+    if (!sock) {
+      return res.status(409).json({ success: false, detail: 'Bot não está conectado.' });
+    }
+
+    // Executa em background sem bloquear a resposta
+    res.json({ success: true, detail: 'Atualização de fotos iniciada em background.' });
+
+    const contacts = await Contact.findAll({ where: { tenant_id: req.user.tenant_id } });
+    const batchSize = 5;
+    for (let i = 0; i < contacts.length; i += batchSize) {
+      const batch = contacts.slice(i, i + batchSize);
+      await Promise.all(batch.map(async (contact) => {
+        try {
+          const jid = contact.is_group
+            ? `${contact.phone_number}`
+            : `${contact.phone_number}@s.whatsapp.net`;
+          const url = await sock.profilePictureUrl(jid, 'image');
+          if (url && url !== contact.profile_pic_url) {
+            await contact.update({ profile_pic_url: url });
+          }
+        } catch (e) {
+          // Sem foto — ignora
+        }
+      }));
+      await new Promise(r => setTimeout(r, 300)); // Rate-limit gentil
+    }
+  } catch (e) {
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, detail: e.message });
+    }
+  }
+};
+
 
 const addWhatsappContact = async (req, res) => {
   const { phone, name } = req.body;
@@ -223,4 +275,4 @@ const deleteWhatsappContact = async (req, res) => {
   }
 };
 
-module.exports = { listContacts, createContact, updateContact, deleteContact, listWhatsappContacts, addWhatsappContact, editWhatsappContact, deleteWhatsappContact };
+module.exports = { listContacts, createContact, updateContact, deleteContact, listWhatsappContacts, addWhatsappContact, editWhatsappContact, deleteWhatsappContact, refreshContactPics };

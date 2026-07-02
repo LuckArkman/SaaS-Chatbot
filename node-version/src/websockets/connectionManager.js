@@ -139,20 +139,47 @@ class ConnectionManager {
 
     const params = message.params;
     
-    // 1. Identifica o contato destinatário/remetente (o telefone)
+    // 1. Identifica o message_id único e o contato destinatário/remetente
+    const messageId = params.message_id;
     const phone = params.contact_phone || params.phone || params.conversation_id || (params.contact && (params.contact.phone || params.contact.phone_number));
+    
     if (!phone) return false;
 
     const cleanPhone = String(phone).replace(/\D/g, '');
-    const content = params.content || '';
     const now = Date.now();
 
-    // 2. Busca a última mensagem enviada/processada para este contato específico
+    // 2. Compara pelo message_id (Deduplicação correta e globalmente única)
+    if (messageId) {
+      // Usamos um mapa focado no message_id dentro do contato para suportar histórico e re-conexões
+      if (this.lastSentMessageByContact.has(messageId)) {
+        const previousMessage = this.lastSentMessageByContact.get(messageId);
+        
+        // Mantém 60 segundos de memória por message_id
+        if ((now - previousMessage.timestamp) < 60000) {
+          logger.info(`[WS] 🛡️ Duplicidade evitada por message_id idêntico (${messageId}) para o contato ${cleanPhone}`);
+          return true;
+        }
+      }
+      
+      this.lastSentMessageByContact.set(messageId, { timestamp: now });
+      
+      // Limpeza de memória periódica (Evita Memory Leak)
+      if (this.lastSentMessageByContact.size > 5000) {
+        const oldestAllowed = now - 60000;
+        for (const [key, value] of this.lastSentMessageByContact.entries()) {
+          if (value.timestamp < oldestAllowed) {
+            this.lastSentMessageByContact.delete(key);
+          }
+        }
+      }
+      
+      return false;
+    }
+
+    // Fallback: Se não houver message_id, usa a lógica antiga de conteúdo
+    const content = params.content || '';
     if (this.lastSentMessageByContact.has(cleanPhone)) {
       const previousMessage = this.lastSentMessageByContact.get(cleanPhone);
-      
-      // Compara o conteúdo (corpo da mensagem) atual com o anterior
-      // Tempo de expiração de segurança de 30 segundos para permitir re-envio manual posterior da mesma frase se desejado
       const isTimeMatch = (now - previousMessage.timestamp) < 30000;
       
       if (previousMessage.content === content && isTimeMatch) {
@@ -161,12 +188,7 @@ class ConnectionManager {
       }
     }
 
-    // 3. Salva a mensagem atual como a "última mensagem enviada" para este contato
-    this.lastSentMessageByContact.set(cleanPhone, {
-      content: content,
-      timestamp: now
-    });
-
+    this.lastSentMessageByContact.set(cleanPhone, { content: content, timestamp: now });
     return false;
   }
 

@@ -280,8 +280,21 @@ class WhatsAppService {
           }
         }
 
+        // Busca a foto de perfil do próprio número conectado
+        let ownProfilePicUrl = null;
+        if (connectedPhone) {
+          try {
+            const ownJid = sock.user?.id;
+            if (ownJid) {
+              ownProfilePicUrl = await sock.profilePictureUrl(ownJid, 'image');
+            }
+          } catch (e) {
+            // Contato pode não ter foto — silencioso
+          }
+        }
+
         await WhatsAppInstance.update(
-          { status: 'CONNECTED', qrcode_base64: null, phone_number: connectedPhone, sync_progress: 10 },
+          { status: 'CONNECTED', qrcode_base64: null, phone_number: connectedPhone, sync_progress: 10, profile_pic_url: ownProfilePicUrl },
           { where: { session_name: sessionId }, ignoreTenant: true }
         );
         
@@ -289,7 +302,8 @@ class WhatsAppService {
           type: 'bot_status_update',
           status: 'CONNECTED',
           session: sessionId,
-          sync_progress: 10
+          sync_progress: 10,
+          profile_pic_url: ownProfilePicUrl
         });
 
         // ==========================================

@@ -975,6 +975,19 @@ router.post('/v1/contacts/whatsapp', requireAuth, contactsController.addWhatsapp
 router.put('/v1/contacts/whatsapp/:phone', requireAuth, validatePhoneContract, contactsController.editWhatsappContact);
 router.delete('/v1/contacts/whatsapp/:phone', requireAuth, contactsController.deleteWhatsappContact);
 
+/**
+ * @swagger
+ * /api/v1/contacts/refresh-pics:
+ *   post:
+ *     summary: Atualiza as fotos de perfil de todos os contatos do tenant em background
+ *     tags: [contacts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Atualização iniciada em background
+ */
+router.post('/v1/contacts/refresh-pics', requireAuth, contactsController.refreshContactPics);
 
 // ==========================================
 // 9. ADMIN
