@@ -132,6 +132,15 @@ class AuthController
 
     public function logout(): void
     {
+        if (isset($_SESSION['omni_token'])) {
+            try {
+                $api = new OmniChannelApiClient();
+                $api->authLogout();
+            } catch (\Throwable $e) {
+                // Ignora falhas da API (se token já expirou, ou backend fora do ar) no logout
+            }
+        }
+
         $_SESSION['omni_token'] = null;
         $_SESSION['omni_tenant_id'] = null;
         $_SESSION['omni_user_email'] = null;

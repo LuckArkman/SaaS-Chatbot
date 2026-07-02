@@ -11,6 +11,9 @@ const User = sequelize.define('User', {
   
   // Tenancy
   tenant_id: { type: DataTypes.STRING, allowNull: false },
+
+  // Nested Multitenancy: se preenchido, este tenant foi criado por um revendedor
+  reseller_id: { type: DataTypes.INTEGER, allowNull: true, defaultValue: null },
   
   // Agentes
   is_agent: { type: DataTypes.BOOLEAN, defaultValue: false },
@@ -268,10 +271,95 @@ const AuditLog = sequelize.define('AuditLog', {
 AdminUser.hasMany(AuditLog, { foreignKey: 'admin_id' });
 AuditLog.belongsTo(AdminUser, { foreignKey: 'admin_id' });
 
+// ---------------------------------------------------------------------------
+// NESTED MULTITENANCY — RESELLER LAYER
+// ---------------------------------------------------------------------------
+
+/**
+ * Reseller — Revendedor aprovado pela plataforma SaaS.
+ * Possui um tenant_id próprio (conta deles na plataforma) e pode
+ * criar e gerenciar sub-tenants (clientes finais) dentro do seu limite.
+ */
+const Reseller = sequelize.define('Reseller', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+
+  // O tenant_id do próprio revendedor (conta dele na plataforma)
+  tenant_id: { type: DataTypes.STRING(50), unique: true, allowNull: false },
+
+  company_name: { type: DataTypes.STRING(200), allowNull: false },
+
+  // Plano que o revendedor contratou com o SaaS Owner
+  plan_id: { type: DataTypes.INTEGER, allowNull: true },
+
+  // Limite de sub-tenants (clientes finais) que o revendedor pode criar
+  max_sub_tenants: { type: DataTypes.INTEGER, defaultValue: 10 },
+
+  // Markup/Comissão do revendedor (em %, para cálculo de billing)
+  commission_pct: { type: DataTypes.FLOAT, defaultValue: 0.0 },
+
+  is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
+
+  // Dados de contato do revendedor
+  contact_email: { type: DataTypes.STRING(200), allowNull: true },
+  contact_phone: { type: DataTypes.STRING(50), allowNull: true },
+
+  // Branding white-label opcional
+  brand_name: { type: DataTypes.STRING(100), allowNull: true },
+  brand_logo_url: { type: DataTypes.STRING(255), allowNull: true },
+
+  notes: { type: DataTypes.TEXT, allowNull: true },
+}, {
+  tableName: 'resellers',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: 'updated_at'
+});
+
+/**
+ * ResellerSubTenant — Mapeia quais sub-tenants (clientes finais) pertencem a cada revendedor.
+ * Tabela de controle e auditoria da hierarquia.
+ */
+const ResellerSubTenant = sequelize.define('ResellerSubTenant', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+
+  // FK para o revendedor
+  reseller_id: { type: DataTypes.INTEGER, allowNull: false },
+
+  // tenant_id do cliente final que o revendedor criou
+  sub_tenant_id: { type: DataTypes.STRING(50), allowNull: false },
+
+  // Status da conta do sub-tenant perante o revendedor
+  status: {
+    type: DataTypes.ENUM('active', 'suspended', 'cancelled'),
+    defaultValue: 'active'
+  },
+
+  // Plano individual que o revendedor atribuiu a este cliente
+  plan_id: { type: DataTypes.INTEGER, allowNull: true },
+
+  suspended_at: { type: DataTypes.DATE, allowNull: true },
+  suspended_reason: { type: DataTypes.TEXT, allowNull: true },
+}, {
+  tableName: 'reseller_sub_tenants',
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
+  indexes: [
+    { unique: true, fields: ['reseller_id', 'sub_tenant_id'] },
+    { fields: ['sub_tenant_id'] }
+  ]
+});
+
+// Associações
+Reseller.hasMany(ResellerSubTenant, { foreignKey: 'reseller_id', as: 'sub_tenants' });
+ResellerSubTenant.belongsTo(Reseller, { foreignKey: 'reseller_id', as: 'reseller' });
+Reseller.belongsTo(Plan, { foreignKey: 'plan_id', as: 'plan' });
+
 module.exports = { 
   User, Contact, Tag, WhatsAppInstance, 
   Plan, Subscription, Invoice, Transaction, 
   Campaign, CampaignContact, Department,
   AiConfig, CallLog,
-  AdminUser, AuditLog
+  AdminUser, AuditLog,
+  Reseller, ResellerSubTenant
 };

@@ -13,7 +13,8 @@ const {
   AdminUser, AuditLog,
   User, Contact, WhatsAppInstance,
   Plan, Subscription, Invoice, Transaction,
-  Campaign, AiConfig, CallLog
+  Campaign, AiConfig, CallLog,
+  Reseller, ResellerSubTenant
 } = require('../models/sql/models');
 const Message = require('../models/nosql/Message');
 const logger = require('../utils/logger');
@@ -707,6 +708,134 @@ const listCallLogs = async (req, res) => {
 };
 
 // ---------------------------------------------------------------------------
+// 9. GESTÃO DE REVENDEDORES (Nested Multitenancy)
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/v1/sadmin/resellers
+ * Lista todos os revendedores da plataforma.
+ */
+const listResellers = async (req, res) => {
+  const { page = 1, limit = 50, search } = req.query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+
+  try {
+    const where = {};
+    if (search) {
+      where[Op.or] = [
+        { company_name: { [Op.iLike]: `%${search}%` } },
+        { tenant_id: { [Op.iLike]: `%${search}%` } },
+        { contact_email: { [Op.iLike]: `%${search}%` } },
+      ];
+    }
+
+    const { count, rows } = await Reseller.findAndCountAll({
+      where,
+      include: [{ model: Plan, as: 'plan', attributes: ['name', 'price'], required: false }],
+      order: [['created_at', 'DESC']],
+      limit: parseInt(limit),
+      offset,
+    });
+
+    // Enriquecer com contagem de sub-tenants
+    const enriched = await Promise.all(rows.map(async (r) => {
+      const subCount = await ResellerSubTenant.count({ where: { reseller_id: r.id } });
+      return { ...r.toJSON(), sub_tenants_count: subCount };
+    }));
+
+    return res.json({ total: count, page: parseInt(page), limit: parseInt(limit), resellers: enriched });
+  } catch (e) {
+    logger.error(`[Admin] listResellers erro: ${e.message}`);
+    return res.status(500).json({ error: 'INTERNAL_ERROR', detail: e.message });
+  }
+};
+
+/**
+ * POST /api/v1/sadmin/resellers
+ * Aprova e registra um tenant existente como revendedor.
+ */
+const createReseller = async (req, res) => {
+  const { tenant_id, company_name, max_sub_tenants = 10, plan_id, commission_pct = 0, contact_email, contact_phone, brand_name, brand_logo_url, notes } = req.body;
+
+  if (!tenant_id || !company_name) {
+    return res.status(422).json({ error: 'VALIDATION_ERROR', detail: 'tenant_id e company_name são obrigatórios.' });
+  }
+
+  try {
+    // Verificar se o tenant existe
+    const tenantUser = await User.findOne({ where: { tenant_id: tenant_id.toUpperCase() }, ignoreTenant: true });
+    if (!tenantUser) {
+      return res.status(404).json({ error: 'TENANT_NOT_FOUND', detail: `O tenant ${tenant_id} não existe na plataforma.` });
+    }
+
+    // Verificar se já é revendedor
+    const existing = await Reseller.findOne({ where: { tenant_id: tenant_id.toUpperCase() } });
+    if (existing) {
+      return res.status(409).json({ error: 'ALREADY_RESELLER', detail: 'Este tenant já é um revendedor registado.' });
+    }
+
+    const reseller = await Reseller.create({
+      tenant_id: tenant_id.toUpperCase(),
+      company_name,
+      max_sub_tenants,
+      plan_id: plan_id || null,
+      commission_pct,
+      contact_email: contact_email || tenantUser.email,
+      contact_phone,
+      brand_name,
+      brand_logo_url,
+      notes,
+      is_active: true,
+    });
+
+    await audit(req, 'RESELLER_CREATED', 'reseller', reseller.id, { tenant_id, company_name, max_sub_tenants });
+
+    logger.info(`🏪 [Admin] Novo revendedor criado: ${company_name} | Tenant: ${tenant_id}`);
+    return res.status(201).json(reseller);
+
+  } catch (e) {
+    logger.error(`[Admin] createReseller erro: ${e.message}`);
+    return res.status(500).json({ error: 'INTERNAL_ERROR', detail: e.message });
+  }
+};
+
+/**
+ * PATCH /api/v1/sadmin/resellers/:id
+ * Atualiza configurações de um revendedor (plano, limite, branding, status).
+ */
+const updateReseller = async (req, res) => {
+  const { id } = req.params;
+  const { max_sub_tenants, plan_id, is_active, commission_pct, brand_name, brand_logo_url, notes, company_name } = req.body;
+
+  try {
+    const reseller = await Reseller.findByPk(id);
+    if (!reseller) return res.status(404).json({ error: 'NOT_FOUND', detail: 'Revendedor não encontrado.' });
+
+    const before = reseller.toJSON();
+
+    if (max_sub_tenants !== undefined) reseller.max_sub_tenants = max_sub_tenants;
+    if (plan_id !== undefined) reseller.plan_id = plan_id;
+    if (is_active !== undefined) reseller.is_active = is_active;
+    if (commission_pct !== undefined) reseller.commission_pct = commission_pct;
+    if (brand_name !== undefined) reseller.brand_name = brand_name;
+    if (brand_logo_url !== undefined) reseller.brand_logo_url = brand_logo_url;
+    if (notes !== undefined) reseller.notes = notes;
+    if (company_name !== undefined) reseller.company_name = company_name;
+
+    await reseller.save();
+
+    await audit(req, 'RESELLER_UPDATED', 'reseller', id, { before, after: reseller.toJSON() });
+
+    logger.info(`[Admin] Revendedor atualizado: ${reseller.company_name} (ID: ${id}) | Por: ${req.admin.email}`);
+    return res.json(reseller);
+
+  } catch (e) {
+    logger.error(`[Admin] updateReseller erro: ${e.message}`);
+    return res.status(500).json({ error: 'INTERNAL_ERROR', detail: e.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
 // EXPORTS
 // ---------------------------------------------------------------------------
 module.exports = {
@@ -739,4 +868,8 @@ module.exports = {
   getSystemHealth,
   inspectWsConnections,
   listCallLogs,
+  // Revendedores
+  listResellers,
+  createReseller,
+  updateReseller,
 };

@@ -2,7 +2,9 @@ const express = require('express');
 const { incomingWebhook } = require('./controllers/gatewayController');
 const { requireAuth, requireServiceKey, requireSuperAdmin } = require('./middlewares/authMiddleware');
 const { loginRateLimiter } = require('./middlewares/rateLimiterMiddleware');
+const { requireReseller, requireResellerOwnsSubTenant } = require('./middlewares/resellerMiddleware');
 const sadminController = require('./controllers/adminController');
+const resellerController = require('./controllers/resellerController');
 const { validatePhoneContract } = require('./middlewares/contractMiddleware');
 const callsController = require('./controllers/callsController');
 const storageController = require('./controllers/storageController');
@@ -1688,5 +1690,55 @@ router.post('/v1/sadmin/system/maintenance', requireSuperAdmin('superadmin'), sa
  *       200: { description: Info de conexões WS ativas }
  */
 router.get('/v1/sadmin/system/ws-connections', requireSuperAdmin(), sadminController.inspectWsConnections);
+
+// ===========================================================================
+// 14. RESELLER — /api/v1/reseller/*
+// Painel do Revendedor (Nested Multitenancy / White-label)
+// Requer: requireAuth + requireReseller
+// ===========================================================================
+
+router.get('/v1/reseller/me', requireAuth, requireReseller, resellerController.getResellerMe);
+router.get('/v1/reseller/clients', requireAuth, requireReseller, resellerController.listClients);
+router.post('/v1/reseller/clients', requireAuth, requireReseller, resellerController.createClient);
+router.get('/v1/reseller/clients/:tenant_id/stats', requireAuth, requireReseller, requireResellerOwnsSubTenant, resellerController.getClientStats);
+router.post('/v1/reseller/clients/:tenant_id/suspend', requireAuth, requireReseller, requireResellerOwnsSubTenant, resellerController.suspendClient);
+router.post('/v1/reseller/clients/:tenant_id/reactivate', requireAuth, requireReseller, requireResellerOwnsSubTenant, resellerController.reactivateClient);
+
+// ===========================================================================
+// 15. SUPER ADMIN — Gestão de Revendedores
+// ===========================================================================
+
+/**
+ * @swagger
+ * /api/v1/sadmin/resellers:
+ *   get:
+ *     summary: Lista todos os revendedores
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/v1/sadmin/resellers', requireSuperAdmin(), sadminController.listResellers);
+
+/**
+ * @swagger
+ * /api/v1/sadmin/resellers:
+ *   post:
+ *     summary: Aprova e cria um novo revendedor
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post('/v1/sadmin/resellers', requireSuperAdmin('superadmin'), sadminController.createReseller);
+
+/**
+ * @swagger
+ * /api/v1/sadmin/resellers/{id}:
+ *   patch:
+ *     summary: Atualiza plano, limite ou status de um revendedor
+ *     tags: [sadmin]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.patch('/v1/sadmin/resellers/:id', requireSuperAdmin('superadmin'), sadminController.updateReseller);
 
 module.exports = router;

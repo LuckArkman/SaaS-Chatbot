@@ -425,6 +425,11 @@ class OmniChannelApiClient
         return $this->get('/api/v1/auth/me');
     }
 
+    public function authLogout(): array
+    {
+        return $this->post('/api/v1/auth/logout', []);
+    }
+
     // --- Gateway ---
 
     public function gatewayWebhook(string $channelType, array $payload): array

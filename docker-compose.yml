@@ -6,6 +6,8 @@ services:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=password123
       - POSTGRES_DB=saas_omnichannel
+    # Porta só acessível internamente pela rede Docker
+    # (porta 5432 do host já pode estar em uso por outro projeto)
     ports:
       - "5432:5432"
     volumes:
@@ -36,7 +38,7 @@ services:
     environment:
       - MONGO_INITDB_ROOT_USERNAME=saas_chatbot
       - MONGO_INITDB_ROOT_PASSWORD=3702959
-    ports:
+ports:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
@@ -127,8 +129,8 @@ services:
       - saas_ui
       - saas_api
     ports:
-      - "80:80"
-      - "443:443"
+      - "8080:80"   # Porta alternativa — 80 pode estar ocupada por outro projeto no host
+      - "8443:443"
     restart: always
 
 volumes:
