@@ -64,7 +64,7 @@ const WhatsAppInstance = sequelize.define('WhatsAppInstance', {
   id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
   session_name: { type: DataTypes.STRING(100), unique: true },
   status: { 
-    type: DataTypes.ENUM('DISCONNECTED', 'CONNECTING', 'QRCODE', 'CONNECTED', 'ERR_SESSION'),
+    type: DataTypes.STRING, // Substituto para ENUM para evitar erro de cast no alter: true
     defaultValue: 'DISCONNECTED'
   },
   webhook_url: { type: DataTypes.STRING(255), allowNull: true },
@@ -203,9 +203,9 @@ const CallLog = sequelize.define('CallLog', {
   tenant_id: { type: DataTypes.STRING, allowNull: false },
   contact_phone: { type: DataTypes.STRING, allowNull: false },
   call_id: { type: DataTypes.STRING, allowNull: false },
-  type: { type: DataTypes.ENUM('voice', 'video'), defaultValue: 'voice' },
-  direction: { type: DataTypes.ENUM('incoming', 'outgoing'), defaultValue: 'incoming' },
-  status: { type: DataTypes.ENUM('ringing', 'accepted', 'rejected', 'ended', 'missed'), defaultValue: 'ringing' },
+  type: { type: DataTypes.STRING, defaultValue: 'voice' },
+  direction: { type: DataTypes.STRING, defaultValue: 'incoming' },
+  status: { type: DataTypes.STRING, defaultValue: 'ringing' },
   duration: { type: DataTypes.INTEGER, defaultValue: 0 },
 }, {
   tableName: 'call_logs',
@@ -227,8 +227,8 @@ const AdminUser = sequelize.define('AdminUser', {
   email: { type: DataTypes.STRING, unique: true, allowNull: false },
   full_name: { type: DataTypes.STRING, allowNull: false },
   hashed_password: { type: DataTypes.STRING, allowNull: false },
-  role: {
-    type: DataTypes.ENUM('superadmin', 'support', 'finance', 'readonly'),
+  role: { 
+    type: DataTypes.STRING,
     defaultValue: 'readonly'
   },
   is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
@@ -330,7 +330,7 @@ const ResellerSubTenant = sequelize.define('ResellerSubTenant', {
 
   // Status da conta do sub-tenant perante o revendedor
   status: {
-    type: DataTypes.ENUM('active', 'suspended', 'cancelled'),
+    type: DataTypes.STRING,
     defaultValue: 'active'
   },
 
