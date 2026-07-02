@@ -87,8 +87,8 @@ const bootstrap = async () => {
 
     // 1. Relacional
     await testPostgres();
-    // Em dev, podemos usar sequelize.sync(), mas usaremos migrations em prod.
-    await sequelize.sync(); 
+    // Sincroniza e altera o banco automaticamente (adiciona colunas novas)
+    await sequelize.sync({ alter: true }); 
     logger.info('✅ Tabelas PostgreSQL verificadas/sincronizadas.');
 
     // 2. NoSQL
