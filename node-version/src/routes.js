@@ -1,7 +1,7 @@
 const express = require('express');
 const { incomingWebhook } = require('./controllers/gatewayController');
 const { requireAuth, requireServiceKey, requireSuperAdmin } = require('./middlewares/authMiddleware');
-const { loginRateLimiter } = require('./middlewares/rateLimiterMiddleware');
+// Rate Limit de Login removido conforme solicitado (a trava de sessão única permanece ativa no authController)
 const { requireReseller, requireResellerOwnsSubTenant } = require('./middlewares/resellerMiddleware');
 const sadminController = require('./controllers/adminController');
 const resellerController = require('./controllers/resellerController');
@@ -108,7 +108,7 @@ router.post('/v1/force-error', (req, res, next) => {
  *       422:
  *         description: Campos obrigatórios em falta
  */
-router.post('/v1/auth/login', loginRateLimiter, authController.login);
+router.post('/v1/auth/login', authController.login);
 
 /**
  * @swagger
@@ -1316,7 +1316,7 @@ router.post('/v1/sadmin/auth/register', sadminController.registerAdmin);
  *                 expires_in:   { type: string }
  *       401: { description: Credenciais incorretas }
  */
-router.post('/v1/sadmin/auth/login', loginRateLimiter, sadminController.loginAdmin);
+router.post('/v1/sadmin/auth/login', sadminController.loginAdmin);
 
 /**
  * @swagger

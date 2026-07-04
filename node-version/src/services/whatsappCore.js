@@ -21,6 +21,9 @@ const phoneUtils = require('../utils/phoneUtils');
 const sessionMapper = require('../utils/sessionMapper');
 
 
+// Cache da versão do Baileys para não fazer request HTTP a cada inicialização
+let cachedBaileysVersion = null;
+
 class WhatsAppService {
   constructor() {
     this.sockets = {};
@@ -31,6 +34,8 @@ class WhatsAppService {
      * Estrutura: { sessionId: { 'xxxx@lid': '5511999999999' } }
      */
     this.lidMaps = {};
+    // Mapa de tentativas de reconexão por sessão para backoff exponencial
+    this.reconnectAttempts = {};
     // Logger minimalista embutido para o Baileys não sujar o terminal
     this.baileysLogger = pino({ level: 'silent' });
   }
@@ -51,7 +56,19 @@ class WhatsAppService {
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(tokenPath);
-    const { version } = await fetchLatestBaileysVersion();
+
+    // Usa versão cacheada para não fazer request HTTP externo a cada reconexão
+    if (!cachedBaileysVersion) {
+      try {
+        const fetched = await fetchLatestBaileysVersion();
+        cachedBaileysVersion = fetched.version;
+        logger.info(`[${sessionId}] 📦 Versão Baileys obtida: ${cachedBaileysVersion}`);
+      } catch (e) {
+        logger.warn(`[${sessionId}] ⚠️ Falha ao buscar versão do Baileys, usando fallback: ${e.message}`);
+        cachedBaileysVersion = [2, 3000, 1023212977]; // Versão estável conhecida
+      }
+    }
+    const version = cachedBaileysVersion;
 
     // Store customizado assíncrono para evitar Memory Leaks e Event Loop Block (Sprint Bridge)
     // Inicializa o mapa LID para esta sessão
@@ -147,10 +164,12 @@ class WhatsAppService {
         keys: makeCacheableSignalKeyStore(state.keys, this.baileysLogger),
       },
       browser: Browsers.macOS('Desktop'), // Previne banimento/desconexão pelo WA Server
-      syncFullHistory: false, // Historico full bloqueia o socket e causa timeout(408)
-      generateHighQualityLinkPreview: true,
-      keepAliveIntervalMs: 30000, // Estabiliza a conexão pings
-      retryRequestDelayMs: 5000,
+      syncFullHistory: false,           // Histórico full bloqueia o socket e causa timeout(408)
+      generateHighQualityLinkPreview: false, // Desabilitado para não criar requests externos extras
+      keepAliveIntervalMs: 25000,       // Pings regulares para manter a conexão
+      connectTimeoutMs: 60000,          // 60s para timeout de conexão (evita socket pendurado)
+      retryRequestDelayMs: 250,         // Delay menor para retries internos do Baileys
+      maxMsgRetryCount: 5,
       markOnlineOnConnect: true
     });
 
@@ -190,13 +209,18 @@ class WhatsAppService {
         
         if (lastDisconnect.error instanceof Boom) {
           const statusCode = lastDisconnect.error.output?.statusCode;
-          // Somente desconecta permanentemente se o usuário revogou o acesso pelo app (401)
+          // Desconexão permanente: usuário fez logout pelo celular (401)
           if (statusCode === DisconnectReason.loggedOut) {
             shouldReconnect = false;
           }
+          // Credenciais inválidas ou sessão banida — não tenta reconectar
+          if (statusCode === 403 || statusCode === 405 || statusCode === 411) {
+            shouldReconnect = false;
+            logger.error(`[${sessionId}] 🚫 Sessão banida ou credencial inválida (${statusCode}). Removendo tokens.`);
+          }
         } 
         
-        // Permite fechar apenas se a leitura do QR Code expirou (ainda não sincronizou)
+        // QR Code expirou antes de escanear — não reconecta automaticamente
         if (errMsg.includes('QR refs attempts ended')) {
           shouldReconnect = false;
         }
@@ -204,6 +228,14 @@ class WhatsAppService {
         logger.warn(`[${sessionId}] Conexão fechada. Motivo: ${errMsg}. Reconectar? ${shouldReconnect}`);
 
         if (shouldReconnect) {
+          // ── BACKOFF EXPONENCIAL ──────────────────────────────────────────────────────
+          // Evita loops agressivos de reconexão que invalidam a sessão no servidor WA.
+          // Tenta: 5s → 10s → 20s → 40s → 60s (máximo)
+          const attempts = (this.reconnectAttempts[sessionId] || 0) + 1;
+          this.reconnectAttempts[sessionId] = attempts;
+          const backoffMs = Math.min(5000 * Math.pow(2, attempts - 1), 60000);
+          logger.info(`[${sessionId}] 🔄 Reconectando em ${backoffMs / 1000}s (tentativa ${attempts})...`);
+
           await WhatsAppInstance.update(
             { status: 'CONNECTING' },
             { where: { session_name: sessionId }, ignoreTenant: true }
@@ -216,7 +248,7 @@ class WhatsAppService {
           });
           
           delete this.sockets[sessionId];
-          setTimeout(() => this.initializeSession(tenantId, sessionId), 5000);
+          setTimeout(() => this.initializeSession(tenantId, sessionId), backoffMs);
         } else {
           logger.error(`[${sessionId}] Sessão permanentemente deslogada.`);
           await WhatsAppInstance.update(
@@ -234,6 +266,8 @@ class WhatsAppService {
           fs.rmSync(tokenPath, { recursive: true, force: true });
         }
       } else if (connection === 'open') {
+        // Conexão estabelecida com sucesso — zera o contador de tentativas de backoff
+        this.reconnectAttempts[sessionId] = 0;
         logger.info(`[${sessionId}] ✅ WhatsApp Conectado e Sincronizado!`);
         
         let connectedPhone = null;
@@ -1179,10 +1213,12 @@ class WhatsAppService {
   async initializeActiveSessions() {
     logger.info('🔄 Procurando sessões do WhatsApp para restaurar...');
     try {
+      // Apenas restaura sessões que estavam CONNECTED — QRCODE e CONNECTING
+      // nunca chegaram a autenticar e teriam tokens inválidos (apenas gerariam loops).
       const activeInstances = await WhatsAppInstance.findAll({
         where: {
           is_active: true,
-          status: ['CONNECTED', 'QRCODE', 'CONNECTING']
+          status: 'CONNECTED'
         }
       });
 
@@ -1242,46 +1278,37 @@ class WhatsAppService {
     
     logger.info(`[${sessionId}] 👤 Iniciando persistência de ${validContacts.length} contatos no PostgreSQL...`);
     
-    // Processamento em lote com Yield CPU para evitar travar a API
-    const batchSize = 10;
+    // ── IMPORTANTE: Não buscamos profilePictureUrl aqui ──────────────────────────
+    // Buscar a foto de perfil de centenas de contatos em paralelo durante a sincronização
+    // dispara o rate-limit do servidor WhatsApp e causa desconexões da sessão Baileys.
+    // As fotos são obtidas individualmente em messages.upsert (quando o contato envia mensagem)
+    // ou via o endpoint /api/v1/contacts/refresh-pics (acionado manualmente pelo Frontend).
+    // ──────────────────────────────────────────────────────────────────────────────────────────
+
+    // Processamento em lote sequencial com Yield CPU para não travar o Event Loop
+    const batchSize = 20;
     for (let i = 0; i < validContacts.length; i += batchSize) {
       const batch = validContacts.slice(i, i + batchSize);
       await Promise.all(batch.map(async (vc) => {
         try {
-          let profilePicUrl = null;
-          if (sock) {
-            try {
-              profilePicUrl = await sock.profilePictureUrl(vc.remoteJid, 'image');
-            } catch (err) {
-              // Ignore error (no picture)
-            }
-          }
-
           const [contact, created] = await Contact.findOrCreate({
             where: { phone_number: vc.phone, tenant_id: tenantId },
             defaults: {
               phone_number: vc.phone,
               full_name: vc.name,
-              profile_pic_url: profilePicUrl,
               is_group: vc.isGroup
             }
           });
           
-          let updateData = {};
+          // Atualiza apenas o nome se mudou (não toca a foto — evita requests desnecessários)
           if (!created && vc.name && contact.full_name !== vc.name) {
-            updateData.full_name = vc.name;
-          }
-          if (!created && profilePicUrl && contact.profile_pic_url !== profilePicUrl) {
-            updateData.profile_pic_url = profilePicUrl;
-          }
-          if (Object.keys(updateData).length > 0) {
-            await contact.update(updateData);
+            await contact.update({ full_name: vc.name });
           }
         } catch (err) {
           logger.error(`[${sessionId}] ❌ Erro ao salvar contato ${vc.phone} no banco: ${err.message}`);
         }
       }));
-      await new Promise(res => setTimeout(res, 50)); // Yield CPU and avoid rate limit
+      await new Promise(res => setImmediate(res)); // Yield CPU
     }
     logger.info(`[${sessionId}] 👤 Persistência de contatos concluída.`);
   }
