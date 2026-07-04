@@ -66,9 +66,53 @@ const swaggerOptions = {
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// Rota de Health Check
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'Monolith OK', version: '2.0.0' });
+// ── Rota de Health Check (usada pelo Docker e pelo Nginx) ─────────────────
+// Verifica ativamente os serviços críticos e retorna o estado de cada um.
+// O Nginx faz GET /health — resposta 200 = saudável, 503 = degradado.
+app.get('/health', async (req, res) => {
+  const checks = { api: 'ok', postgres: 'unknown', redis: 'unknown', mongodb: 'unknown' };
+  let isHealthy = true;
+
+  // Postgres
+  try {
+    await sequelize.authenticate();
+    checks.postgres = 'ok';
+  } catch (e) {
+    checks.postgres = 'error';
+    isHealthy = false;
+  }
+
+  // Redis
+  try {
+    await redisService.client.ping();
+    checks.redis = 'ok';
+  } catch (e) {
+    checks.redis = 'error';
+    // Redis é crítico para sessões — marca como degradado mas não derruba a API
+  }
+
+  // MongoDB
+  try {
+    const mongoose = require('mongoose');
+    if (mongoose.connection.readyState === 1) {
+      checks.mongodb = 'ok';
+    } else {
+      checks.mongodb = 'disconnected';
+      isHealthy = false;
+    }
+  } catch (e) {
+    checks.mongodb = 'error';
+    isHealthy = false;
+  }
+
+  const status = isHealthy ? 200 : 503;
+  res.status(status).json({
+    status: isHealthy ? 'healthy' : 'degraded',
+    version: '2.0.0',
+    uptime_seconds: Math.floor(process.uptime()),
+    services: checks,
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Tratamento Global de Erros (Relatórios)

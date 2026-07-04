@@ -30,6 +30,8 @@ const login = async (req, res) => {
   const { username, email, password } = req.body;
   const loginEmail = (username || email || '').trim().toLowerCase();
 
+  logger.info(`[Auth] Tentativa de login para: ${loginEmail}`);
+
   if (!loginEmail || !password) {
     return res.status(422).json({
       error: 'VALIDATION_ERROR',
@@ -41,64 +43,10 @@ const login = async (req, res) => {
     });
   }
 
-  const redisService = require('../config/redis');
-
-  // ── PROTEÇÃO POR CONTA (Account-Level Lockout) ─────────────────────────────
-  // Diferente do rate-limit por IP (que prejudica usuários legítimos em redes
-  // compartilhadas/VPNs), aqui bloqueamos apenas a conta sendo atacada.
-  // Regra: 10 tentativas falhadas em qualquer janela → bloqueio de 15 minutos.
-  const lockoutKey  = `lockout:${loginEmail}`;
-  const attemptsKey = `login_attempts:${loginEmail}`;
-  const MAX_ATTEMPTS = 10;
-  const LOCKOUT_SECONDS = 15 * 60; // 15 minutos
-
-  try {
-    const isLocked = await redisService.get(lockoutKey);
-    if (isLocked) {
-      const ttl = await redisService.client.ttl(lockoutKey);
-      const minutesLeft = Math.ceil(ttl / 60);
-      logger.warn(`[Auth] Conta bloqueada por tentativas excessivas: ${loginEmail} (${minutesLeft}min restantes)`);
-      return res.status(429).json({
-        error: 'ACCOUNT_LOCKED',
-        detail: `Conta temporariamente bloqueada por excesso de tentativas. Tente novamente em ${minutesLeft} minuto(s).`,
-        retry_after_seconds: ttl
-      });
-    }
-  } catch (redisErr) {
-    // Se o Redis estiver indisponível, apenas loga e continua (não bloqueia o login)
-    logger.warn(`[Auth] Redis indisponível para verificar lockout: ${redisErr.message}`);
-  }
-  // ──────────────────────────────────────────────────────────────────────────
-
-  logger.info(`[Auth] Tentativa de login para: ${loginEmail}`);
-
   try {
     const user = await User.findOne({ where: { email: loginEmail }, ignoreTenant: true });
 
     if (!user || !(await security.verifyPassword(password, user.hashed_password))) {
-      // ── Incrementa contador de falhas ──────────────────────────────────────
-      try {
-        const attempts = await redisService.client.incr(attemptsKey);
-        // Define o TTL na primeira tentativa falha (janela deslizante de 15 min)
-        if (attempts === 1) {
-          await redisService.client.expire(attemptsKey, LOCKOUT_SECONDS);
-        }
-        if (attempts >= MAX_ATTEMPTS) {
-          // Ativa o bloqueio explícito e remove o contador (lockout substitui)
-          await redisService.set(lockoutKey, '1', LOCKOUT_SECONDS);
-          await redisService.client.del(attemptsKey);
-          logger.warn(`[Auth] 🔒 Conta bloqueada após ${MAX_ATTEMPTS} tentativas: ${loginEmail}`);
-          return res.status(429).json({
-            error: 'ACCOUNT_LOCKED',
-            detail: `Conta bloqueada por excesso de tentativas. Tente novamente em 15 minuto(s).`,
-            retry_after_seconds: LOCKOUT_SECONDS
-          });
-        }
-        logger.warn(`[Auth] Credenciais inválidas para '${loginEmail}' (tentativa ${attempts}/${MAX_ATTEMPTS})`);
-      } catch (redisErr) {
-        logger.warn(`[Auth] Redis indisponível para incrementar contador: ${redisErr.message}`);
-      }
-      // ──────────────────────────────────────────────────────────────────────
       return res.status(401).json({
         error: 'INVALID_CREDENTIALS',
         detail: 'E-mail ou senha incorretos.',
@@ -112,14 +60,11 @@ const login = async (req, res) => {
       });
     }
 
-    // ── Login bem-sucedido: zera contadores de falha ───────────────────────
-    try {
-      await redisService.client.del(attemptsKey);
-      await redisService.client.del(lockoutKey);
-    } catch (redisErr) { /* ignora */ }
-    // ──────────────────────────────────────────────────────────────────────
-
-    // Single Active Session - Verifica se já existe sessão no Redis
+    // ── Sessão Única Ativa ────────────────────────────────────────────────
+    // Se o usuário já possui uma sessão aberta, bloqueia qualquer nova tentativa
+    // de login — independente de onde venha — até que a sessão atual expire
+    // ou o usuário clique em "Sair".
+    const redisService = require('../config/redis');
     const activeSession = await redisService.get(`active_session:${user.id}`);
     if (activeSession) {
       logger.warn(`[Auth] Bloqueio de Multi-Sessão acionado para: ${loginEmail}`);
@@ -128,6 +73,7 @@ const login = async (req, res) => {
         detail: 'Você já tem uma sessão ativa em outro local. Encerre-a clicando em Sair no outro dispositivo ou aguarde sua expiração automática.'
       });
     }
+    // ─────────────────────────────────────────────────────────────────────
 
     logger.info(`[Auth] Login bem-sucedido: ${loginEmail} | Tenant: ${user.tenant_id}`);
     const tokenResponse = buildTokenResponse(user);
