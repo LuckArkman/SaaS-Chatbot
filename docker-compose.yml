@@ -38,8 +38,8 @@ services:
     environment:
       - MONGO_INITDB_ROOT_USERNAME=saas_chatbot
       - MONGO_INITDB_ROOT_PASSWORD=3702959
-    ports:
-      - "27017:27017"
+    # ports:
+    #   - "27017:27017"
     volumes:
       - mongo_data:/data/db
     restart: always
@@ -66,9 +66,8 @@ services:
       - RABBITMQ_URL=amqp://admin:password123@saas_rabbitmq/
       - OLLAMA_URL=http://saas_ollama:11434
     # Porta exposta apenas internamente via Nginx.
-    # Remova o comentário abaixo APENAS para debug direto sem Nginx:
-    # ports:
-    #   - "8001:8000"
+    ports:
+      - "8001:8000"
     volumes:
       - uploads_data:/app/uploads
       - ./node-version/src:/app/src

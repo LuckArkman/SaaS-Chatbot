@@ -103,16 +103,12 @@ const startBot = async (req, res) => {
 const stopBot = async (req, res) => {
   try {
     const instance = await getOrCreateInstance(req.tenantId);
-    const sock = whatsappService.sockets[instance.session_name];
-    if (sock) {
-      sock.end(undefined);
-      delete whatsappService.sockets[instance.session_name];
-    }
+    await whatsappService.stopSession(req.tenantId, instance.session_name);
     await WhatsAppInstance.update({ status: 'DISCONNECTED', qrcode_base64: null }, { where: { id: instance.id }});
     
     return res.json({ status: 'stopped', success: true });
   } catch (e) {
-    return res.status(500).json({ detail: 'Falha ao parar Baileys.' });
+    return res.status(500).json({ detail: 'Falha ao parar Puppeteer.' });
   }
 };
 
@@ -129,15 +125,11 @@ const restartBot = async (req, res) => {
 const logoutBot = async (req, res) => {
   try {
     const instance = await getOrCreateInstance(req.tenantId);
-    const sock = whatsappService.sockets[instance.session_name];
     
-    if (sock) {
-      await sock.logout();
-      delete whatsappService.sockets[instance.session_name];
-    }
+    await whatsappService.logoutSession(req.tenantId, instance.session_name);
     
-    // Destrói as chaves locais do Baileys
-    const tokenPath = path.join(__dirname, '..', '..', 'tokens', instance.session_name);
+    // Destrói as pastas de sessão do Chrome Headless
+    const tokenPath = path.join(__dirname, '..', '..', 'tokens', `session-${instance.session_name}`);
     if (fs.existsSync(tokenPath)) {
       fs.rmSync(tokenPath, { recursive: true, force: true });
     }

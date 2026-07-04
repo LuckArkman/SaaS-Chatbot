@@ -27,14 +27,15 @@ const requireAuth = async (req, res, next) => {
 
     // Injeta o TenantId na AsyncLocalStorage (Para os Queries subsequentes)
     // Isso é vital para que os Controladores achem apenas os dados do Tenant.
-    tenancyContext.run({ tenantId: tenantId.toUpperCase() }, async () => {
+    const safeTenantId = String(tenantId).toUpperCase();
+    tenancyContext.run({ tenantId: safeTenantId }, async () => {
       try {
         const user = await User.findByPk(userId);
         if (!user) return res.status(404).json({ detail: 'User not found' });
         if (!user.is_active) return res.status(400).json({ detail: 'Inactive user' });
 
         req.user = user;
-        req.tenantId = tenantId.toUpperCase();
+        req.tenantId = safeTenantId;
         next();
       } catch (dbErr) {
         logger.error(`Erro ao validar DB na auth: ${dbErr.message}`);

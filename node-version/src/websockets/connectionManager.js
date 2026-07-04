@@ -207,7 +207,7 @@ class ConnectionManager {
   }
 
   async broadcastToTenant(tenantId, message) {
-    tenantId = tenantId.toUpperCase();
+    tenantId = String(tenantId).toUpperCase();
     if (this.isDuplicateMessage(message)) return 0;
     
     const tenantSockets = this.activeConnections[tenantId];
